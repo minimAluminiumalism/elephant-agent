@@ -791,7 +791,7 @@ def _run_embedding_birth_wizard(
                     detail="llm-semantic-router/elephant-embeddings-v1-text-small",
                 ),
             )
-            source_default = default_source if default_source in {"modelscope", "huggingface"} else "modelscope"
+            source_default = "modelscope"
         else:
             source_choices = (
                 WizardChoice(
@@ -805,7 +805,7 @@ def _run_embedding_birth_wizard(
                     detail="agentic-intelligence-lab/elephant-embeddings-v1-text-small",
                 ),
             )
-            source_default = default_source if default_source in {"modelscope", "huggingface"} else "huggingface"
+            source_default = "huggingface"
         source = _wizard_choice_prompt(
             _init_text(language, "Choose Model Source", "选择模型来源"),
             _init_text(
@@ -1269,6 +1269,9 @@ def _persist_init_question_config(runtime: CliRuntime, *, first_language: str, l
         config = load_global_config(config_path, state_dir=runtime.paths.state_dir)
         question_config = personal_model_question_config_from_global(config)
         question_config["learning_intensity"] = learning_intensity
+        proactive = dict(question_config.get("proactive_ask") or {})
+        proactive.update(_proactive_ask_config_for_learning_intensity(learning_intensity))
+        question_config["proactive_ask"] = proactive
         config["personal_model_questions"] = question_config
         personal = dict(config.get("personal_model") or {})
         personal["first_language"] = _normalize_first_language(first_language)
@@ -1276,6 +1279,57 @@ def _persist_init_question_config(runtime: CliRuntime, *, first_language: str, l
         write_global_config(config_path, config)
     except Exception:  # pragma: no cover
         return
+
+
+def _proactive_ask_config_for_learning_intensity(learning_intensity: str) -> dict[str, object]:
+    intensity = str(learning_intensity or "").strip().lower()
+    if intensity == "low":
+        return {"idle_threshold_minutes": 720, "daily_max": 2, "quiet_hours": [23, 7]}
+    if intensity == "high":
+        return {"idle_threshold_minutes": 60, "daily_max": 24, "quiet_hours": [1, 7]}
+    return {"idle_threshold_minutes": 180, "daily_max": 8, "quiet_hours": [23, 7]}
+
+
+def _init_profile_learning_metadata(
+    bootstrap_state: object,
+    *,
+    learning_intensity: str,
+    language: str,
+) -> dict[str, str]:
+    normalized_intensity = str(learning_intensity or "").strip().lower()
+    if normalized_intensity not in {"low", "medium", "high"}:
+        normalized_intensity = "medium"
+    metadata: dict[str, str] = {
+        "source": "elephant_init",
+        "purpose": "profile_and_skill_affinity",
+        "init_first_language": language,
+        "init_learning_intensity": normalized_intensity,
+    }
+    for field in (
+        "preferred_name",
+        "occupation",
+        "gender",
+        "birth_date",
+        "city",
+        "mbti",
+        "hobbies",
+        "relationship_mode",
+        "safety_boundaries",
+    ):
+        value = str(getattr(bootstrap_state, field, "") or "").strip()
+        if value:
+            metadata[f"init_{field}"] = value
+    starter_answers = []
+    for question_id, _question_text, answer in tuple(getattr(bootstrap_state, "starter_answers", ()) or ()):
+        cleaned = str(answer or "").strip()
+        if cleaned:
+            starter_answers.append(f"{question_id}: {cleaned}")
+    if starter_answers:
+        metadata["init_starter_answers"] = " | ".join(starter_answers)
+    care_entries = _init_care_entries(bootstrap_state)
+    if care_entries:
+        metadata["init_safety_boundaries"] = " | ".join(f"{field}: {value}" for field, value in care_entries)
+    return metadata
 
 
 def _bootstrap_user_card_from_init(runtime: CliRuntime, *, personal_model_id: str, bootstrap_state: object) -> None:
@@ -1382,7 +1436,13 @@ def _bootstrap_personal_model_from_init(runtime: CliRuntime, session, bootstrap_
                 session_id=episode_id,
                 trigger="init_profile",
                 summary="initial profile and skill-affinity learning",
-                metadata={"source": "elephant_init", "purpose": "profile_and_skill_affinity"},
+                metadata=_init_profile_learning_metadata(
+                    bootstrap_state,
+                    learning_intensity=str(
+                        getattr(bootstrap_state, "learning_intensity", "medium") or "medium"
+                    ),
+                    language=language,
+                ),
             )
     except Exception:
         pass

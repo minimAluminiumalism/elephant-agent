@@ -81,6 +81,29 @@ def _pm_portrait_lines(facts: tuple[Any, ...], *, limit: int = 40) -> tuple[str,
     return tuple(lines[:limit])
 
 
+def _init_profile_answer_lines(metadata: Mapping[str, Any]) -> tuple[str, ...]:
+    ordered_fields = (
+        "first_language",
+        "learning_intensity",
+        "preferred_name",
+        "occupation",
+        "gender",
+        "birth_date",
+        "city",
+        "mbti",
+        "hobbies",
+        "relationship_mode",
+        "safety_boundaries",
+        "starter_answers",
+    )
+    lines: list[str] = []
+    for field in ordered_fields:
+        value = _compact(metadata.get(f"init_{field}", ""), limit=500)
+        if value:
+            lines.append(f"- {field}: {value}")
+    return tuple(lines)
+
+
 def _build_compress_evidence(metadata: dict[str, Any]) -> str:
     """Minimal evidence for compress feature — just the conversation content.
 
@@ -227,6 +250,18 @@ def build_evidence(
         *(anchors or ("(none)",)),
     ]
 
+    if str(job.trigger or "").strip().lower() == "init_profile":
+        init_answers = _init_profile_answer_lines(metadata)
+        portrait = _pm_portrait_lines(active_facts)
+        lines.extend([
+            "",
+            "## Init profile answers",
+            *(init_answers or ("(none)",)),
+            "",
+            "## Bootstrapped Personal Model facts",
+            *(portrait or ("(no facts yet)",)),
+        ])
+
     if "dream" in feature_ids:
         target_date = str(metadata.get("target_date") or "today").strip() or "today"
         user_tz = "Asia/Shanghai"
@@ -246,7 +281,11 @@ def build_evidence(
     # Episode evidence for features that learn from the supplied close packet.
     # Dream is a scheduled consolidation mode and intentionally receives no
     # episode-close packet, even when paired with question/skill maintenance.
-    if "dream" not in feature_ids and feature_ids & {"pm", "questions", "skills"}:
+    if (
+        str(job.trigger or "").strip().lower() != "init_profile"
+        and "dream" not in feature_ids
+        and feature_ids & {"pm", "questions", "skills"}
+    ):
         episode_summary = _compact(getattr(episode, "exit_summary", "") if episode is not None else "", limit=700)
         turn_lines = _episode_turn_summary(runtime, episode_id=job.episode_id)
         lines.extend([
@@ -271,7 +310,7 @@ def build_evidence(
         portrait = _pm_portrait_lines(active_facts)
         lines.extend([
             "",
-            f"## Diary context",
+            "## Diary context",
             f"target_date: {target_date}",
             f"user_timezone: {user_tz}",
             "",

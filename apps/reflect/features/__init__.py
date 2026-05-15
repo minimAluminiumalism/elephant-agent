@@ -25,7 +25,7 @@ TRIGGER_FEATURES: dict[str, tuple[str, ...]] = {
     "manual": ("pm", "questions", "recall", "skills"),
     "diary": ("diary",),
     "dream": ("dream", "questions", "skills", "diary"),
-    "init_profile": ("pm", "questions", "skills", "diary"),
+    "init_profile": ("pm", "questions", "skills"),
     "context_compaction": ("compress",),
 }
 

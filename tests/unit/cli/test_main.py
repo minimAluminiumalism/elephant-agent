@@ -291,6 +291,32 @@ class InitQuestionDesignTest(unittest.TestCase):
 
         self.assertEqual(answer, "我正在重新整理生活优先级")
 
+    def test_local_embedding_source_default_follows_language(self) -> None:
+        defaults: list[str] = []
+
+        def choose(_title, _body, _choices, *, default, **_kwargs):
+            defaults.append(default)
+            return "local" if len(defaults) == 1 else default
+
+        with mock.patch.object(cli_main_impl, "_wizard_choice_prompt", side_effect=choose):
+            zh_answer = cli_main_impl._run_embedding_birth_wizard(
+                default_source="huggingface",
+                language="zh",
+            )
+
+        self.assertEqual(defaults, ["local", "modelscope"])
+        self.assertEqual(zh_answer[:2], ("local", "modelscope"))
+
+        defaults.clear()
+        with mock.patch.object(cli_main_impl, "_wizard_choice_prompt", side_effect=choose):
+            en_answer = cli_main_impl._run_embedding_birth_wizard(
+                default_source="modelscope",
+                language="en",
+            )
+
+        self.assertEqual(defaults, ["local", "huggingface"])
+        self.assertEqual(en_answer[:2], ("local", "huggingface"))
+
     def test_starter_question_persists_hidden_profile_answer(self) -> None:
         spec = cli_main_impl._STARTER_QUESTIONS[0]
         selected_choice = tuple(spec["choices_zh"])[0]
@@ -1478,6 +1504,43 @@ class WizardChoiceMenuTest(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(bootstrap_personal_model.call_args.args[2].birth_date, "late summer 1991")
+
+    def test_init_question_config_persists_proactive_ask_from_learning_intensity(self) -> None:
+        runtime = SimpleNamespace(paths=SimpleNamespace(state_dir="/tmp/elephant-test/herd"))
+        captured: dict[str, object] = {}
+
+        with (
+            mock.patch(
+                "packages.runtime_config.global_config_path_for_state_dir",
+                return_value=Path("/tmp/elephant-test/config.yaml"),
+            ),
+            mock.patch(
+                "packages.runtime_config.load_global_config",
+                return_value={"personal_model_questions": {}},
+            ),
+            mock.patch(
+                "packages.runtime_config.write_global_config",
+                side_effect=lambda _path, config: captured.update(config),
+            ),
+        ):
+            cli_main._persist_init_question_config(
+                runtime,
+                first_language="zh",
+                learning_intensity="high",
+            )
+
+        questions = captured["personal_model_questions"]
+        self.assertEqual(questions["learning_intensity"], "high")
+        self.assertEqual(
+            questions["proactive_ask"],
+            {
+                "enabled": True,
+                "idle_threshold_minutes": 60,
+                "daily_max": 24,
+                "quiet_hours": [1, 7],
+            },
+        )
+        self.assertEqual(captured["personal_model"]["first_language"], "zh")
 
     def test_interactive_setup_uses_shallow_provider_doctor_before_tui_handoff(self) -> None:
         runtime = mock.Mock()

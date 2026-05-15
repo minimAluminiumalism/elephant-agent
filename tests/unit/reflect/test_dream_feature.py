@@ -36,6 +36,58 @@ class DreamFeatureTest(unittest.TestCase):
         self.assertEqual(tuple(feature.feature_id for feature in features), ("pm", "questions", "skills"))
         self.assertNotIn("tool.conversation.search", _compose_tools(features))
 
+    def test_init_profile_resolves_without_diary_and_uses_bootstrap_prompt_rules(self) -> None:
+        features = resolve_features("init_profile")
+
+        self.assertEqual(tuple(feature.feature_id for feature in features), ("pm", "questions", "skills"))
+
+        prompt = _assemble_system_prompt(features, conservatism="low")
+
+        self.assertIn("seed the first question bank more actively", prompt)
+        self.assertIn("create 3-6 high-value questions", prompt)
+        self.assertIn("explicit init answers and bootstrapped", prompt)
+        self.assertNotIn("tool.diary.write", prompt)
+
+    def test_init_profile_evidence_omits_empty_episode_and_diary_sections(self) -> None:
+        class Repository:
+            def load_episode(self, episode_id: str) -> SimpleNamespace:
+                return SimpleNamespace(exit_summary="")
+
+            def list_personal_model_facts(self, **_: object) -> tuple[object, ...]:
+                return (
+                    SimpleNamespace(
+                        lens="identity",
+                        text="用户喜欢技术创造。",
+                        metadata={"topic": "identity.style.hobbies.personal"},
+                    ),
+                )
+
+        runtime = SimpleNamespace(repository=Repository())
+        job = LearningJob(
+            job_id="job-init",
+            job_type="episode_boundary_learning",
+            trigger="init_profile",
+            status="queued",
+            personal_model_id="pm",
+            state_id="state",
+            episode_id="episode",
+            metadata={
+                "init_first_language": "zh",
+                "init_learning_intensity": "high",
+                "init_hobbies": "技术/创造",
+            },
+        )
+
+        evidence = build_evidence(runtime, job, resolve_features("init_profile"))
+
+        self.assertIn("## Init profile answers", evidence)
+        self.assertIn("- learning_intensity: high", evidence)
+        self.assertIn("## Bootstrapped Personal Model facts", evidence)
+        self.assertIn("[identity] 用户喜欢技术创造。", evidence)
+        self.assertNotIn("## Episode summary", evidence)
+        self.assertNotIn("## Conversation turns", evidence)
+        self.assertNotIn("## Diary context", evidence)
+
     def test_dream_prompt_requires_pm_consolidation_and_concise_claims(self) -> None:
         features = resolve_features("dream")
 
