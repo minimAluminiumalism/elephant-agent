@@ -58,6 +58,8 @@ done
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
+venv_dir="${install_root}/venv"
+venv_python="${venv_dir}/bin/python"
 state_dir="${install_root}/herd"
 launcher_path="${bin_dir}/elephant"
 
@@ -118,17 +120,22 @@ set -euo pipefail
 repo_root="${repo_root}"
 install_root="\${ELEPHANT_HOME:-${install_root}}"
 state_dir="\${ELEPHANT_HERD_DIR:-${state_dir}}"
-python_bin="${python_bin}"
+venv_python="\${ELEPHANT_PYTHON:-${venv_python}}"
 
 if [ ! -d "\${repo_root}" ]; then
   echo "Elephant Agent repo checkout is missing: \${repo_root}" >&2
+  exit 1
+fi
+if [ ! -x "\${venv_python}" ]; then
+  echo "Elephant Agent runtime is missing: \${venv_python}" >&2
+  echo "Run 'bash scripts/install.sh install' again." >&2
   exit 1
 fi
 
 cd "\${repo_root}"
 export ELEPHANT_HOME="\${install_root}"
 export ELEPHANT_HERD_DIR="\${state_dir}"
-exec "\${python_bin}" -m apps.launcher "\$@"
+exec "\${venv_python}" -m apps.launcher "\$@"
 EOF
   chmod +x "${launcher_path}"
 }
@@ -151,11 +158,21 @@ run_launcher() {
   "${launcher_path}"
 }
 
+ensure_runtime() {
+  mkdir -p "${install_root}"
+  if [ ! -x "${venv_python}" ]; then
+    "${python_bin}" -m venv "${venv_dir}"
+  fi
+  "${venv_python}" -m pip install --upgrade pip setuptools wheel >/dev/null
+  "${venv_python}" -m pip install --upgrade -e "${repo_root}"
+}
+
 install_or_upgrade() {
   require_command "${python_bin}"
   require_python_version
   mkdir -p "${install_root}" "${state_dir}"
   ensure_config_yaml
+  ensure_runtime
   write_launcher
 
   echo "Installed Elephant Agent CLI launcher"
@@ -164,6 +181,7 @@ install_or_upgrade() {
   echo "  herd_dir: ${state_dir}"
   echo "  runtime_db: ${state_dir}/elephant.sqlite3"
   echo "  config: ${install_root}/config.yaml"
+  echo "  runtime: ${venv_python}"
   echo "  launcher: ${launcher_path}"
   if ! printf '%s' ":${PATH}:" | grep -Fq ":${bin_dir}:"; then
     echo "  path_hint: add ${bin_dir} to PATH to call 'elephant' directly"

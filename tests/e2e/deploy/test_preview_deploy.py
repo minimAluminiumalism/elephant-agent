@@ -62,13 +62,13 @@ class PreviewDeploySmokeTest(unittest.TestCase):
         docs_tools_text = dist_docs_tools.read_text(encoding="utf-8")
         robots_text = dist_robots.read_text(encoding="utf-8")
         self.assertIn('channel="${ELEPHANT_INSTALL_CHANNEL:-dev}"', install_script_text)
-        self.assertIn('package_name="elephant"', install_script_text)
+        self.assertIn('package_name="elephant-agent"', install_script_text)
         self.assertIn(
             '<link data-rh="true" rel="canonical" href="https://elephant.agentic-in.ai/"',
             index_text,
         )
         self.assertIn(
-            '<meta data-rh="true" name="description" content="Elephant Agent grows from you — a personal AI that understands first, gets curious at your pace, and grows into your shape."',
+            '<meta data-rh="true" name="description" content="Elephant Agent is personal-model-first AI: it turns memory into correctable understanding, then gets curious at your pace."',
             index_text,
         )
         self.assertIn(
