@@ -106,7 +106,7 @@ class PublicInstallScriptSmokeTest(unittest.TestCase):
         self.assertIn("twine check dist/*", makefile_content)
         self.assertIn("Missing PYPI_API_TOKEN for the publish job", content)
         self.assertIn("curl -fsSL https://elephant.agentic-in.ai/install.sh | bash", content)
-        self.assertIn("pip install elephant==", content)
+        self.assertIn("pip install elephant-agent==", content)
 
     def test_pyproject_excludes_site_packages_from_python_distribution(self) -> None:
         content = (ROOT / "pyproject.toml").read_text(encoding="utf-8")

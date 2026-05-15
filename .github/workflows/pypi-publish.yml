@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   publish:
-    if: github.repository == 'agentic-in/elephant'
+    if: github.repository == 'agentic-in/elephant-agent'
     runs-on: ubuntu-latest
     environment: PYPI_API_TOKEN
     permissions:
@@ -137,7 +137,7 @@ jobs:
             Or pin the published package directly:
 
             ```bash
-            pip install elephant==${{ steps.extract_version.outputs.version }}
+            pip install elephant-agent==${{ steps.extract_version.outputs.version }}
             ```
           files: |
             dist/*

@@ -246,62 +246,41 @@ class EmbeddingProvider(Protocol):
     model_id: str
     supported_dimensions: tuple[int, ...]
 
-    def embed(self, request: EmbeddingRequest) -> EmbeddingBatch:
-        """Return embeddings for the requested texts."""
+    def embed(self, request: EmbeddingRequest) -> EmbeddingBatch: ...
 
-    def health(self) -> EmbeddingHealth:
-        """Describe provider readiness and configuration."""
+    def health(self) -> EmbeddingHealth: ...
 
-    def preload_state(self) -> EmbeddingPreloadState:
-        """Describe preload state for hot-path embedding use."""
+    def preload_state(self) -> EmbeddingPreloadState: ...
 
     def preload(
-        self,
-        *,
-        target: str,
-        entries: tuple[EmbeddingPreloadEntry, ...],
-        latency_mode: str = "balanced",
-    ) -> EmbeddingPreloadState:
-        """Synchronously steady one candidate corpus."""
+        self, *, target: str, entries: tuple[EmbeddingPreloadEntry, ...], latency_mode: str = "balanced"
+    ) -> EmbeddingPreloadState: ...
 
     def queue_backfill(
-        self,
-        *,
-        target: str,
-        entries: tuple[EmbeddingPreloadEntry, ...],
-        latency_mode: str = "balanced",
-    ) -> EmbeddingPreloadState:
-        """Queue one candidate corpus for background steadying."""
+        self, *, target: str, entries: tuple[EmbeddingPreloadEntry, ...], latency_mode: str = "balanced"
+    ) -> EmbeddingPreloadState: ...
 
-    def cached_vector(self, *, target: str, cache_key: str, dimensions: int) -> EmbeddingVector | None:
-        """Return a cached candidate vector when one exists."""
+    def cached_vector(self, *, target: str, cache_key: str, dimensions: int) -> EmbeddingVector | None: ...
 
-    def pending_vector(self, *, target: str, cache_key: str, dimensions: int) -> bool:
-        """Return whether a candidate vector is already queued or inflight."""
+    def pending_vector(self, *, target: str, cache_key: str, dimensions: int) -> bool: ...
 
-    def steady_async(self) -> bool:
-        """Start a non-blocking provider steadyup when the local runtime is ready."""
+    def steady_async(self) -> bool: ...
 
 
 @runtime_checkable
 class EmbeddingModelRegistry(Protocol):
-    def register(self, provider: EmbeddingProvider) -> None:
-        """Register one embedding provider."""
+    def register(self, provider: EmbeddingProvider) -> None: ...
 
-    def get(self, provider_id: str) -> EmbeddingProvider | None:
-        """Return a provider by id."""
+    def get(self, provider_id: str) -> EmbeddingProvider | None: ...
 
-    def default(self) -> EmbeddingProvider:
-        """Return the canonical default provider."""
+    def default(self) -> EmbeddingProvider: ...
 
-    def list(self) -> tuple[EmbeddingProvider, ...]:
-        """Return every registered provider."""
+    def list(self) -> tuple[EmbeddingProvider, ...]: ...
 
 
 @runtime_checkable
 class EmbeddingService(Protocol):
-    def embed(self, request: EmbeddingRequest) -> EmbeddingBatch:
-        """Embed one request through the canonical provider path."""
+    def embed(self, request: EmbeddingRequest) -> EmbeddingBatch: ...
 
     def embed_text(
         self,
@@ -313,14 +292,11 @@ class EmbeddingService(Protocol):
         dimensions: int | None = None,
         provider_id: str | None = None,
         metadata: Mapping[str, str] | None = None,
-    ) -> EmbeddingVector:
-        """Embed one text and return the single vector."""
+    ) -> EmbeddingVector: ...
 
-    def health(self, provider_id: str | None = None) -> EmbeddingHealth:
-        """Return provider health for the selected embedding path."""
+    def health(self, provider_id: str | None = None) -> EmbeddingHealth: ...
 
-    def preload_state(self, provider_id: str | None = None) -> EmbeddingPreloadState:
-        """Return provider preload state for the selected embedding path."""
+    def preload_state(self, provider_id: str | None = None) -> EmbeddingPreloadState: ...
 
     def preload(
         self,
@@ -329,8 +305,7 @@ class EmbeddingService(Protocol):
         entries: tuple[EmbeddingPreloadEntry, ...],
         latency_mode: str = "balanced",
         provider_id: str | None = None,
-    ) -> EmbeddingPreloadState:
-        """Synchronously steady one candidate corpus through the selected provider."""
+    ) -> EmbeddingPreloadState: ...
 
     def queue_backfill(
         self,
@@ -339,8 +314,7 @@ class EmbeddingService(Protocol):
         entries: tuple[EmbeddingPreloadEntry, ...],
         latency_mode: str = "balanced",
         provider_id: str | None = None,
-    ) -> EmbeddingPreloadState:
-        """Queue one candidate corpus for background steadying."""
+    ) -> EmbeddingPreloadState: ...
 
     def cached_vector(
         self,
@@ -349,8 +323,7 @@ class EmbeddingService(Protocol):
         cache_key: str,
         dimensions: int,
         provider_id: str | None = None,
-    ) -> EmbeddingVector | None:
-        """Return a cached candidate vector when one exists."""
+    ) -> EmbeddingVector | None: ...
 
     def pending_vector(
         self,
@@ -359,11 +332,9 @@ class EmbeddingService(Protocol):
         cache_key: str,
         dimensions: int,
         provider_id: str | None = None,
-    ) -> bool:
-        """Return whether a candidate vector is already queued or inflight."""
+    ) -> bool: ...
 
-    def steady_async(self, provider_id: str | None = None) -> bool:
-        """Start a non-blocking provider steadyup when the local runtime is ready."""
+    def steady_async(self, provider_id: str | None = None) -> bool: ...
 
 
 class InMemoryEmbeddingModelRegistry:

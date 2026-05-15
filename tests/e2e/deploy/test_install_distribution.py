@@ -66,7 +66,7 @@ class InstallDistributionSmokeTest(unittest.TestCase):
         overview = self._run_launcher()
         self.assertIn("Elephant Agent CLI", overview.stdout)
         self.assertIn("personal-model-first AI", overview.stdout)
-        self.assertIn("Understand first", overview.stdout)
+        self.assertIn("Model what matters", overview.stdout)
         self.assertIn("elephant init", overview.stdout)
         self.assertIn("skills", overview.stdout)
         self.assertIn("dashboard", overview.stdout)
