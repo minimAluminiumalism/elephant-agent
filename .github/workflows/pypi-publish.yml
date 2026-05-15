@@ -1,0 +1,161 @@
+name: Publish Python Package to PyPI
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Stable version to publish manually (for example: 1.0.0)"
+        required: false
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    if: github.repository == 'agentic-in/elephant'
+    runs-on: ubuntu-latest
+    environment: PYPI_API_TOKEN
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            apps/site/package-lock.json
+            apps/dashboard/package-lock.json
+
+      - name: Extract version from tag, input, or pyproject
+        id: extract_version
+        env:
+          INPUT_VERSION: ${{ inputs.version || '' }}
+        run: |
+          python <<'PY'
+          from __future__ import annotations
+          import os
+          import re
+          from datetime import datetime, timezone
+          from pathlib import Path
+          import tomllib
+
+          pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+          current = pyproject["project"]["version"]
+          base = re.sub(r"\.dev\d+$", "", current)
+          ref = os.environ.get("GITHUB_REF", "")
+          event_name = os.environ.get("GITHUB_EVENT_NAME", "")
+          input_version = os.environ.get("INPUT_VERSION", "").strip()
+          github_output = Path(os.environ["GITHUB_OUTPUT"])
+
+          if event_name == "workflow_dispatch" and input_version:
+              version = input_version
+              tag = f"v{version}"
+              is_dev = "false"
+          elif ref.startswith("refs/tags/"):
+              tag = ref.split("/", 2)[-1]
+              version = tag[1:] if tag.startswith("v") else tag
+              is_dev = "false"
+          else:
+              timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+              version = f"{base}.dev{timestamp}"
+              tag = f"v{version}"
+              is_dev = "true"
+
+          with github_output.open("a", encoding="utf-8") as handle:
+              handle.write(f"version={version}\n")
+              handle.write(f"tag={tag}\n")
+              handle.write(f"is_dev={is_dev}\n")
+              handle.write(f"base_version={base}\n")
+              handle.write(f"commit_sha={os.environ.get('GITHUB_SHA', '')}\n")
+          PY
+
+      - name: Update package version for this publish
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          import re
+
+          target = "${{ steps.extract_version.outputs.version }}"
+          path = Path("pyproject.toml")
+          content = path.read_text(encoding="utf-8")
+          updated = re.sub(r'^version = ".*"$', f'version = "{target}"', content, count=1, flags=re.MULTILINE)
+          path.write_text(updated, encoding="utf-8")
+          print(updated.splitlines()[6])
+          PY
+
+      - name: Build and verify release package
+        run: |
+          make package-build
+          make package-verify
+
+      - name: Publish to PyPI
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.version != '')
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          if [ -z "${TWINE_PASSWORD}" ]; then
+            echo "::error::Missing PYPI_API_TOKEN for the publish job. Configure it as an environment secret on the PYPI_API_TOKEN environment or as a repo Actions secret."
+            exit 1
+          fi
+          twine upload --skip-existing --verbose dist/*
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.extract_version.outputs.tag }}
+          name: elephant ${{ steps.extract_version.outputs.tag }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## Install
+
+            ```bash
+            curl -fsSL https://elephant.agentic-in.ai/install.sh | bash -s -- --channel stable
+            ```
+
+            Or pin the published package directly:
+
+            ```bash
+            pip install elephant==${{ steps.extract_version.outputs.version }}
+            ```
+          files: |
+            dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "## Elephant Agent package published" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Version:** ${{ steps.extract_version.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Type:** $(if [ '${{ steps.extract_version.outputs.is_dev }}' = 'true' ]; then echo 'development'; else echo 'stable'; fi)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Remote install" >> "$GITHUB_STEP_SUMMARY"
+          echo '```bash' >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.extract_version.outputs.is_dev }}" = "true" ]; then
+            echo "curl -fsSL https://elephant.agentic-in.ai/install.sh | bash" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "curl -fsSL https://elephant.agentic-in.ai/install.sh | bash -s -- --channel stable" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

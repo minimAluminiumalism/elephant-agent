@@ -1,0 +1,26 @@
+"""Public inventory of auth package surfaces."""
+
+AUTH_SURFACES = (
+    "SecretReference",
+    "SecretValueResolution",
+    "AuthProfile",
+    "ProviderManifest",
+    "ProviderCatalog",
+    "ProviderProfileFactory",
+    "ProviderProfileInput",
+    "ProviderAuthState",
+    "CredentialBundle",
+    "SecretStore",
+    "AuthProfileStore",
+    "CredentialResolver",
+    "CredentialDiscoveryProvider",
+    "InMemorySecretStore",
+    "InMemoryAuthProfileStore",
+    "PersistentAuthProfileStore",
+    "ProfileCredentialResolver",
+    "EncryptedRepositorySecretStore",
+    "EnvironmentSecretStore",
+    "InMemoryCredentialDiscoveryRegistry",
+    "PreviewAuthProviderCapability",
+    "profile_from_input",
+)

@@ -1,0 +1,16 @@
+[Unit]
+Description=Elephant Agent preview deployment
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/elephant
+EnvironmentFile=-/etc/elephant/elephant-preview.env
+ExecStart=/usr/bin/docker compose -f deploy/docker/docker-compose.preview.yml up --build
+ExecStop=/usr/bin/docker compose -f deploy/docker/docker-compose.preview.yml down
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

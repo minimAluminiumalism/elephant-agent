@@ -1,0 +1,282 @@
+"""Evidence packet building for reflect agents.
+
+Constructs the user prompt that provides the agent with context about
+the job, the user, and what happened in the episode.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import Any
+
+from packages.contracts.runtime import LearningJob
+
+from .features.types import Feature
+
+
+def _compact(value: object, *, limit: int = 500) -> str:
+    text = " ".join(str(value or "").split()).strip()
+    if len(text) <= limit:
+        return text
+    return text[: max(0, limit - 1)].rstrip() + "…"
+
+
+def _internal_artifact_text(value: object) -> bool:
+    text = " ".join(str(value or "").split()).strip().casefold()
+    return any(
+        marker in text
+        for marker in (
+            "bounded elephant sub-agent",
+            "background learning agent",
+            "tool.learning.result.write",
+            "manual learning no-op",
+            "synthetic validation",
+            "run_tag=",
+        )
+    )
+
+
+def _fact_topic(fact: Any) -> str:
+    metadata = getattr(fact, "metadata", {}) if isinstance(getattr(fact, "metadata", {}), Mapping) else {}
+    return str(metadata.get("topic") or "").strip()
+
+
+def _basic_user_anchor_lines(facts: tuple[Any, ...]) -> tuple[str, ...]:
+    anchors: dict[str, str] = {}
+    topic_labels = {
+        "identity.anchor.name.preferred": "preferred_name",
+        "identity.anchor.gender.self_description": "gender",
+        "identity.character.mbti.type": "personality",
+        "world.people.companion.role": "companion_role",
+    }
+    for fact in facts:
+        topic = _fact_topic(fact)
+        label = topic_labels.get(topic)
+        if not label:
+            # Also match by partial key
+            if "name.preferred" in topic:
+                label = "preferred_name"
+            elif "language" in topic:
+                label = "first_language"
+        if not label:
+            continue
+        # First match per label wins — avoids duplicate preferred_name etc.
+        if label in anchors:
+            continue
+        text = _compact(getattr(fact, "text", ""), limit=180)
+        if text:
+            anchors[label] = f"{label}: {text}"
+    return tuple(anchors.values())
+
+
+def _pm_portrait_lines(facts: tuple[Any, ...], *, limit: int = 40) -> tuple[str, ...]:
+    """Build a full portrait from PM facts for diary/creative features."""
+    lines: list[str] = []
+    for fact in facts:
+        fact_meta = dict(fact.metadata) if isinstance(fact.metadata, Mapping) else {}
+        topic = fact_meta.get("topic", "")
+        if "letter" in topic or "affinity" in topic:
+            continue
+        lines.append(f"- [{fact.lens}] {fact.text}")
+    return tuple(lines[:limit])
+
+
+def _build_compress_evidence(metadata: dict[str, Any]) -> str:
+    """Minimal evidence for compress feature — just the conversation content.
+
+    User identity facts are intentionally excluded — they are noise for a
+    summary task and waste the compress agent's token budget.
+    """
+    compressed_messages = str(metadata.get("compressed_messages") or "")
+    previous_summary = str(metadata.get("previous_summary") or "")
+    token_budget = int(metadata.get("token_budget") or 800)
+    tail_hint = str(metadata.get("tail_hint") or "")
+    lines: list[str] = [
+        f"Token budget: ~{token_budget} tokens",
+    ]
+    if previous_summary:
+        lines.extend(["", "## Previous summary (for continuity)", previous_summary])
+    lines.extend([
+        "",
+        "## Conversation to compress",
+        compressed_messages or "(no content)",
+    ])
+    if tail_hint:
+        lines.extend(["", "## Recent context (do NOT summarize, for handoff only)", tail_hint])
+    return "\n".join(lines)
+
+
+def _episode_turn_summary(runtime: Any, *, episode_id: str) -> tuple[str, ...]:
+    """Build a concise turn-by-turn summary from episode loops/steps.
+
+    Reads the canonical step format written by KernelStepRecorder:
+      - record_input (observation): metadata.user_query
+      - effective_user_query (acting): metadata.effective_user_query
+      - call_model (acting): metadata.assistant_response
+      - call_tool (acting): metadata.tool_name
+    """
+    try:
+        loops = tuple(runtime.repository.list_loops(episode_id=episode_id))
+    except Exception:
+        return ()
+    if not loops:
+        return ()
+
+    # Sort loops by start time
+    sorted_loops = sorted(loops, key=lambda loop: str(getattr(loop, "started_at", "") or ""))
+    lines: list[str] = []
+    turn_num = 0
+
+    for loop in sorted_loops:
+        try:
+            steps = tuple(runtime.repository.list_steps(loop_id=loop.loop_id))
+        except Exception:
+            continue
+        if not steps:
+            continue
+
+        # Extract user query, tool stats, and assistant response from canonical step format
+        user_query = ""
+        assistant_response = ""
+        tool_counts: dict[str, int] = {}
+        skills_used: list[str] = []
+
+        for step in sorted(steps, key=lambda s: int(getattr(s, "sequence", 0) or 0)):
+            metadata = dict(step.metadata) if isinstance(getattr(step, "metadata", None), Mapping) else {}
+            action = str(getattr(step, "action", "") or "")
+
+            if action == "record_input":
+                content = str(metadata.get("user_query") or "").strip()
+                if content:
+                    user_query = content
+
+            elif action == "effective_user_query":
+                # Prefer effective query (may include recall) over raw input
+                content = str(metadata.get("effective_user_query") or metadata.get("raw_user_query") or "").strip()
+                if content and not user_query:
+                    user_query = content
+
+            elif action == "call_tool":
+                tool_name = str(metadata.get("tool_name") or "").strip()
+                if tool_name:
+                    short_name = tool_name.removeprefix("tool.")
+                    tool_counts[short_name] = tool_counts.get(short_name, 0) + 1
+
+            elif action == "call_model":
+                content = str(metadata.get("assistant_response") or "").strip()
+                if content:
+                    assistant_response = content
+
+        # Skip internal turns (cli.startup, learning sub-agents) with no real user input
+        if not user_query and not assistant_response:
+            continue
+        # Also skip if the query looks like an internal system prompt
+        if user_query and not assistant_response and _internal_artifact_text(user_query):
+            continue
+
+        turn_num += 1
+        query_preview = user_query[:200] if user_query else "(no user input)"
+        lines.append(f"Turn {turn_num}: {query_preview}")
+
+        if tool_counts:
+            total_calls = sum(tool_counts.values())
+            tool_parts = [f"{name} ×{count}" if count > 1 else name for name, count in sorted(tool_counts.items(), key=lambda x: -x[1])[:6]]
+            lines.append(f"  [tools: {total_calls} calls — {', '.join(tool_parts)}]")
+
+        if skills_used:
+            lines.append(f"  [skills: {', '.join(skills_used[:4])}]")
+
+        if assistant_response:
+            resp_preview = assistant_response[:300]
+            lines.append(f"  assistant: {resp_preview}")
+
+        lines.append("")
+
+    return tuple(lines) if lines else ("(no turns found)",)
+
+
+def build_evidence(
+    runtime: Any,
+    job: LearningJob,
+    features: tuple[Feature, ...],
+) -> str:
+    """Build the evidence packet (user prompt) for the reflect agent."""
+    feature_ids = {f.feature_id for f in features}
+    metadata = dict(job.metadata) if isinstance(job.metadata, Mapping) else {}
+
+    # Load shared context
+    episode = runtime.repository.load_episode(job.episode_id)
+    try:
+        active_facts = tuple(
+            runtime.repository.list_personal_model_facts(personal_model_id=job.personal_model_id, status="active")
+        )
+    except Exception:
+        active_facts = ()
+
+    anchors = _basic_user_anchor_lines(active_facts)
+
+    # Compress has a dedicated minimal evidence format
+    if feature_ids == {"compress"}:
+        return _build_compress_evidence(metadata)
+
+    lines: list[str] = [
+        f"trigger: {job.trigger}",
+        f"features: {', '.join(f.feature_id for f in features)}",
+        "",
+        "## User anchors",
+        *(anchors or ("(none)",)),
+    ]
+
+    if "dream" in feature_ids:
+        target_date = str(metadata.get("target_date") or "today").strip() or "today"
+        user_tz = "Asia/Shanghai"
+        try:
+            user = runtime.inspect_user(session_id=job.episode_id)
+            if user and user.timezone:
+                user_tz = user.timezone
+        except Exception:
+            pass
+        lines.extend([
+            "",
+            "## Dream context",
+            f"target_date: {target_date}",
+            f"user_timezone: {user_tz}",
+        ])
+
+    # Episode evidence for features that learn from the supplied close packet.
+    # Dream is a scheduled consolidation mode and intentionally receives no
+    # episode-close packet, even when paired with question/skill maintenance.
+    if "dream" not in feature_ids and feature_ids & {"pm", "questions", "skills"}:
+        episode_summary = _compact(getattr(episode, "exit_summary", "") if episode is not None else "", limit=700)
+        turn_lines = _episode_turn_summary(runtime, episode_id=job.episode_id)
+        lines.extend([
+            "",
+            "## Episode summary",
+            *(tuple(item for item in (episode_summary,) if item) or ("(none)",)),
+            "",
+            "## Conversation turns",
+            *(turn_lines or ("(no conversation data)",)),
+        ])
+
+    # Diary-specific context
+    if "diary" in feature_ids:
+        target_date = metadata.get("diary_target_date") or metadata.get("target_date", "")
+        user_tz = "Asia/Shanghai"
+        try:
+            user = runtime.inspect_user(session_id=job.episode_id)
+            if user and user.timezone:
+                user_tz = user.timezone
+        except Exception:
+            pass
+        portrait = _pm_portrait_lines(active_facts)
+        lines.extend([
+            "",
+            f"## Diary context",
+            f"target_date: {target_date}",
+            f"user_timezone: {user_tz}",
+            "",
+            "## Who this person is (active PM facts)",
+            *(portrait or ("(no facts yet)",)),
+        ])
+
+    return "\n".join(lines)

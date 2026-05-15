@@ -1,0 +1,537 @@
+"""Session, memory, and profile persistence methods for the CLI runtime."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import replace
+from datetime import datetime, timezone
+import json
+from pathlib import Path
+import shutil
+from typing import Any
+from uuid import uuid4
+
+from packages.contracts import Record
+from packages.contracts.layers import Episode
+from packages.contracts.runtime import EvidenceRetrievalRequest, EvidenceRetrievalResult, MemoryRecord
+from packages.evidence import (
+    MemoryCaptureRequest,
+    UnifiedRecallRequest,
+    render_recall_hit,
+    unified_recall,
+)
+from packages.state import (
+    LoadedProfile,
+    build_canonical_profile_state,
+    load_persisted_canonical_state,
+    load_runtime_profile,
+    parse_elephant_identity_display_name,
+    profile_manifest_payload,
+    read_elephant_identity_file,
+    resolve_runtime_state,
+    sync_canonical_profile_state,
+)
+
+from .runtime_cognition import (
+    _list_scope_memories,
+    _memory_query_seed,
+    _memory_query_with_relationship,
+    _memory_scope_reason,
+    _memory_scope_session_ids,
+)
+from .runtime_snapshot import load_snapshot_state_focus
+from .runtime_support import (
+    EggSummary,
+    _PlanningMemoryRecovery,
+    _elephant_state_id,
+    _coerce_str_tuple,
+    _optional_datetime,
+    _utc_now,
+)
+
+def _hidden_elephant_id(elephant_id: str) -> bool:
+    return str(elephant_id or "").strip().startswith("learn-live")
+
+
+class CliRuntimeRecordsMixin:
+    def inspect_session(self, session_id: str) -> Episode:
+        return self._load_session(session_id)
+
+    def recent_sessions(self, *, limit: int = 5) -> tuple[Episode, ...]:
+        return self._list_sessions(limit=limit)
+
+    def list_herd(self, *, limit: int = 12) -> tuple[EggSummary, ...]:
+        grouped: dict[str, list[Episode]] = {}
+        for session in self._list_sessions():
+            elephant_id = self.elephant_id_for_session(session)
+            if _hidden_elephant_id(elephant_id):
+                continue
+            grouped.setdefault(elephant_id, []).append(session)
+        herd = tuple(
+            EggSummary(
+                elephant_id=elephant_id,
+                latest_session_id=sessions[0].episode_id,
+                latest_status=sessions[0].status,
+                updated_at=sessions[0].updated_at,
+                session_count=len(sessions),
+            )
+            for elephant_id, sessions in grouped.items()
+        )
+        ordered = tuple(sorted(herd, key=lambda item: (item.updated_at or datetime.min.replace(tzinfo=timezone.utc), item.elephant_id), reverse=True))
+        return ordered[:limit]
+
+    def latest_session_for_elephant(self, elephant_id: str) -> Episode | None:
+        target = elephant_id.strip()
+        if not target:
+            return None
+        for session in self._list_sessions():
+            if self.elephant_id_for_session(session) == target:
+                return session
+        return None
+
+    def session_ids_for_elephant(self, elephant_id: str) -> tuple[str, ...]:
+        target = elephant_id.strip()
+        if not target:
+            return ()
+        return tuple(
+            session.episode_id
+            for session in self._list_sessions()
+            if self.elephant_id_for_session(session) == target
+        )
+
+    def state_for_elephant(self, elephant_id: str):
+        target = elephant_id.strip()
+        if not target:
+            return None
+        return resolve_runtime_state(
+            self.repository,
+            state_id=_elephant_state_id(target),
+            elephant_id=target,
+            required=False,
+        )
+
+    def current_elephant_state(self):
+        return self.repository.current_state()
+
+    def ensure_elephant_state(
+        self,
+        session: Episode,
+        *,
+        elephant_identity_text: str | None = None,
+        elephant_display_name: str | None = None,
+        elephant_mode: str | None = None,
+        elephant_companion=None,
+    ):
+        elephant_id = self.elephant_id_for_session(session)
+        loaded = self._load_profile(session.personal_model_id)
+        current_state = self.current_elephant_state()
+        existing = self.state_for_elephant(elephant_id)
+        elephant_file_identity = read_elephant_identity_file(self.paths.elephant_file_path(elephant_id))
+        elephant_identity_text = elephant_file_identity or elephant_identity_text or loaded.elephant_identity_text or ""
+        effective_display_name = (
+            elephant_display_name
+            or parse_elephant_identity_display_name(elephant_identity_text)
+            or (existing.elephant_name if existing is not None and existing.elephant_name else "")
+            or elephant_id.replace("-", " ").replace("_", " ").title()
+            or loaded.state.display_name
+        )
+        effective_mode = elephant_mode or (existing.identity_mode if existing is not None else "") or loaded.state.mode
+        effective_companion = elephant_companion or loaded.companion
+        effective_initiative = (
+            effective_companion.initiative
+            if effective_companion is not None
+            else (existing.initiative if existing is not None else "")
+        )
+        effective_working_style = (
+            effective_companion.personality_preset
+            if effective_companion is not None
+            else (existing.working_style if existing is not None else "")
+        )
+        if existing is None:
+            # Seed the Elephant State row with empty current context. Real context arrives via real turns.
+            elephant_state = self.repository.create_state(
+                state_id=_elephant_state_id(elephant_id),
+                personal_model_id=session.personal_model_id,
+                elephant_id=elephant_id,
+                state_anchor=f"elephant:{elephant_id}",
+                elephant_name=effective_display_name,
+                identity_mode=effective_mode,
+                initiative=effective_initiative,
+                working_style=effective_working_style,
+                surface_bindings=("cli",),
+                elephant_identity_text=elephant_identity_text,
+                summary="",
+                metadata={"profile_id": session.personal_model_id},
+            )
+            return self.repository.load_state(elephant_state.state_id) or elephant_state
+        # Preserve existing real context on re-sync.
+        _seed_summary_markers = {
+            "",
+            f"{effective_display_name} is ready to continue the current elephant line.",
+            "(fake)",
+        }
+        keep_summary = existing.summary if existing.summary not in _seed_summary_markers else ""
+        keep_context_note = (
+            existing.current_context_note
+            if existing.current_context_note not in _seed_summary_markers
+            else ""
+        )
+        updated = replace(
+            existing,
+            elephant_name=effective_display_name,
+            identity_mode=effective_mode,
+            initiative=effective_initiative,
+            working_style=effective_working_style,
+            surface_bindings=("cli",),
+            elephant_identity_text=elephant_identity_text,
+            summary=keep_summary,
+            current_context_note=keep_context_note,
+            metadata={**dict(existing.metadata), "profile_id": session.personal_model_id},
+        )
+        self.repository.upsert_state(updated)
+        refreshed = self.repository.load_state(updated.state_id)
+        if refreshed is None:
+            raise RuntimeError(f"elephant state missing after sync: {updated.state_id}")
+        return refreshed
+
+    def delete_elephant(self, elephant_id: str) -> int:
+        session_ids = self.session_ids_for_elephant(elephant_id)
+        elephant_state = self.state_for_elephant(elephant_id)
+        if not session_ids and elephant_state is None:
+            return 0
+        self._delete_memory_rows_for_sessions(session_ids)
+        deleted_sessions = 0
+        if session_ids:
+            deleted_sessions = self.repository.delete_episodes(session_ids, delete_orphaned_profiles=False)
+        if elephant_state is not None:
+            self.repository.delete_state(elephant_state.state_id)
+        self._delete_elephant_file_dirs((elephant_id,))
+        return deleted_sessions
+
+    def delete_all_elephants(self) -> tuple[int, int]:
+        herd = self.list_herd(limit=4096)
+        states = tuple(self.repository.list_states())
+        elephant_ids = {elephant.elephant_id for elephant in herd}
+        elephant_ids.update(state.elephant_id for state in states if state.elephant_id)
+        session_ids = tuple(session.episode_id for session in self._list_sessions())
+        if not session_ids and not states:
+            return (0, 0)
+        self._delete_memory_rows_for_sessions(session_ids)
+        deleted_sessions = 0
+        if session_ids:
+            deleted_sessions = self.repository.delete_episodes(session_ids, delete_orphaned_profiles=False)
+        for state in states:
+            self.repository.delete_state(state.state_id)
+        self._delete_elephant_file_dirs(tuple(elephant_ids))
+        return (len(elephant_ids), deleted_sessions)
+
+    def _profile_ids_for_sessions(self, session_ids: tuple[str, ...]) -> tuple[str, ...]:
+        profile_ids: list[str] = []
+        for session_id in session_ids:
+            session = self.repository.load_episode_state(session_id)
+            if session is not None and session.personal_model_id:
+                profile_ids.append(session.personal_model_id)
+        return tuple(profile_ids)
+
+    def _delete_memory_rows_for_sessions(self, session_ids: tuple[str, ...]) -> None:
+        # No-op retained for callers after migration 0013 removed row deletion work.
+        pass
+
+    def _delete_elephant_file_dirs(self, elephant_ids: tuple[str, ...]) -> None:
+        cleaned_elephant_ids = tuple(dict.fromkeys(elephant_id.strip() for elephant_id in elephant_ids if elephant_id.strip()))
+        for elephant_id in cleaned_elephant_ids:
+            shutil.rmtree(self.paths.elephant_file_path(elephant_id), ignore_errors=True)
+
+    def elephant_id_for_session(self, session: Episode) -> str:
+        if session.elephant_id:
+            return session.elephant_id
+        # Infer from state_id: state:milo -> milo (exclude non-elephant states like state:xxx:default)
+        state_id = str(getattr(session, "state_id", "") or "").strip()
+        if state_id.startswith("state:") and ":" not in state_id[len("state:"):]:
+            inferred = state_id[len("state:"):]
+            if inferred:
+                return inferred
+        lineage = self.repository.episode_lineage(session.episode_id)
+        origin = lineage[0].episode_id if lineage else session.episode_id
+        return f"elephant-{origin[:8]}"
+
+    def _list_sessions(self, *, limit: int | None = None) -> tuple[Episode, ...]:
+        episodes = sorted(
+            self.repository.list_episodes(),
+            key=lambda episode: (
+                episode.metadata.get("updated_at", ""),
+                (episode.ended_at or episode.started_at).isoformat(),
+                episode.episode_id,
+            ),
+            reverse=True,
+        )
+        if limit is not None:
+            episodes = episodes[:limit]
+        sessions: list[Episode] = []
+        for episode in episodes:
+            session = self.repository.load_episode_state(episode.episode_id)
+            if session is not None:
+                sessions.append(session)
+        return tuple(sessions)
+
+    def latest_session(self) -> Episode | None:
+        sessions = self.recent_sessions(limit=1)
+        if not sessions:
+            return None
+        return sessions[0]
+
+    def _planning_memory_recovery(self, session: Episode, *, limit: int = 8) -> _PlanningMemoryRecovery:
+        from .runtime_records_planning import plan_memory_recovery
+
+        return plan_memory_recovery(self, session, limit=limit)
+
+    def _planning_memories(self, session: Episode, *, limit: int = 8) -> tuple[MemoryRecord, ...]:
+        return self._planning_memory_recovery(session, limit=limit).memories
+
+    def inspect_memories(self, session_id: str) -> tuple[MemoryRecord, ...]:
+        return tuple(self.memory_runtime.store.list(episode_id=session_id))
+
+    def list_personal_model_memories(
+        self,
+        personal_model_id: str,
+    ) -> tuple[MemoryEntry, ...]:
+        return tuple(
+            entry
+            for entry in self.repository.list_memory_entries(
+                owner_scope="personal_model",
+                personal_model_id=personal_model_id,
+            )
+            if entry.status != "deleted"
+        )
+
+    def inspect_personal_model_memory(self, personal_model_id: str, memory_id: str) -> MemoryEntry:
+        entry = self.repository.load_memory_entry(memory_id)
+        if entry is None or entry.owner_scope != "personal_model" or entry.personal_model_id != personal_model_id:
+            raise KeyError(memory_id)
+        return entry
+
+    def _memory_scope_target(self, session_id: str, scope: str):
+        session = self._load_session(session_id)
+        state = self.state_for_elephant(str(session.elephant_id or "")) or self.current_elephant_state()
+        if state is None:
+            state = self.ensure_elephant_state(session)
+        owner_scope = "state" if scope == "state" else "personal_model"
+        return session, state, owner_scope
+
+    def _memory_entries_for_scope(self, session_id: str, scope: str):
+        _session, state, owner_scope = self._memory_scope_target(session_id, scope)
+        if owner_scope == "state":
+            return tuple(self.repository.list_memory_entries(owner_scope="state", state_id=state.state_id))
+        return tuple(
+            self.repository.list_memory_entries(
+                owner_scope="personal_model",
+                personal_model_id=state.personal_model_id,
+            )
+        )
+
+    def _find_entry_by_locator(
+        self,
+        session_id: str,
+        scope: str,
+        locator: str,
+    ) -> object | None:
+        """Resolve a memory entry via the shared fuzzy locator matcher.
+
+        Delegates to `packages/evidence/locator_match.py` which handles
+        NFKC normalisation, case-folding, unique/substring precedence,
+        most-recent-wins for ambiguity, and optional embedding-based
+        fuzzy fallback. Callers refine the locator and retry on None.
+        """
+        from packages.evidence import find_entry_by_locator
+
+        entries = tuple(
+            entry
+            for entry in self._memory_entries_for_scope(session_id, scope)
+            if entry.status in {"active", "committed"}
+        )
+        embedding_service = getattr(
+            getattr(self.memory_runtime.retriever, "evidence_retriever", None),
+            "embedding_service",
+            None,
+        )
+        return find_entry_by_locator(
+            entries,
+            locator,
+            embedding_service=embedding_service,
+        )
+
+    def recall_memory(
+        self,
+        session_id: str,
+        *,
+        query: str,
+        scope: str = "all",
+        time_range: object = None,
+        limit: int = 5,
+    ) -> Mapping[str, object]:
+        """Hybrid recall across Personal Model / State / Episode summaries.
+
+        Delegates to `unified_recall`, which runs the shared
+        HybridSemanticSearcher (vector + BM25 + exact + ngram RRF) against
+        the durable semantic index, then falls back to
+        `rank_recall_candidates` (lexical + CJK) if the backend is cold or
+        no hybrid hit comes back. No record ids are returned.
+        """
+        normalized_scope = scope.strip().lower() or "all"
+        if normalized_scope not in {"personal_model", "state", "episodes", "episode", "steps", "sources", "all"}:
+            normalized_scope = "all"
+        capped = max(1, min(int(limit or 5), 10))
+
+        if normalized_scope == "all":
+            scopes: tuple[str, ...] = ("personal_model", "state", "episodes", "steps", "sources")
+        else:
+            scopes = (normalized_scope,)
+
+        session = self.repository.load_episode_state(session_id)
+        personal_model_id = str(getattr(session, "personal_model_id", "") or "").strip() or "you"
+        state_id = str(getattr(session, "state_id", "") or "").strip() or None
+
+        searcher = None
+        bundle = getattr(self, "semantic_index_bundle", None)
+        if bundle is not None:
+            searcher = getattr(bundle, "searcher", None)
+
+        from packages.evidence import recall_time_range_from_payload
+
+        request = UnifiedRecallRequest(
+            query=query,
+            scopes=scopes,
+            personal_model_id=personal_model_id,
+            state_id=state_id,
+            limit=capped,
+            time_range=recall_time_range_from_payload(time_range),
+        )
+        embedding_service = getattr(getattr(self.memory_runtime, "retriever", None), "evidence_retriever", None)
+        embedding_service = getattr(embedding_service, "embedding_service", None)
+        ranked = unified_recall(
+            request,
+            repository=self.repository,
+            searcher=searcher,
+            embedding_service=embedding_service,
+        )
+        return {
+            "scope": normalized_scope,
+            "query": query.strip(),
+            "time_range": dict(time_range) if isinstance(time_range, dict) else {},
+            "hits": tuple(render_recall_hit(hit) for hit in ranked),
+        }
+
+    def _load_profile_source(self, profile_id: str) -> LoadedProfile:
+        """Extension-manifest overlay — identity comes from the DB separately."""
+        return self.profile_loader.load()
+
+    def _load_profile(self, profile_id: str) -> LoadedProfile:
+        loaded = load_runtime_profile(
+            self.repository,
+            personal_model_id=profile_id,
+            profile_loader=self.profile_loader,
+        )
+        # Merge config.yaml extensions into the manifest so extension data is available
+        from packages.runtime_config import load_extensions_from_config, global_config_path_for_state_dir, load_global_config
+        config_path = global_config_path_for_state_dir(self.paths.state_dir)
+        try:
+            config = load_global_config(
+                config_path,
+                state_dir=self.paths.state_dir,
+            )
+            extensions = load_extensions_from_config(config)
+            if extensions:
+                merged_manifest = {**dict(loaded.manifest), **extensions}
+                loaded = LoadedProfile(
+                    state=loaded.state,
+                    companion=loaded.companion,
+                    profile_dir=loaded.profile_dir,
+                    manifest_path=loaded.manifest_path,
+                    elephant_identity_text=loaded.elephant_identity_text,
+                    user_profile_text=loaded.user_profile_text,
+                    user_profile_path=loaded.user_profile_path,
+                    manifest=merged_manifest,
+                )
+        except (OSError, ValueError):
+            pass
+        return loaded
+
+    def _load_session(self, session_id: str) -> Episode:
+        session = self.repository.load_episode_state(session_id)
+        if session is None:
+            raise KeyError(session_id)
+        return session
+
+    def _load_profile_manifest(self) -> dict[str, Any]:
+        """Load extension manifest data from config.yaml."""
+        from packages.runtime_config import load_extensions_from_config, global_config_path_for_state_dir, load_global_config
+        config_path = global_config_path_for_state_dir(self.paths.state_dir)
+        try:
+            config = load_global_config(
+                config_path,
+                state_dir=self.paths.state_dir,
+            )
+            extensions = load_extensions_from_config(config)
+            if extensions:
+                return extensions
+        except (OSError, ValueError):
+            pass
+        return {}
+
+    def _write_profile_manifest(self, manifest: Mapping[str, Any]) -> None:
+        """Write extension manifest data to config.yaml."""
+        from packages.runtime_config import save_extensions_to_config, global_config_path_for_state_dir
+        config_path = global_config_path_for_state_dir(self.paths.state_dir)
+        save_extensions_to_config(
+            config_path,
+            state_dir=self.paths.state_dir,
+            extensions=manifest,
+        )
+
+    def _persist_profile(
+        self,
+        loaded_profile: LoadedProfile,
+        *,
+        sync_source: str = "profile.persist",
+    ) -> LoadedProfile:
+        previous_canonical = load_persisted_canonical_state(self.repository, loaded_profile.state.profile_id)
+        latest_session = self.latest_session()
+        resolved_state = resolve_runtime_state(
+            self.repository,
+            personal_model_id=loaded_profile.state.profile_id,
+            episode_id=(latest_session.episode_id if latest_session is not None and latest_session.personal_model_id == loaded_profile.state.profile_id else None),
+            required=False,
+        )
+        # Persist identity to SQLite only; no longer writing profile.json
+        self.repository.upsert_personal_model_runtime_state(loaded_profile.state)
+        canonical_bundle = build_canonical_profile_state(
+            loaded_profile,
+            elephant_id=resolved_state.elephant_id if resolved_state is not None and resolved_state.elephant_id else None,
+        )
+        sync_canonical_profile_state(
+            self.repository,
+            canonical_bundle,
+            previous=previous_canonical,
+            sync_source=sync_source,
+            memory_runtime=self.memory_runtime,
+            surface="cli",
+            state_id=resolved_state.state_id if resolved_state is not None else None,
+            episode_id=(latest_session.episode_id if latest_session is not None and latest_session.personal_model_id == loaded_profile.state.profile_id else None),
+        )
+        reloaded = self._load_profile(loaded_profile.state.profile_id)
+        self.repository.upsert_personal_model_runtime_state(reloaded.state)
+        if latest_session is not None and latest_session.personal_model_id == reloaded.state.profile_id:
+            self._write_snapshot(
+                profile=reloaded.state,
+                session=latest_session,
+                work_items=(),
+                memories=self.inspect_memories(latest_session.episode_id),
+                plan=None,
+                execution=None,
+                delivery=None,
+                stages=(),
+                event=None,
+                elephant_identity_text=reloaded.elephant_identity_text,
+                state_focus=load_snapshot_state_focus(self, session_id=latest_session.episode_id),
+            )
+        return reloaded

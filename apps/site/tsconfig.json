@@ -1,0 +1,10 @@
+{
+  "extends": "@docusaurus/tsconfig",
+  "compilerOptions": {
+    "ignoreDeprecations": "6.0"
+  },
+  "include": [
+    "src/**/*",
+    "docusaurus.config.ts"
+  ]
+}

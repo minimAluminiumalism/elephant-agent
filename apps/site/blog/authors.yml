@@ -1,0 +1,8 @@
+elephant-team:
+  name: Elephant Agent Team
+  title: Agentic Intelligence Lab
+  url: https://github.com/agentic-in
+  image_url: https://github.com/agentic-in.png
+  page: true
+  socials:
+    github: agentic-in

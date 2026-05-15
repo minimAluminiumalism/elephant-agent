@@ -1,0 +1,66 @@
+{
+  "repo_name": "elephant",
+  "checkout_aliases": [
+    "\u0061egis"
+  ],
+  "repo_root": ".",
+  "default_branch": "main",
+  "entry_doc": "AGENTS.md",
+  "docs_root": "docs/agent",
+  "plans_root": "docs/agent/plans",
+  "adr_root": "docs/agent/adr",
+  "tech_debt_root": "docs/agent/tech-debt",
+  "hooks_path": ".githooks",
+  "worktree_root": ".worktrees",
+  "read_first": [
+    {
+      "path": "AGENTS.md",
+      "why": "Short agent entrypoint and canonical command list."
+    },
+    {
+      "path": "docs/agent/README.md",
+      "why": "Human-readable harness system of record."
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "why": "Commit, validation, and PR workflow contract."
+    }
+  ],
+  "canonical_commands": [
+    "make agent-bootstrap",
+    "make agent-validate",
+    "make agent-scorecard",
+    "make agent-report CHANGED_FILES=\"<changed-files>\"",
+    "make agent-lint",
+    "make agent-test",
+    "make agent-fast-gate",
+    "make agent-pr-gate",
+    "make agent-ship AGENT_COMMIT_MESSAGE=\"<type>(<scope>): <summary>\"",
+    "make agent-wave-show WAVE=<wave-id>",
+    "make agent-wave-start WAVE=<wave-id>",
+    "make agent-wave-status WAVE=<wave-id>"
+  ],
+  "required_paths": [
+    "README.md",
+    "AGENTS.md",
+    "CONTRIBUTING.md",
+    "CHANGELOG.md",
+    "docs/agent/README.md",
+    "docs/agent/plans/README.md",
+    "docs/agent/adr/README.md",
+    "docs/agent/tech-debt/README.md",
+    "tools/agent/repo-manifest.yaml",
+    "tools/agent/task-matrix.yaml",
+    "tools/agent/skill-registry.yaml",
+    "tools/agent/structure-rules.yaml",
+    "tools/agent/context-map.yaml",
+    "tools/agent/wave-registry.yaml",
+    "tools/make/agent.mk",
+    ".github/workflows/ci.yml",
+    ".github/PULL_REQUEST_TEMPLATE.md",
+    ".githooks/commit-msg",
+    "apps/README.md",
+    "packages/README.md",
+    "tests/README.md"
+  ]
+}

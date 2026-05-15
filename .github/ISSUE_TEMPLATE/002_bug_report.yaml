@@ -1,0 +1,33 @@
+name: Bug report
+description: Track a defect or behavior regression in elephant
+title: "fix(scope): "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: symptom
+    attributes:
+      label: Symptom
+      description: What is broken or surprising.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Steps, commands, or inputs needed to reproduce the issue.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Affected surfaces, logs, related plans, or code pointers.
+    validations:
+      required: true

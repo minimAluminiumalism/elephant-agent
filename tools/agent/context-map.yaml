@@ -1,0 +1,263 @@
+{
+  "version": 1,
+  "defaults": {
+    "start_here": [
+      {
+        "path": "AGENTS.md",
+        "reason": "Short harness entrypoint and canonical command index."
+      },
+      {
+        "path": "docs/agent/README.md",
+        "reason": "Canonical docs index and navigation."
+      },
+      {
+        "path": "docs/agent/context-management.md",
+        "reason": "Progressive disclosure model and context-pack policy."
+      }
+    ],
+    "resume_refs": [
+      {
+        "path": "docs/agent/plans/",
+        "reason": "Multi-session execution plans."
+      },
+      {
+        "path": "docs/agent/tech-debt/",
+        "reason": "Tracked architecture gaps."
+      }
+    ]
+  },
+  "rules": {
+    "repo-docs": [
+      {
+        "path": "docs/agent/testing-strategy.md",
+        "reason": "Validation ladder for docs changes."
+      }
+    ],
+    "agent-text": [
+      {
+        "path": "docs/agent/governance.md",
+        "reason": "Harness doc layering and source-of-truth policy."
+      }
+    ],
+    "agent-exec": [
+      {
+        "path": "docs/agent/testing-strategy.md",
+        "reason": "Validation ladder for executable harness changes."
+      }
+    ],
+    "release-ops": [
+      {
+        "path": "docs/agent/release-model.md",
+        "reason": "Release model for CI and automation changes."
+      }
+    ],
+    "kernel-lifecycle": [
+      {
+        "path": "docs/system-design/system-layer-model.md",
+        "reason": "Authoritative design for Personal Model, Episode, State, and Evidence layers."
+      }
+    ],
+    "context-assembly": [
+      {
+        "path": "docs/system-design/system-layer-model.md",
+        "reason": "Context assembly sits between recall surfaces and the generation prompt."
+      }
+    ],
+    "tools-skills": [
+      {
+        "path": "docs/agent/architecture-guardrails.md",
+        "reason": "Tool and skill boundaries live at the package contract layer."
+      }
+    ],
+    "learning-growth": [
+      {
+        "path": "docs/system-design/system-layer-model.md",
+        "reason": "Learning packages implement the background-learning and curiosity model."
+      }
+    ],
+    "cli-runtime": [
+      {
+        "path": "docs/agent/architecture-guardrails.md",
+        "reason": "CLI is the largest app surface; changes must respect the apps-to-packages boundary."
+      }
+    ],
+    "api-gateway": [
+      {
+        "path": "docs/agent/architecture-guardrails.md",
+        "reason": "API and gateway are thin app shells over kernel and delivery adapters."
+      }
+    ],
+    "frontend": [
+      {
+        "path": "docs/agent/repo-map.md",
+        "reason": "Frontend apps have their own build and typecheck gates."
+      }
+    ],
+    "storage-infra": [
+      {
+        "path": "docs/agent/architecture-guardrails.md",
+        "reason": "Storage and infra packages are shared dependencies; changes propagate widely."
+      }
+    ]
+  },
+  "surfaces": {
+    "contracts": [
+      {
+        "path": "packages/contracts/AGENTS.md",
+        "reason": "Shared records, schemas, IDs — dependency-free foundation."
+      },
+      {
+        "path": "docs/system-design/system-layer-model.md",
+        "reason": "Contracts implement the canonical system-layer types."
+      }
+    ],
+    "kernel": [
+      {
+        "path": "packages/kernel/AGENTS.md",
+        "reason": "Runtime lifecycle orchestration owns Episode, Loop, Step."
+      },
+      {
+        "path": "docs/system-design/system-layer-model.md",
+        "reason": "Kernel implements the canonical runtime lifecycle."
+      }
+    ],
+    "state": [
+      {
+        "path": "packages/state/AGENTS.md",
+        "reason": "Elephant State management and canonical projection."
+      },
+      {
+        "path": "docs/system-design/system-layer-model.md",
+        "reason": "State implements the Elephant State system layer."
+      }
+    ],
+    "evidence": [
+      {
+        "path": "packages/evidence/AGENTS.md",
+        "reason": "Evidence, recall, reflection, and semantic indexing."
+      },
+      {
+        "path": "docs/system-design/system-layer-model.md",
+        "reason": "Evidence implements the recall and learning subsystem."
+      }
+    ],
+    "storage": [
+      {
+        "path": "packages/storage/AGENTS.md",
+        "reason": "SQLite persistence, migrations, and repository pattern."
+      }
+    ],
+    "context_assembly": [
+      {
+        "path": "packages/context/AGENTS.md",
+        "reason": "Context assembly for generation prompts."
+      },
+      {
+        "path": "docs/system-design/system-layer-model.md",
+        "reason": "Context assembly bridges recall into the generation window."
+      }
+    ],
+    "tools_skills": [
+      {
+        "path": "packages/tools/AGENTS.md",
+        "reason": "Tool registration and execution runtime."
+      },
+      {
+        "path": "packages/skills/AGENTS.md",
+        "reason": "Skill packages and crystallization."
+      }
+    ],
+    "learning": [
+      {
+        "path": "docs/system-design/system-layer-model.md",
+        "reason": "Learning packages (curiosity, growth, understanding, experience, continuity) implement background evolution."
+      }
+    ],
+    "infra": [
+      {
+        "path": "packages/AGENTS.md",
+        "reason": "Infrastructure packages share the package boundary rules."
+      },
+      {
+        "path": "docs/agent/architecture-guardrails.md",
+        "reason": "Infra packages are shared dependencies with wide blast radius."
+      }
+    ],
+    "models": [
+      {
+        "path": "packages/models/AGENTS.md",
+        "reason": "Model provider adapters and selection logic."
+      }
+    ],
+    "cli": [
+      {
+        "path": "apps/cli/AGENTS.md",
+        "reason": "CLI is the primary user-facing app surface."
+      }
+    ],
+    "api": [
+      {
+        "path": "apps/api/AGENTS.md",
+        "reason": "REST API app surface."
+      }
+    ],
+    "gateway": [
+      {
+        "path": "apps/gateway/AGENTS.md",
+        "reason": "Message gateway and delivery adapters."
+      }
+    ],
+    "dashboard": [
+      {
+        "path": "docs/agent/repo-map.md",
+        "reason": "Dashboard frontend has its own build pipeline."
+      }
+    ],
+    "site": [
+      {
+        "path": "apps/site/AGENTS.md",
+        "reason": "Documentation site with its own build pipeline."
+      }
+    ],
+    "learning_agents": [
+      {
+        "path": "docs/system-design/system-layer-model.md",
+        "reason": "Background reflect and learning workers implement the reflection and evolution model."
+      }
+    ],
+    "test_harness": [
+      {
+        "path": "tests/AGENTS.md",
+        "reason": "Test structure and layer mapping."
+      },
+      {
+        "path": "docs/agent/testing-strategy.md",
+        "reason": "Validation ladder and test-layer ownership."
+      }
+    ],
+    "deploy": [
+      {
+        "path": "deploy/AGENTS.md",
+        "reason": "Packaging, Docker, systemd, and cloud deployment assets."
+      }
+    ]
+  },
+  "skills": {
+    "kernel-lifecycle": {
+      "resume_refs": [
+        {
+          "path": "docs/agent/plans/",
+          "reason": "Kernel changes often span multiple sessions."
+        }
+      ]
+    },
+    "learning-growth": {
+      "resume_refs": [
+        {
+          "path": "docs/agent/plans/",
+          "reason": "Learning system changes may need long-horizon execution plans."
+        }
+      ]
+    }
+  }
+}

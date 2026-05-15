@@ -1,0 +1,154 @@
+from __future__ import annotations
+from pathlib import Path
+import sqlite3
+import sys
+import tempfile
+import unittest
+
+ROOT = Path(__file__).resolve().parents[3]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from packages.storage import RuntimeStorageRepository
+from packages.storage.repository_support import SCHEMA_PATH, SCHEMA_VERSION
+
+
+class StorageSystemLayerSchemaTest(unittest.TestCase):
+    def test_bootstrap_installs_clean_terminal_schema_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            database_path = Path(tmpdir) / "state" / "elephant.sqlite3"
+            repository = RuntimeStorageRepository(database_path)
+
+            bootstrap = repository.bootstrap()
+
+            self.assertEqual(bootstrap.schema_version, SCHEMA_VERSION)
+            self.assertEqual(repository.schema_version(), SCHEMA_VERSION)
+            self.assertEqual(SCHEMA_VERSION, 1)
+            self.assertEqual(SCHEMA_PATH.name, "schema.sql")
+
+            with sqlite3.connect(database_path) as connection:
+                table_names = {
+                    str(row[0])
+                    for row in connection.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'table'"
+                    ).fetchall()
+                }
+                state_columns = {
+                    str(row[1])
+                    for row in connection.execute("PRAGMA table_info(states)").fetchall()
+                }
+                episode_columns = {
+                    str(row[1])
+                    for row in connection.execute("PRAGMA table_info(episodes)").fetchall()
+                }
+                job_columns = {
+                    str(row[1])
+                    for row in connection.execute("PRAGMA table_info(learning_jobs)").fetchall()
+                }
+                fact_columns = {
+                    str(row[1])
+                    for row in connection.execute("PRAGMA table_info(personal_model_facts)").fetchall()
+                }
+
+        self.assertTrue(
+            {
+                "storage_metadata",
+                "personal_models",
+                "states",
+                "episodes",
+                "loops",
+                "steps",
+                "semantic_index_entries",
+                "learning_jobs",
+                "personal_model_facts",
+                "personal_model_open_questions",
+                "diary_entries",
+                "personal_model_growth",
+                "canonical_elephant_identities",
+                "canonical_user_cards",
+                "canonical_relationship_memories",
+            }.issubset(table_names)
+        )
+        self.assertIn("current_context_note", state_columns)
+        self.assertIn("elephant_identity_text", state_columns)
+        self.assertIn("updated_at", episode_columns)
+        self.assertIn("interruption_state", episode_columns)
+        self.assertIn("result_json", job_columns)
+        self.assertIn("last_accessed_at", fact_columns)
+        self.assertFalse(
+            {
+                "schema_migrations",
+                "records",
+                "groundings",
+                "grounding_sources",
+                "memory_entries",
+                "memory_entry_groundings",
+                "reflection_proposals",
+                "reflection_proposal_groundings",
+                "personal_model_observations",
+                "embedding_provider_configs",
+                "provider_auth_states",
+            }.intersection(table_names)
+        )
+
+    def test_bootstrap_is_idempotent_for_clean_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            database_path = Path(tmpdir) / "state" / "elephant.sqlite3"
+            repository = RuntimeStorageRepository(database_path)
+
+            first = repository.bootstrap()
+            second = repository.bootstrap()
+
+        self.assertEqual(first.schema_version, SCHEMA_VERSION)
+        self.assertEqual(second.schema_version, SCHEMA_VERSION)
+
+    def test_schema_declares_reset_delete_boundaries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            database_path = Path(tmpdir) / "state" / "elephant.sqlite3"
+            repository = RuntimeStorageRepository(database_path)
+            repository.bootstrap()
+
+            with sqlite3.connect(database_path) as connection:
+                state_fks = _foreign_keys(connection, "states")
+                episode_fks = _foreign_keys(connection, "episodes")
+                semantic_fks = _foreign_keys(connection, "semantic_index_entries")
+
+        self.assertEqual(state_fks["personal_models"], "CASCADE")
+        self.assertEqual(episode_fks["states"], "CASCADE")
+        self.assertEqual(semantic_fks["states"], "CASCADE")
+        self.assertNotIn("records", semantic_fks)
+
+    def test_bootstrap_rejects_existing_database_without_clean_schema_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            database_path = Path(tmpdir) / "state" / "elephant.sqlite3"
+            database_path.parent.mkdir(parents=True, exist_ok=True)
+            with sqlite3.connect(database_path) as connection:
+                connection.executescript(
+                    """
+                    CREATE TABLE schema_migrations (
+                        version INTEGER PRIMARY KEY,
+                        applied_at TEXT NOT NULL
+                    );
+                    INSERT INTO schema_migrations(version, applied_at)
+                    VALUES (16, '2026-05-14T00:00:00+00:00');
+                    CREATE TABLE states (
+                        state_id TEXT PRIMARY KEY,
+                        authored_identity TEXT NOT NULL DEFAULT ''
+                    );
+                    """
+                )
+
+            repository = RuntimeStorageRepository(database_path)
+            with self.assertRaisesRegex(RuntimeError, "no clean schema marker"):
+                repository.bootstrap()
+
+            self.assertEqual(repository.schema_version(), 0)
+
+
+def _foreign_keys(connection: sqlite3.Connection, table_name: str) -> dict[str, str]:
+    rows = connection.execute(f"PRAGMA foreign_key_list({table_name})").fetchall()
+    return {str(row[2]): str(row[6]).upper() for row in rows}
+
+
+if __name__ == "__main__":
+    unittest.main()

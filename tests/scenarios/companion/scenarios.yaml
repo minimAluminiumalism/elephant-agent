@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "track": "CMP-1",
+  "purpose": "text-first companion fixtures for durable continuity",
+  "scenarios": [
+    {
+      "id": "companion.text-first-continuity",
+      "file": "text-first-continuity.md",
+      "owner_profile": "companion UX engineer",
+      "purpose": "Prove the text-first companion profile keeps its identity across resume.",
+      "primary_assertions": [
+        "personality settings survive resumption",
+        "canonical identity remains consistent",
+        "text-first continuity is explicit before any voice extension"
+      ]
+    },
+    {
+      "id": "companion.inspectable-persona-state",
+      "file": "inspectable-persona-state.md",
+      "owner_profile": "companion UX engineer",
+      "purpose": "Make companion identity state visible in the CLI proving surface.",
+      "primary_assertions": [
+        "persona state is inspectable from the CLI",
+        "relationship-memory policy is visible and stable",
+        "the user can tell when text-first mode is active"
+      ]
+    }
+  ]
+}

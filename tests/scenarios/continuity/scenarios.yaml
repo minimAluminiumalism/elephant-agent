@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "track": "CSR-4",
+  "purpose": "continuity evaluation fixtures for reset-era evidence retrieval and wake recovery",
+  "scenarios": [
+    {
+      "id": "continuity.resume-after-gap",
+      "file": "resume-after-gap.md",
+      "owner_profile": "QA and evaluation engineer",
+      "purpose": "Resume a prior collaboration after a time gap and restore the active elephant-backed state.",
+      "primary_assertions": [
+        "elephant-backed state is recovered from durable storage",
+        "the latest current work is restored",
+        "the assistant explains why the next move is selected now"
+      ]
+    },
+    {
+      "id": "continuity.interrupted-work",
+      "file": "interrupted-work.md",
+      "owner_profile": "QA and evaluation engineer",
+      "purpose": "Recover the intended work item after an interruption mid-task.",
+      "primary_assertions": [
+        "interrupted work is not lost",
+        "the current-work packet remains coherent after resumption",
+        "pending blockers or follow-up work is surfaced explicitly"
+      ]
+    },
+    {
+      "id": "continuity.memory-recovery",
+      "file": "memory-recovery.md",
+      "owner_profile": "QA and evaluation engineer",
+      "purpose": "Reconstruct relevant memory after partial context loss or correction.",
+      "primary_assertions": [
+        "retrieved memory is linked to the active state and current work",
+        "stale or corrected memory is not reused blindly",
+        "memory recovery is explainable to the user"
+      ]
+    },
+    {
+      "id": "continuity.explainable-next-step",
+      "file": "explainable-next-step.md",
+      "owner_profile": "QA and evaluation engineer",
+      "purpose": "Prove the system can justify the next step instead of merely emitting it.",
+      "primary_assertions": [
+        "next-step rationale is present",
+        "rationale references durable state, step, or memory evidence",
+        "rationale remains understandable after restart"
+      ]
+    },
+    {
+      "id": "continuity.state-continuity",
+      "file": "state-continuity.md",
+      "owner_profile": "QA and evaluation engineer",
+      "purpose": "Keep canonical identity and relationship continuity stable across resumptions.",
+      "primary_assertions": [
+        "identity settings survive resumption through canonical records",
+        "continuity projection reflects the same durable state owners",
+        "text-first continuity remains explicit without a voice contract"
+      ]
+    },
+    {
+      "id": "continuity.correction-aware-recovery",
+      "file": "correction-aware-recovery.md",
+      "owner_profile": "QA and evaluation engineer",
+      "purpose": "Recover the right evidence after correction and deletion without reviving stale rows.",
+      "primary_assertions": [
+        "corrected evidence outranks superseded rows",
+        "deleted evidence invalidates derived retrieval views",
+        "recovery reasons remain inspectable after mutation"
+      ]
+    },
+    {
+      "id": "continuity.refocus-recovery",
+      "file": "refocus-recovery.md",
+      "owner_profile": "QA and evaluation engineer",
+      "purpose": "Refocus wake recovery onto the active work packet when adjacent scope noise is present.",
+      "primary_assertions": [
+        "active-work evidence survives rerank ahead of generic similar text",
+        "resume packet names the focused work item and why it won",
+        "scope expansion remains explicit instead of silent"
+      ]
+    }
+  ]
+}

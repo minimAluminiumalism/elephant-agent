@@ -1,0 +1,12 @@
+{
+  "operator_model": {
+    "entry_session": "main",
+    "user_talks_to": "main_session_only",
+    "worker_rule": "one worktree, one branch, one task card",
+    "worker_model": "gpt-5.4",
+    "assignment_strategy": "maximize safe parallelism across ready disjoint tracks",
+    "main_session_policy": "launch ready parallel tracks, then return or review later",
+    "ship_default": "close each completed atomic branch with make agent-ship"
+  },
+  "waves": {}
+}

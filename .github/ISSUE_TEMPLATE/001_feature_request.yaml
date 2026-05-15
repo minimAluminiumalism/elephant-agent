@@ -1,0 +1,34 @@
+name: Feature request
+description: Track a new capability or significant enhancement in elephant
+title: "feat(scope): "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One sentence describing the change.
+    validations:
+      required: true
+  - type: textarea
+    id: background
+    attributes:
+      label: Background
+      description: Why this matters now.
+    validations:
+      required: true
+  - type: textarea
+    id: goals
+    attributes:
+      label: Goals
+      description: Concrete, testable outcomes.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Files, interfaces, plans, or examples needed to start work.
+    validations:
+      required: true

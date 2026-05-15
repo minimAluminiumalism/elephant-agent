@@ -1,0 +1,298 @@
+{
+  "default_skill": "repo-docs",
+  "skills": {
+    "repo-docs": {
+      "label": "Repo Docs",
+      "priority": 10,
+      "summary": "Top-level docs, contributor contract, and stable written interface.",
+      "read_first": [
+        "docs/agent/README.md",
+        "CONTRIBUTING.md"
+      ],
+      "validation": [
+        "make agent-validate"
+      ]
+    },
+    "agent-text": {
+      "label": "Agent Text",
+      "priority": 20,
+      "summary": "Harness prose, task routing, plans, ADRs, and durable repo policy.",
+      "read_first": [
+        "docs/agent/governance.md",
+        "docs/agent/change-surfaces.md"
+      ],
+      "validation": [
+        "make agent-validate",
+        "make agent-test"
+      ]
+    },
+    "agent-exec": {
+      "label": "Agent Exec",
+      "priority": 30,
+      "summary": "Executable guardrails, make targets, scripts, and local hooks.",
+      "read_first": [
+        "docs/agent/governance.md",
+        "docs/agent/worktree-parallelism.md"
+      ],
+      "validation": [
+        "make agent-fast-gate"
+      ]
+    },
+    "release-ops": {
+      "label": "Release Ops",
+      "priority": 40,
+      "summary": "CI, release-facing automation, and review interface changes.",
+      "read_first": [
+        "docs/agent/release-model.md",
+        "docs/agent/testing-strategy.md"
+      ],
+      "validation": [
+        "make agent-validate",
+        "make agent-test"
+      ]
+    },
+    "kernel-lifecycle": {
+      "label": "Kernel Lifecycle",
+      "priority": 200,
+      "summary": "Runtime lifecycle — Record ingestion, State resolution, Episode/Loop/Step orchestration, Grounding, persistence, reflection triggers.",
+      "selector_paths": [
+        "packages/kernel/**",
+        "packages/state/**",
+        "packages/evidence/**",
+        "packages/contracts/**"
+      ],
+      "required_surfaces": [
+        "kernel",
+        "state",
+        "evidence",
+        "contracts"
+      ],
+      "conditional_surfaces": [
+        "storage",
+        "context_assembly"
+      ],
+      "read_first": [
+        "packages/kernel/AGENTS.md",
+        "docs/system-design/system-layer-model.md"
+      ],
+      "validation": [
+        "make agent-fast-gate",
+        "make test-integration-scenarios"
+      ],
+      "acceptance_criteria": "Kernel, State, Evidence, and Contracts stay aligned with the system-layer-model. No legacy terms introduced. Integration scenarios pass."
+    },
+    "context-assembly": {
+      "label": "Context Assembly",
+      "priority": 180,
+      "summary": "Context window assembly and semantic index for recall and generation prompts.",
+      "selector_paths": [
+        "packages/context/**",
+        "packages/semantic_index/**"
+      ],
+      "required_surfaces": [
+        "context_assembly"
+      ],
+      "conditional_surfaces": [
+        "kernel",
+        "evidence"
+      ],
+      "read_first": [
+        "packages/context/AGENTS.md",
+        "docs/system-design/system-layer-model.md"
+      ],
+      "validation": [
+        "make agent-fast-gate",
+        "make test-integration-scenarios"
+      ],
+      "acceptance_criteria": "Context assembly stays aligned with the recall and grounding model. Semantic index interactions use the contracts layer."
+    },
+    "tools-skills": {
+      "label": "Tools & Skills",
+      "priority": 160,
+      "summary": "Tool registration, execution runtime, skill packages, and crystallization.",
+      "selector_paths": [
+        "packages/tools/**",
+        "packages/skills/**"
+      ],
+      "required_surfaces": [
+        "tools_skills"
+      ],
+      "conditional_surfaces": [
+        "kernel",
+        "contracts"
+      ],
+      "read_first": [
+        "packages/tools/AGENTS.md",
+        "packages/skills/AGENTS.md"
+      ],
+      "validation": [
+        "make agent-fast-gate",
+        "make test-integration-scenarios"
+      ],
+      "acceptance_criteria": "Tool and skill packages integrate through capabilities/contracts. No direct kernel internals access."
+    },
+    "learning-growth": {
+      "label": "Learning & Growth",
+      "priority": 140,
+      "summary": "Background learning — curiosity questions, personal model evolution, experience tracking, session continuity.",
+      "selector_paths": [
+        "packages/curiosity/**",
+        "packages/growth/**",
+        "packages/understanding/**",
+        "packages/experience/**",
+        "packages/continuity/**"
+      ],
+      "required_surfaces": [
+        "learning"
+      ],
+      "conditional_surfaces": [
+        "kernel",
+        "evidence",
+        "state"
+      ],
+      "read_first": [
+        "docs/system-design/system-layer-model.md"
+      ],
+      "validation": [
+        "make agent-fast-gate",
+        "make test-release-scenarios"
+      ],
+      "acceptance_criteria": "Learning packages implement the Personal Model evolution model. No legacy observer patterns. Trajectory-first metrics."
+    },
+    "cli-runtime": {
+      "label": "CLI Runtime",
+      "priority": 120,
+      "summary": "CLI main application — shell, commands, extensions, and user interaction.",
+      "selector_paths": [
+        "apps/cli/**",
+        "apps/launcher.py",
+        "apps/upgrade_command.py"
+      ],
+      "required_surfaces": [
+        "cli"
+      ],
+      "conditional_surfaces": [
+        "kernel",
+        "state",
+        "tools_skills"
+      ],
+      "read_first": [
+        "apps/cli/AGENTS.md"
+      ],
+      "validation": [
+        "make agent-fast-gate",
+        "make test-e2e"
+      ],
+      "acceptance_criteria": "CLI stays a thin shell over packages. No kernel logic in the app layer. E2E CLI surface tests pass."
+    },
+    "api-gateway": {
+      "label": "API & Gateway",
+      "priority": 100,
+      "summary": "REST API service and message gateway — delivery adapters over kernel.",
+      "selector_paths": [
+        "apps/api/**",
+        "apps/gateway/**"
+      ],
+      "required_surfaces": [
+        "api",
+        "gateway"
+      ],
+      "conditional_surfaces": [
+        "kernel",
+        "state"
+      ],
+      "read_first": [
+        "apps/api/AGENTS.md",
+        "apps/gateway/AGENTS.md"
+      ],
+      "validation": [
+        "make agent-fast-gate",
+        "make test-e2e"
+      ],
+      "acceptance_criteria": "API and gateway are thin adapter shells. No business logic in the app layer. E2E API and gateway tests pass."
+    },
+    "frontend": {
+      "label": "Frontend",
+      "priority": 80,
+      "summary": "Dashboard web UI and documentation site — frontend build pipelines.",
+      "selector_paths": [
+        "apps/dashboard/**",
+        "apps/site/**"
+      ],
+      "required_surfaces": [
+        "dashboard",
+        "site"
+      ],
+      "read_first": [
+        "docs/agent/repo-map.md"
+      ],
+      "validation": [
+        "make web-typecheck",
+        "make web-build"
+      ],
+      "acceptance_criteria": "Frontend apps typecheck and build cleanly. No backend logic in frontend code."
+    },
+    "storage-infra": {
+      "label": "Storage & Infra",
+      "priority": 60,
+      "summary": "Persistence layer, model providers, auth, embeddings, and infrastructure packages.",
+      "selector_paths": [
+        "packages/storage/**",
+        "packages/models/**",
+        "packages/auth/**",
+        "packages/embeddings/**",
+        "packages/capabilities/**",
+        "packages/gateway_core/**",
+        "packages/cron/**",
+        "packages/harness/**",
+        "packages/operator/**",
+        "packages/security/**",
+        "packages/telemetry/**",
+        "packages/runtime_layout.py"
+      ],
+      "required_surfaces": [
+        "storage",
+        "infra",
+        "models"
+      ],
+      "conditional_surfaces": [
+        "kernel"
+      ],
+      "read_first": [
+        "packages/storage/AGENTS.md",
+        "packages/models/AGENTS.md",
+        "packages/AGENTS.md"
+      ],
+      "validation": [
+        "make agent-fast-gate"
+      ],
+      "acceptance_criteria": "Storage and infra packages stay behind the repository/provider abstraction. No direct SQL in consumer packages."
+    },
+    "app-scaffold": {
+      "label": "App Scaffold",
+      "priority": 5,
+      "summary": "Catch-all for deploy, test, and config scaffolding not covered by product skills.",
+      "selector_paths": [
+        "deploy/**",
+        "tests/**",
+        "pyproject.toml",
+        "scripts/**",
+        "netlify.toml",
+        "apps/reflect/**",
+        "apps/learning_agents/**"
+      ],
+      "required_surfaces": [
+        "test_harness",
+        "deploy"
+      ],
+      "read_first": [
+        "docs/agent/repo-map.md",
+        "docs/agent/architecture-guardrails.md"
+      ],
+      "validation": [
+        "make agent-fast-gate"
+      ],
+      "acceptance_criteria": "Scaffolding changes respect the directory structure rules. No product logic in deploy or config files."
+    }
+  }
+}

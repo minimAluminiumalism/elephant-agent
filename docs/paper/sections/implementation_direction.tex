@@ -1,0 +1,128 @@
+\section{Implementation and Evaluation}
+\label{sec:implementation-direction}
+
+Elephant Agent is implemented around the clean Understanding System boundary. The
+important implementation property is not that every old object is preserved; it
+is that each durable behavior has a single owner and a single correction path.
+
+\subsection{Runtime Records}
+
+The runtime separates Episodes, Loops, and Steps from durable understanding.
+Episodes mark open runtime windows. Loops record interaction rounds. Steps
+record atomic events for audit and replay. The Personal Model stores active
+facts and questions. Elephant State stores the elephant identity plus one natural-language
+current context note.
+
+This separation lets the system compact without losing causal structure. A long
+tool sequence can be summarized at the Episode level while preserving critical
+Step links. A Personal Model fact can be corrected without mutating the
+transcript or treating support material as truth.
+
+\subsection{Foreground Update Path}
+
+All foreground durable understanding changes go through
+\texttt{tool.personal\_model.update}. The tool writes one lens/topic fact at a
+time and supports four actions: remember, correct, forget, and dispute. Init
+answers, dashboard corrections, question answers, and chat-time user
+corrections all converge on the same path.
+
+\subsection{Claim-Aware Recall and Prompt Projection}
+
+Current-turn retrieval is contextual recall, one layer of the broader memory
+architecture. It is injected as \texttt{Current-turn recall support:} when useful
+and omitted otherwise. Stable prompt projection contains active
+facts only, grouped by Identity, World, Pulse, and Journey, plus the Elephant
+identity and Episode opening resume snapshot.
+
+The implementation treats Personal Model search as claim-aware retrieval. The
+search tool supports \texttt{topic}, \texttt{query\_variants}, and
+\texttt{mode=auto|exact|semantic|verify}. It merges fielded topic/fact/support
+matches, Unicode lexical and CJK n-gram signals, weak fuzzy matches, semantic
+candidates, and lightweight polarity agreement or conflict. Results are
+thresholded into \texttt{strong\_match}, \texttt{weak\_match}, or
+\texttt{no\_match}; diagnostics can expose per-fact signals for evaluation but
+are not prompt truth.
+
+\texttt{tool.conversation.search} provides the complementary evidence path. A
+small deterministic query planner strips recall operators from the topic core
+and detects recency, current-state, historical, recap, and verification intent
+across English and CJK phrasing. \texttt{mode=discover} requires a time range
+and returns candidate windows; \texttt{mode=recall} retrieves Step or Episode
+evidence from a selected window. The searcher first attempts the durable
+semantic index with vector, BM25, exact keyword, token-coverage, and n-gram
+signals, then falls back to Step scanning when the index is cold. Final ranking
+keeps semantic relevance primary and uses temporal intent only as a small
+recency or historical tie-breaker.
+
+\subsection{Operational Evaluation}
+
+Elephant Agent is evaluated through longitudinal scenarios rather than single-turn prompt
+quality alone:
+
+\begingroup
+\small
+\setlength{\LTpre}{0.55em}
+\setlength{\LTpost}{0.55em}
+\begin{longtable}{@{}p{0.22\linewidth}p{0.72\linewidth}@{}}
+\toprule
+\textbf{Scenario} & \textbf{Expected behavior} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Scenario} & \textbf{Expected behavior} \\
+\midrule
+\endhead
+Wake recovery & Resume an episode using the Elephant context note, active facts,
+and relevant recall. \\
+Claim correction & Replace an active fact through \texttt{correct}, retire the
+old fact, and project only the new fact next turn. \\
+Forget & Retire a fact through \texttt{forget} so it no longer shapes replies. \\
+Question answer & Mark the question answered and create the resulting fact
+with source Episode provenance. \\
+Why inspection & Show source Steps behind a fact without promoting those Steps
+to prompt truth. \\
+Search no-match & Return no active fact, with a reason, when query quality or
+scores are too weak to support an answer. \\
+Verify mode & Require stronger support before treating a retrieved fact as
+support for a proposed statement. \\
+Local recall & Retrieve relevant Step or Fact chunks through the local embedding
+path without requiring external embedding services. \\
+Multilingual search & Recover relevant claims or Step evidence when the query
+and stored material use different languages or mixed-language phrasing. \\
+Time-aware search & Respect explicit time windows and temporal intent without
+letting recency override stronger semantic or lexical evidence. \\
+Local inference posture & Verify that \texttt{elephant-local-embed} can steady,
+index, and retrieve at 64, 256, and 768 dimensions with the same Step/Fact
+corpus. \\
+Background reflect & Run a feature-scoped learning job and persist its summary
+in \texttt{learning\_jobs.result\_json}. \\
+\bottomrule
+\end{longtable}
+\endgroup
+
+The evaluation question is whether Elephant Agent can continue the right work with the
+right current understanding, and whether the user can correct that
+understanding when it is wrong.
+
+\subsection{Case Study Shapes}
+
+The most informative case studies are multi-session and multi-surface:
+
+\begin{itemize}[leftmargin=*]
+  \item a repository refactor where Elephant Agent resumes with the correct Elephant context
+  and recalls only relevant support;
+  \item a design discussion where a correction to collaboration style changes
+  the next reply;
+  \item a dashboard fact correction where the old fact is retired and the new
+  fact appears in the prompt;
+  \item an answered Personal Model question that becomes an Identity, World,
+  Pulse, or Journey fact with inspectable provenance;
+  \item a recall query that correctly returns \texttt{no\_match} instead of
+  inventing support;
+  \item a background diary or Episode-close job that updates the Personal Model
+  through tools and stores a learning result.
+\end{itemize}
+
+The reporting unit is the complete lifecycle: trigger, recalled support,
+runtime action, fact update, provenance path, dashboard visibility, and later
+wake behavior.

@@ -1,0 +1,29 @@
+version: 1
+track: FND-3
+
+wrappers:
+  - id: cli.resume
+    scenario_ids:
+      - continuity.resume-after-gap
+    surface: apps/cli
+    purpose: verify CLI resume from durable session state
+
+  - id: cli.interrupted-work
+    scenario_ids:
+      - continuity.interrupted-work
+      - continuity.explainable-next-step
+    surface: apps/cli
+    purpose: verify CLI can recover interruption and explain the next move
+
+  - id: api.session-recovery
+    scenario_ids:
+      - continuity.resume-after-gap
+      - continuity.memory-recovery
+    surface: apps/api
+    purpose: verify programmatic recovery of session and memory state
+
+  - id: gateway.text-continuity
+    scenario_ids:
+      - continuity.state-continuity
+    surface: apps/gateway
+    purpose: verify text-first continuity through a delivery adapter

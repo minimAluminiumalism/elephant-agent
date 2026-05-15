@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "track": "CSR-3",
+  "purpose": "session-frame context fixtures and request-time refresh coverage",
+  "scenarios": [
+    {
+      "id": "context.overflow-recovery",
+      "file": "overflow-recovery.md",
+      "owner_profile": "context engineer",
+      "purpose": "Prove that context overflow produces summaries and explicit retrieval scheduling instead of blind truncation.",
+      "primary_assertions": [
+        "token budget is explicit",
+        "steady and retrieval layers summarize when over budget",
+        "prompt rendering remains structured under overflow"
+      ]
+    },
+    {
+      "id": "context.continuity-recovery",
+      "file": "continuity-recovery.md",
+      "owner_profile": "context engineer",
+      "purpose": "Recover active current work and continuity state after a gap or interruption.",
+      "primary_assertions": [
+        "interruption state is reflected in the plan",
+        "active current work and recent memory are restored",
+        "the rendered prompt explains why the next step is selected now"
+      ]
+    },
+    {
+      "id": "context.current-work-linked-compaction",
+      "file": "current-work-linked-compaction.md",
+      "owner_profile": "context engineer",
+      "purpose": "Prefer current-work-linked and corrected memory during steady compaction instead of a blind recency slice.",
+      "primary_assertions": [
+        "current-work-linked steady memory is retained ahead of fresher filler memory",
+        "corrected memory remains visible in steady continuity recovery",
+        "the source trace explains which filler memories were compacted away"
+      ]
+    },
+    {
+      "id": "context.session-frame-request-refresh",
+      "file": "session-frame-request-refresh.md",
+      "owner_profile": "context engineer",
+      "purpose": "Prove that EpisodeFrozenContext stays stable while StateSnapshot, LoopContext, and RequestAttachments refresh per request.",
+      "primary_assertions": [
+        "stable prefix remains isolated from volatile recall",
+        "no procedural overlay layer is injected",
+        "request attachments refresh without mutating durable truth",
+        "the rendered prompt exposes EpisodeFrame layer order explicitly"
+      ]
+    },
+    {
+      "id": "context.mixed-compression-replay",
+      "file": "mixed-compression-replay.md",
+      "owner_profile": "context engineer",
+      "purpose": "Pull bounded reasoning and action replay into EpisodeFrame only when the current request explicitly asks for earlier decision context.",
+      "primary_assertions": [
+        "ordinary prompts do not include replay detail by default",
+        "replay-focused requests allocate a dedicated replay layer",
+        "reasoning and action replay can use different compression levels in the same frame",
+        "the source trace explains the replay budget and selected structured-turn evidence"
+      ]
+    }
+  ]
+}

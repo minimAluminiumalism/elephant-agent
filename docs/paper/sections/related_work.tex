@@ -1,0 +1,41 @@
+\section{Related Systems and Comparison Axes}
+\label{sec:related-systems}
+
+This report does not add unverified citations. A citation-verified related
+systems pass should be added later through programmatic reference checks rather
+than memory-based BibTeX entries. The comparison axes are still clear.
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Stateless chat systems.} These optimize the current prompt but
+  do not preserve durable collaboration state.
+
+  \item \textbf{Long-context systems.} These extend the input window but do not
+  by themselves define what should become State or Personal Model truth.
+
+  \item \textbf{Memory-augmented assistants.} These retrieve prior snippets,
+  but often leave explicit capture, inferred personalization, maturity,
+  correction, and scope boundaries underspecified.
+
+  \item \textbf{Workflow agents.} These execute tool-heavy tasks, but often
+  treat persistence as logs and checkpoints rather than as a layered personal
+  model.
+
+  \item \textbf{Companion systems.} These move closer to Elephant Agent when they model
+  the user, relationship, and elephant identity boundaries, but they often blur
+  Episode, State, Personal Model, and procedural learning.
+
+  \item \textbf{Skill and automation systems.} These make repeated workflows
+  reusable, but they rarely define the boundary between durable personal
+  understanding and executable skill artifacts.
+
+  \item \textbf{Skill-first self-evolving agents.} These optimize for acquiring
+  reusable skills, tools, or workflows. Elephant Agent treats that as useful capability
+  work, but not as the center of personal AI. The center is the Personal Model:
+  active facts, source provenance, and useful questions.
+\end{itemize}
+
+Elephant Agent is therefore best compared on ownership boundaries. Atomic events belong
+in Steps. Execution belongs in Loops. Wake windows belong in Episodes.
+Workline continuity belongs in State. Long-term personalization belongs in the
+Personal Model. Background reflect turns Step source material into fact changes
+and question candidates without collapsing learned truth into a skill package.

@@ -1,0 +1,742 @@
+.surfaceCard {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+  border: 1px solid rgba(244, 239, 231, 0.1);
+  border-radius: var(--dashboard-radius-card);
+  background:
+    linear-gradient(180deg, rgba(244, 239, 231, 0.025), rgba(244, 239, 231, 0.006)),
+    rgba(8, 9, 9, 0.54);
+  overflow: hidden;
+  transition:
+    border-color var(--dashboard-motion-fast) var(--dashboard-ease-standard),
+    background-color var(--dashboard-motion-fast) var(--dashboard-ease-standard);
+}
+
+.surfaceCard:hover {
+  border-color: var(--dashboard-border-strong);
+  background:
+    linear-gradient(180deg, rgba(244, 239, 231, 0.035), rgba(244, 239, 231, 0.008)),
+    rgba(8, 9, 9, 0.58);
+}
+
+.surfaceCardHeader {
+  display: grid;
+  gap: 0;
+  padding: 0.72rem 0.9rem 0.58rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.surfaceCardEyebrow {
+  color: var(--dashboard-text-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.surfaceCardHeader h3 {
+  color: var(--dashboard-text);
+  font-size: 0.95rem;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.surfaceCardHeader p,
+.surfaceCardBody p,
+.tableDetail span,
+.summaryRow p,
+.signalRow p,
+.timelineRow p,
+.emptyState p,
+.errorBanner p,
+.errorShell p,
+.memoryLayerCard p,
+.loadingCopy p {
+  color: var(--dashboard-text-muted);
+}
+
+.surfaceCardBody {
+  display: grid;
+  gap: 0.72rem;
+  min-width: 0;
+  padding: 0.82rem 0.9rem 0.9rem;
+}
+
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: start;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 1.55rem;
+  padding: 0.1rem 0.52rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.statusHealthy {
+  color: var(--dashboard-accent-dark);
+  background: rgba(121, 175, 212, 0.12);
+  border-color: rgba(121, 175, 212, 0.32);
+}
+
+.statusAttention {
+  color: var(--dashboard-accent-dark);
+  background: rgba(121, 175, 212, 0.09);
+  border-color: rgba(121, 175, 212, 0.26);
+}
+
+.statusCritical {
+  color: #d8a19c;
+  background: rgba(216, 161, 156, 0.07);
+  border-color: rgba(216, 161, 156, 0.22);
+}
+
+.statusNeutral {
+  color: var(--dashboard-text-secondary);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.statCard {
+  display: grid;
+  gap: 0.42rem;
+  min-height: 0;
+  padding: 0.74rem 0.78rem;
+  border: 1px solid rgba(244, 239, 231, 0.09);
+  border-radius: 0.72rem;
+  background: rgba(244, 239, 231, 0.018);
+  transition:
+    border-color var(--dashboard-motion-fast) var(--dashboard-ease-standard),
+    background-color var(--dashboard-motion-fast) var(--dashboard-ease-standard),
+    transform var(--dashboard-motion-fast) var(--dashboard-ease-standard);
+}
+
+.statCard:hover {
+  border-color: var(--dashboard-border-strong);
+  background: rgba(244, 239, 231, 0.028);
+}
+
+.statCardCompact {
+  min-height: 0;
+}
+
+.statCardTopline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.statCardTopline span {
+  color: var(--dashboard-text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.statToneDot {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--dashboard-text-muted);
+}
+
+.statTonehealthy {
+  background: #79afd4;
+}
+
+.statToneattention {
+  background: #d2bea1;
+}
+
+.statTonecritical {
+  background: #d8a19c;
+}
+
+.statToneneutral {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.statCard strong {
+  color: var(--dashboard-text);
+  font-size: clamp(1.18rem, 1.5vw, 1.42rem);
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+
+.statCard p {
+  display: none;
+}
+
+.signalRow,
+.timelineRow,
+.summaryRow {
+  display: grid;
+  gap: 0.42rem;
+  padding: 0.78rem 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0.72rem;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.signalRowHeadline,
+.timelineRowMeta,
+.summaryRowTopline,
+.memoryLayerHeadline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.timelineRowMeta span,
+.summaryRowTopline span {
+  color: var(--dashboard-text-muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.meterList {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.meterRow {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.78rem 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0.72rem;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.meterCopy {
+  display: grid;
+  gap: 0.22rem;
+}
+
+.meterCopy div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.meterCopy span {
+  color: var(--dashboard-text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.meterCopy strong {
+  color: var(--dashboard-text);
+  font-size: 0.94rem;
+  letter-spacing: -0.02em;
+}
+
+.meterTrack {
+  height: 0.42rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.meterFill {
+  height: 100%;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.tableShell {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--dashboard-border);
+  border-radius: var(--dashboard-radius-card);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.dataTable {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.dataTable thead th {
+  padding: 0.66rem 0.72rem;
+  border-bottom: 1px solid var(--dashboard-border);
+  color: var(--dashboard-text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.dataTable tbody td {
+  padding: 0.62rem 0.72rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.dataTable tbody tr:first-child td {
+  border-top: 0;
+}
+
+.tablePrimary,
+.tableDetail {
+  display: grid;
+  gap: 0.08rem;
+  min-width: 0;
+}
+
+.tablePrimary {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.tablePrimary strong,
+.tableDetail strong,
+.summaryRow strong,
+.signalRow h4,
+.timelineRow strong,
+.memoryLayerCard h4,
+.emptyState strong,
+.errorShell h3,
+.loadingCopy strong {
+  color: var(--dashboard-text);
+  font-size: 0.94rem;
+  letter-spacing: -0.02em;
+}
+
+.tableDetail strong,
+.tableDetail span,
+.tableCellText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tableDetail span {
+  color: var(--dashboard-text-muted);
+  font-size: 0.78rem;
+}
+
+.tableCellText {
+  display: block;
+  color: var(--dashboard-text-secondary);
+}
+
+.emptyState,
+.errorShell {
+  display: grid;
+  gap: 0.55rem;
+  padding: 1rem 1.05rem;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  border-radius: var(--dashboard-radius-card);
+  background: rgba(255, 255, 255, 0.016);
+}
+
+.loadingShell {
+  display: grid;
+  gap: 0.72rem;
+  width: min(calc(100% - 32px), 42rem);
+  margin: 1.2rem auto 0;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--dashboard-radius-card);
+  background: rgba(10, 14, 13, 0.48);
+}
+
+.loadingCopy {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.loadingCopy p {
+  font-size: 0.86rem;
+}
+
+.loadingInline {
+  display: flex;
+  align-items: center;
+  gap: 0.72rem;
+}
+
+.loadingPulse {
+  width: 0.72rem;
+  height: 0.72rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--dashboard-accent);
+  box-shadow: 0 0 0 0 rgba(236, 231, 222, 0.24);
+  animation: dashboardPulse 1.6s ease-out infinite;
+}
+
+.loadingBar {
+  position: relative;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.loadingBar span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 38%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, var(--dashboard-accent), transparent);
+  animation: dashboardProgress 1.35s var(--dashboard-ease-standard) infinite;
+}
+
+.errorBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.82rem 0.95rem;
+  border: 1px solid rgba(239, 68, 68, 0.24);
+  border-radius: var(--dashboard-radius-card);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.actionButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: start;
+  width: fit-content;
+  min-height: 2.12rem;
+  padding: 0.42rem 0.78rem;
+  border: 1px solid rgba(244, 239, 231, 0.14);
+  border-radius: 0.58rem;
+  background:
+    linear-gradient(180deg, rgba(244, 239, 231, 0.052), rgba(244, 239, 231, 0.018)),
+    rgba(8, 9, 9, 0.62);
+  color: var(--dashboard-text-secondary);
+  font-size: 0.78rem;
+  font-weight: 760;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  transition:
+    border-color var(--dashboard-motion-fast) var(--dashboard-ease-standard),
+    background-color var(--dashboard-motion-fast) var(--dashboard-ease-standard),
+    color var(--dashboard-motion-fast) var(--dashboard-ease-standard),
+    transform var(--dashboard-motion-fast) var(--dashboard-ease-standard);
+}
+
+.actionButton:hover:not(:disabled) {
+  border-color: var(--dashboard-border-strong);
+  color: var(--dashboard-text);
+  background:
+    linear-gradient(180deg, rgba(244, 239, 231, 0.078), rgba(244, 239, 231, 0.026)),
+    rgba(12, 13, 13, 0.72);
+}
+
+.actionButton:focus-visible,
+.viewButton:focus-visible,
+.detailModalClose:focus-visible {
+  outline: 2px solid rgba(244, 239, 231, 0.32);
+  outline-offset: 2px;
+}
+
+.actionButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.actionButtonGhost {
+  background: rgba(244, 239, 231, 0.018);
+  color: var(--dashboard-text-muted);
+}
+
+.viewButton,
+.detailModalClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-height: 1.84rem;
+  padding: 0.28rem 0.6rem;
+  border: 1px solid rgba(244, 239, 231, 0.12);
+  border-radius: 0.54rem;
+  color: var(--dashboard-text-muted);
+  background: rgba(244, 239, 231, 0.018);
+  font-size: 0.72rem;
+  font-weight: 760;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    border-color var(--dashboard-motion-fast) var(--dashboard-ease-standard),
+    background-color var(--dashboard-motion-fast) var(--dashboard-ease-standard),
+    color var(--dashboard-motion-fast) var(--dashboard-ease-standard);
+}
+
+.viewButton:hover,
+.detailModalClose:hover {
+  border-color: var(--dashboard-border-strong);
+  color: var(--dashboard-text);
+  background: rgba(244, 239, 231, 0.058);
+}
+
+.detailModalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 1.2rem;
+  background: rgba(0, 0, 0, 0.54);
+  backdrop-filter: blur(14px);
+}
+
+.detailModal {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(720px, 100%);
+  max-height: min(760px, calc(100vh - 2.4rem));
+  overflow: hidden;
+  border: 1px solid rgba(244, 239, 231, 0.16);
+  border-radius: 1rem;
+  background:
+    radial-gradient(circle at 16% 0%, rgba(137, 146, 165, 0.12), transparent 30%),
+    rgba(10, 10, 10, 0.94);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.44);
+}
+
+.detailModalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid rgba(244, 239, 231, 0.09);
+}
+
+.detailModalHeader strong {
+  color: var(--dashboard-text);
+  letter-spacing: -0.02em;
+}
+
+.detailModalBody {
+  display: grid;
+  gap: 0.65rem;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.9rem 1rem 1rem;
+}
+
+.detailModalItem {
+  display: grid;
+  gap: 0.24rem;
+  padding: 0.72rem 0.78rem;
+  border: 1px solid rgba(244, 239, 231, 0.075);
+  border-radius: 0.72rem;
+  background: rgba(244, 239, 231, 0.018);
+}
+
+.detailModalItem span {
+  color: var(--dashboard-text-muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.detailModalItem div {
+  color: var(--dashboard-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.memoryLayerCard {
+  display: grid;
+  gap: 0.82rem;
+  padding: 0.95rem 1rem;
+  border: 1px solid var(--dashboard-border);
+  border-radius: var(--dashboard-radius-card);
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.memoryLayerOwner {
+  color: var(--dashboard-text-muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.memoryLayerFooter {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.metaList {
+  display: grid;
+  gap: 0.7rem;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+}
+
+.metaListCompact {
+  gap: 0.55rem;
+}
+
+.metaList > div {
+  display: grid;
+  gap: 0.16rem;
+  padding: 0.7rem 0.76rem;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 0.72rem;
+  background: rgba(255, 255, 255, 0.014);
+}
+
+.metaList span {
+  color: var(--dashboard-text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+@keyframes dashboardPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(236, 231, 222, 0.24);
+    opacity: 1;
+  }
+
+  100% {
+    box-shadow: 0 0 0 14px rgba(236, 231, 222, 0);
+    opacity: 0.62;
+  }
+}
+
+@keyframes dashboardProgress {
+  0% {
+    transform: translateX(-110%);
+  }
+
+  100% {
+    transform: translateX(280%);
+  }
+}
+
+@media (max-width: 720px) {
+  .errorBanner {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+/* Light-theme relaunch pass: keep operational density without the old dark glass. */
+.surfaceCard {
+  border-color: var(--dashboard-border-strong);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.86)),
+    var(--dashboard-surface-panel);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5), var(--dashboard-shadow-soft);
+}
+
+.surfaceCard:hover {
+  border-color: var(--dashboard-border-strong);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.92)),
+    var(--dashboard-surface-strong);
+}
+
+.surfaceCardHeader,
+.detailModalHeader {
+  border-color: var(--dashboard-line-soft);
+}
+
+.statCard,
+.signalRow,
+.timelineRow,
+.summaryRow,
+.meterRow,
+.memoryLayerCard,
+.emptyState,
+.errorBanner,
+.metaList > div {
+  border-color: var(--dashboard-border);
+  background: rgba(255, 255, 255, 0.74);
+  color: var(--dashboard-text);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.38);
+}
+
+.statusNeutral {
+  background: rgba(121, 175, 212, 0.1);
+  border-color: rgba(121, 175, 212, 0.24);
+}
+
+.statusHealthy {
+  color: var(--dashboard-accent-dark);
+  background: rgba(121, 175, 212, 0.12);
+  border-color: rgba(121, 175, 212, 0.32);
+}
+
+.statusAttention {
+  color: var(--dashboard-accent-dark);
+  background: rgba(121, 175, 212, 0.09);
+  border-color: rgba(121, 175, 212, 0.26);
+}
+
+.statusCritical {
+  color: #8a403b;
+  background: rgba(184, 93, 87, 0.12);
+  border-color: rgba(184, 93, 87, 0.3);
+}
+
+.actionButton,
+.viewButton,
+.detailModalClose {
+  border-color: var(--dashboard-border-strong);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(255, 255, 255, 0.9)),
+    var(--dashboard-surface-panel);
+  color: var(--dashboard-text-secondary);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.42);
+}
+
+.actionButton:hover:not(:disabled),
+.viewButton:hover,
+.detailModalClose:hover {
+  border-color: rgba(54, 103, 135, 0.46);
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--dashboard-text);
+}
+
+.actionButtonGhost {
+  background: rgba(255, 255, 255, 0.54);
+  color: var(--dashboard-text-secondary);
+}
+
+.detailModalBackdrop {
+  background: rgba(54, 103, 135, 0.28);
+}
+
+.detailModal {
+  border-color: var(--dashboard-border-strong);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.96)),
+    var(--dashboard-bg);
+  box-shadow: 0 28px 90px rgba(45, 92, 123, 0.22);
+}

@@ -1,0 +1,315 @@
+CREATE TABLE storage_metadata (
+    metadata_key TEXT PRIMARY KEY,
+    metadata_value TEXT NOT NULL
+);
+
+CREATE TABLE personal_models (
+    personal_model_id TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'active',
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE states (
+    state_id TEXT PRIMARY KEY,
+    personal_model_id TEXT NOT NULL,
+    state_anchor TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    elephant_id TEXT NOT NULL DEFAULT '',
+    elephant_name TEXT NOT NULL DEFAULT '',
+    identity_mode TEXT NOT NULL DEFAULT '',
+    posture TEXT NOT NULL DEFAULT '',
+    capability_boundaries_json TEXT NOT NULL DEFAULT '[]',
+    initiative TEXT NOT NULL DEFAULT '',
+    working_style TEXT NOT NULL DEFAULT '',
+    surface_bindings_json TEXT NOT NULL DEFAULT '[]',
+    safety_boundaries_json TEXT NOT NULL DEFAULT '[]',
+    disclosure_boundaries_json TEXT NOT NULL DEFAULT '[]',
+    source_manifest TEXT NOT NULL DEFAULT '',
+    elephant_identity_text TEXT NOT NULL DEFAULT '',
+    summary TEXT NOT NULL DEFAULT '',
+    current_context_note TEXT NOT NULL DEFAULT '',
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(personal_model_id) REFERENCES personal_models(personal_model_id)
+        ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX idx_states_elephant_id
+    ON states(elephant_id)
+    WHERE elephant_id != '';
+CREATE INDEX idx_states_personal_model
+    ON states(personal_model_id, status);
+
+CREATE TABLE current_state_bindings (
+    binding_id TEXT PRIMARY KEY CHECK(binding_id = 'current'),
+    state_id TEXT,
+    selected_at TEXT NOT NULL,
+    FOREIGN KEY(state_id) REFERENCES states(state_id) ON DELETE SET NULL
+);
+
+CREATE TABLE episodes (
+    episode_id TEXT PRIMARY KEY,
+    state_id TEXT NOT NULL,
+    personal_model_id TEXT NOT NULL,
+    entry_surface TEXT NOT NULL,
+    status TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    updated_at TEXT,
+    exit_summary TEXT NOT NULL DEFAULT '',
+    elephant_id TEXT NOT NULL DEFAULT '',
+    parent_episode_id TEXT,
+    interruption_state TEXT,
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    FOREIGN KEY(state_id) REFERENCES states(state_id) ON DELETE CASCADE,
+    FOREIGN KEY(personal_model_id) REFERENCES personal_models(personal_model_id)
+        ON DELETE CASCADE
+);
+
+CREATE INDEX idx_episodes_state_started
+    ON episodes(state_id, started_at);
+
+CREATE TABLE loops (
+    loop_id TEXT PRIMARY KEY,
+    episode_id TEXT NOT NULL,
+    state_id TEXT NOT NULL,
+    personal_model_id TEXT NOT NULL,
+    trigger_type TEXT NOT NULL,
+    status TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    summary TEXT NOT NULL DEFAULT '',
+    outcome TEXT NOT NULL DEFAULT '',
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    FOREIGN KEY(episode_id) REFERENCES episodes(episode_id) ON DELETE CASCADE,
+    FOREIGN KEY(state_id) REFERENCES states(state_id) ON DELETE CASCADE,
+    FOREIGN KEY(personal_model_id) REFERENCES personal_models(personal_model_id)
+        ON DELETE CASCADE
+);
+
+CREATE INDEX idx_loops_episode_started
+    ON loops(episode_id, started_at);
+
+CREATE TABLE steps (
+    step_id TEXT PRIMARY KEY,
+    loop_id TEXT NOT NULL,
+    episode_id TEXT NOT NULL,
+    state_id TEXT NOT NULL,
+    personal_model_id TEXT NOT NULL,
+    phase TEXT NOT NULL CHECK(phase IN ('observation', 'reasoning', 'acting')),
+    action TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('planned', 'completed', 'failed', 'cancelled')),
+    sequence INTEGER NOT NULL CHECK(sequence >= 0),
+    summary TEXT NOT NULL DEFAULT '',
+    outcome TEXT NOT NULL DEFAULT '',
+    payload_refs_json TEXT NOT NULL DEFAULT '[]',
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(loop_id) REFERENCES loops(loop_id) ON DELETE CASCADE,
+    FOREIGN KEY(episode_id) REFERENCES episodes(episode_id) ON DELETE CASCADE,
+    FOREIGN KEY(state_id) REFERENCES states(state_id) ON DELETE CASCADE,
+    FOREIGN KEY(personal_model_id) REFERENCES personal_models(personal_model_id)
+        ON DELETE CASCADE,
+    UNIQUE(loop_id, sequence)
+);
+
+CREATE INDEX idx_steps_episode_sequence
+    ON steps(episode_id, sequence);
+
+CREATE TABLE semantic_index_entries (
+    semantic_index_entry_id TEXT PRIMARY KEY,
+    owner_scope TEXT NOT NULL CHECK(owner_scope IN ('state', 'personal_model')),
+    source_record_id TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    dimensions INTEGER NOT NULL CHECK(dimensions > 0),
+    content_hash TEXT NOT NULL,
+    personal_model_id TEXT,
+    state_id TEXT,
+    backend TEXT NOT NULL DEFAULT 'sqlite-vec',
+    vector_ref TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'indexed',
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(personal_model_id) REFERENCES personal_models(personal_model_id)
+        ON DELETE CASCADE,
+    FOREIGN KEY(state_id) REFERENCES states(state_id) ON DELETE CASCADE,
+    CHECK(owner_scope != 'personal_model' OR personal_model_id IS NOT NULL),
+    CHECK(owner_scope != 'state' OR state_id IS NOT NULL),
+    UNIQUE(source_record_id, provider_id, model_id, dimensions, content_hash)
+);
+
+CREATE TABLE learning_jobs (
+    job_id TEXT PRIMARY KEY,
+    job_type TEXT NOT NULL,
+    trigger TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('queued', 'running', 'completed', 'failed', 'cancelled')),
+    personal_model_id TEXT NOT NULL,
+    state_id TEXT NOT NULL,
+    episode_id TEXT NOT NULL,
+    loop_id TEXT NOT NULL DEFAULT '',
+    summary TEXT NOT NULL DEFAULT '',
+    progress_stage TEXT NOT NULL DEFAULT '',
+    progress_detail TEXT NOT NULL DEFAULT '',
+    attempt_count INTEGER NOT NULL DEFAULT 0 CHECK(attempt_count >= 0),
+    max_attempts INTEGER NOT NULL DEFAULT 3 CHECK(max_attempts >= 1),
+    available_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    started_at TEXT,
+    finished_at TEXT,
+    worker_id TEXT NOT NULL DEFAULT '',
+    last_error TEXT NOT NULL DEFAULT '',
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    result_json TEXT,
+    FOREIGN KEY(personal_model_id) REFERENCES personal_models(personal_model_id)
+        ON DELETE CASCADE,
+    FOREIGN KEY(state_id) REFERENCES states(state_id)
+        ON DELETE CASCADE,
+    FOREIGN KEY(episode_id) REFERENCES episodes(episode_id)
+        ON DELETE CASCADE
+);
+
+CREATE INDEX idx_learning_jobs_status_available
+    ON learning_jobs(status, available_at, created_at);
+CREATE INDEX idx_learning_jobs_state_status
+    ON learning_jobs(state_id, status, created_at);
+CREATE INDEX idx_learning_jobs_profile_status
+    ON learning_jobs(personal_model_id, status, created_at);
+CREATE INDEX idx_learning_jobs_episode_type_created
+    ON learning_jobs(job_type, episode_id, created_at DESC);
+
+CREATE TABLE personal_model_facts (
+    fact_id TEXT PRIMARY KEY,
+    personal_model_id TEXT NOT NULL,
+    lens TEXT NOT NULL,
+    text TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    committed_at TEXT NOT NULL,
+    source TEXT NOT NULL,
+    source_observation_ids TEXT NOT NULL DEFAULT '[]',
+    source_episode_ids TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'active',
+    supersedes_fact_id TEXT,
+    metadata TEXT,
+    last_accessed_at TEXT,
+    access_count INTEGER DEFAULT 0
+);
+
+CREATE INDEX idx_fact_pm_status
+    ON personal_model_facts(personal_model_id, status);
+CREATE INDEX idx_fact_pm_lens_status
+    ON personal_model_facts(personal_model_id, lens, status);
+
+CREATE TABLE personal_model_open_questions (
+    question_id TEXT PRIMARY KEY,
+    personal_model_id TEXT NOT NULL,
+    lens TEXT NOT NULL,
+    sub_lens TEXT NOT NULL,
+    text TEXT NOT NULL,
+    rationale TEXT NOT NULL,
+    priority REAL NOT NULL,
+    sensitivity TEXT NOT NULL,
+    source TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    asked_count INTEGER NOT NULL DEFAULT 0,
+    last_asked_at TEXT,
+    last_asked_surface TEXT,
+    user_response_episode_ids TEXT NOT NULL DEFAULT '[]',
+    dismissed_reason TEXT,
+    generated_fact_ids TEXT NOT NULL DEFAULT '[]',
+    metadata TEXT
+);
+
+CREATE INDEX idx_oq_pm_status_prio
+    ON personal_model_open_questions(personal_model_id, status, priority DESC);
+CREATE INDEX idx_oq_pm_lens_sub_status
+    ON personal_model_open_questions(personal_model_id, lens, sub_lens, status);
+
+CREATE TABLE diary_entries (
+    entry_id TEXT PRIMARY KEY,
+    personal_model_id TEXT NOT NULL,
+    entry_date TEXT NOT NULL,
+    content TEXT NOT NULL,
+    generated_at TEXT NOT NULL,
+    source_episode_ids TEXT NOT NULL DEFAULT '[]',
+    metadata TEXT,
+    UNIQUE(personal_model_id, entry_date)
+);
+
+CREATE INDEX idx_diary_pm_date
+    ON diary_entries(personal_model_id, entry_date);
+
+CREATE TABLE personal_model_growth (
+    profile_id TEXT PRIMARY KEY,
+    growth_score INTEGER NOT NULL DEFAULT 0,
+    total_dialogues INTEGER NOT NULL DEFAULT 0,
+    total_tokens INTEGER NOT NULL DEFAULT 0,
+    total_experiences INTEGER NOT NULL DEFAULT 0,
+    promoted_experiences INTEGER NOT NULL DEFAULT 0,
+    active_days INTEGER NOT NULL DEFAULT 0,
+    streak_days INTEGER NOT NULL DEFAULT 0,
+    first_dialogue_at TEXT,
+    last_dialogue_at TEXT,
+    last_active_day TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(profile_id) REFERENCES personal_models(personal_model_id)
+        ON DELETE CASCADE
+);
+
+CREATE TABLE canonical_elephant_identities (
+    profile_id TEXT PRIMARY KEY,
+    elephant_id TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    identity_mode TEXT NOT NULL,
+    personality_preset TEXT NOT NULL,
+    initiative TEXT NOT NULL,
+    relational_stance TEXT NOT NULL,
+    working_style_contract TEXT NOT NULL,
+    elephant_identity_text TEXT,
+    governance_flags_json TEXT NOT NULL DEFAULT '[]',
+    source_manifest_path TEXT,
+    source_elephant_path TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(profile_id) REFERENCES personal_models(personal_model_id) ON DELETE CASCADE
+);
+
+CREATE TABLE canonical_user_cards (
+    profile_id TEXT PRIMARY KEY,
+    user_card_id TEXT NOT NULL,
+    preferred_name TEXT,
+    locale TEXT,
+    timezone TEXT,
+    communication_preferences_json TEXT NOT NULL DEFAULT '[]',
+    boundaries_json TEXT NOT NULL DEFAULT '[]',
+    biography_fragments_json TEXT NOT NULL DEFAULT '[]',
+    durable_notes_json TEXT NOT NULL DEFAULT '[]',
+    shared_preferences_json TEXT NOT NULL DEFAULT '[]',
+    source_user_profile_path TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(profile_id) REFERENCES personal_models(personal_model_id) ON DELETE CASCADE
+);
+
+CREATE TABLE canonical_relationship_memories (
+    profile_id TEXT PRIMARY KEY,
+    relationship_id TEXT NOT NULL,
+    elephant_id TEXT NOT NULL,
+    user_card_id TEXT,
+    interaction_preferences_json TEXT NOT NULL DEFAULT '[]',
+    repair_history_json TEXT NOT NULL DEFAULT '[]',
+    trust_markers_json TEXT NOT NULL DEFAULT '[]',
+    expectations_json TEXT NOT NULL DEFAULT '[]',
+    local_corrections_json TEXT NOT NULL DEFAULT '[]',
+    continuity_notes_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(profile_id) REFERENCES personal_models(personal_model_id) ON DELETE CASCADE
+);

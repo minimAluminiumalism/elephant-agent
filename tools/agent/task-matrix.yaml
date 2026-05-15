@@ -1,0 +1,298 @@
+{
+  "rules": [
+    {
+      "name": "repo-docs",
+      "summary": "Top-level repository docs and contributor contract.",
+      "doc_only": true,
+      "loop_mode": "lightweight",
+      "execution_plan_policy": "long_horizon",
+      "paths": [
+        "README.md",
+        "CONTRIBUTING.md",
+        "CHANGELOG.md",
+        "learn.md",
+        "*_CODE_ANALYSIS.md",
+        "docs/**/*.md",
+        "docs/paper/**"
+      ],
+      "read_first": [
+        "docs/agent/README.md",
+        "docs/agent/testing-strategy.md"
+      ],
+      "fast_tests": [
+        "make agent-validate"
+      ],
+      "feature_tests": []
+    },
+    {
+      "name": "agent-text",
+      "summary": "Agent-facing docs, templates, and durable harness policy.",
+      "doc_only": true,
+      "loop_mode": "lightweight",
+      "execution_plan_policy": "long_horizon",
+      "paths": [
+        "AGENTS.md",
+        "docs/agent/**",
+        ".github/PULL_REQUEST_TEMPLATE.md",
+        ".github/ISSUE_TEMPLATE/**"
+      ],
+      "read_first": [
+        "docs/agent/governance.md",
+        "docs/agent/change-surfaces.md"
+      ],
+      "fast_tests": [
+        "make agent-validate",
+        "make agent-test"
+      ],
+      "feature_tests": []
+    },
+    {
+      "name": "agent-exec",
+      "summary": "Executable harness scripts, make targets, and local guardrails.",
+      "doc_only": false,
+      "loop_mode": "completion",
+      "execution_plan_policy": "long_horizon",
+      "paths": [
+        ".gitignore",
+        "Makefile",
+        "tools/agent/**",
+        "tools/make/agent.mk",
+        ".githooks/**"
+      ],
+      "read_first": [
+        "docs/agent/governance.md",
+        "docs/agent/worktree-parallelism.md"
+      ],
+      "fast_tests": [
+        "make agent-fast-gate"
+      ],
+      "feature_tests": []
+    },
+    {
+      "name": "release-ops",
+      "summary": "CI, release-facing automation, and review interface changes.",
+      "doc_only": false,
+      "loop_mode": "completion",
+      "execution_plan_policy": "long_horizon",
+      "paths": [
+        ".github/workflows/**",
+        "install.sh",
+        ".github/*.md"
+      ],
+      "read_first": [
+        "docs/agent/release-model.md",
+        "docs/agent/testing-strategy.md"
+      ],
+      "fast_tests": [
+        "make agent-validate",
+        "make agent-test"
+      ],
+      "feature_tests": []
+    },
+    {
+      "name": "kernel-lifecycle",
+      "summary": "Runtime lifecycle core — kernel, state, evidence, and contracts.",
+      "doc_only": false,
+      "loop_mode": "completion",
+      "execution_plan_policy": "long_horizon",
+      "paths": [
+        "packages/kernel/**",
+        "packages/state/**",
+        "packages/evidence/**",
+        "packages/contracts/**"
+      ],
+      "read_first": [
+        "packages/kernel/AGENTS.md",
+        "docs/system-design/system-layer-model.md"
+      ],
+      "fast_tests": [
+        "make agent-fast-gate"
+      ],
+      "feature_tests": [
+        "make test-integration-scenarios"
+      ]
+    },
+    {
+      "name": "context-assembly",
+      "summary": "Context window assembly and semantic index.",
+      "doc_only": false,
+      "loop_mode": "completion",
+      "execution_plan_policy": "long_horizon",
+      "paths": [
+        "packages/context/**",
+        "packages/semantic_index/**"
+      ],
+      "read_first": [
+        "packages/context/AGENTS.md",
+        "docs/system-design/system-layer-model.md"
+      ],
+      "fast_tests": [
+        "make agent-fast-gate"
+      ],
+      "feature_tests": [
+        "make test-integration-scenarios"
+      ]
+    },
+    {
+      "name": "tools-skills",
+      "summary": "Tool registration, execution, skill packages, and crystallization.",
+      "doc_only": false,
+      "loop_mode": "completion",
+      "execution_plan_policy": "long_horizon",
+      "paths": [
+        "packages/tools/**",
+        "packages/skills/**"
+      ],
+      "read_first": [
+        "packages/tools/AGENTS.md",
+        "packages/skills/AGENTS.md"
+      ],
+      "fast_tests": [
+        "make agent-fast-gate"
+      ],
+      "feature_tests": [
+        "make test-integration-scenarios"
+      ]
+    },
+    {
+      "name": "learning-growth",
+      "summary": "Background learning — curiosity, growth, understanding, experience, continuity.",
+      "doc_only": false,
+      "loop_mode": "completion",
+      "execution_plan_policy": "long_horizon",
+      "paths": [
+        "packages/curiosity/**",
+        "packages/growth/**",
+        "packages/understanding/**",
+        "packages/experience/**",
+        "packages/continuity/**"
+      ],
+      "read_first": [
+        "docs/system-design/system-layer-model.md"
+      ],
+      "fast_tests": [
+        "make agent-fast-gate"
+      ],
+      "feature_tests": [
+        "make test-release-scenarios"
+      ]
+    },
+    {
+      "name": "cli-runtime",
+      "summary": "CLI main application — shell, commands, extensions.",
+      "doc_only": false,
+      "loop_mode": "completion",
+      "execution_plan_policy": "long_horizon",
+      "paths": [
+        "apps/cli/**",
+        "apps/launcher.py",
+        "apps/upgrade_command.py"
+      ],
+      "read_first": [
+        "apps/cli/AGENTS.md"
+      ],
+      "fast_tests": [
+        "make agent-fast-gate"
+      ],
+      "feature_tests": [
+        "make test-e2e"
+      ]
+    },
+    {
+      "name": "api-gateway",
+      "summary": "REST API and message gateway delivery adapters.",
+      "doc_only": false,
+      "loop_mode": "completion",
+      "execution_plan_policy": "long_horizon",
+      "paths": [
+        "apps/api/**",
+        "apps/gateway/**"
+      ],
+      "read_first": [
+        "apps/api/AGENTS.md",
+        "apps/gateway/AGENTS.md"
+      ],
+      "fast_tests": [
+        "make agent-fast-gate"
+      ],
+      "feature_tests": [
+        "make test-e2e"
+      ]
+    },
+    {
+      "name": "frontend",
+      "summary": "Dashboard web UI and documentation site.",
+      "doc_only": false,
+      "loop_mode": "completion",
+      "execution_plan_policy": "long_horizon",
+      "paths": [
+        "apps/dashboard/**",
+        "apps/site/**"
+      ],
+      "read_first": [
+        "docs/agent/repo-map.md"
+      ],
+      "fast_tests": [
+        "make web-typecheck",
+        "make web-build"
+      ],
+      "feature_tests": []
+    },
+    {
+      "name": "storage-infra",
+      "summary": "Persistence, model providers, auth, embeddings, and infrastructure packages.",
+      "doc_only": false,
+      "loop_mode": "completion",
+      "execution_plan_policy": "long_horizon",
+      "paths": [
+        "packages/storage/**",
+        "packages/models/**",
+        "packages/auth/**",
+        "packages/embeddings/**",
+        "packages/capabilities/**",
+        "packages/gateway_core/**",
+        "packages/cron/**",
+        "packages/harness/**",
+        "packages/operator/**",
+        "packages/security/**",
+        "packages/telemetry/**",
+        "packages/runtime_config.py",
+        "packages/runtime_layout.py"
+      ],
+      "read_first": [
+        "packages/storage/AGENTS.md",
+        "packages/models/AGENTS.md",
+        "packages/AGENTS.md"
+      ],
+      "fast_tests": [
+        "make agent-fast-gate"
+      ],
+      "feature_tests": []
+    },
+    {
+      "name": "app-scaffold",
+      "summary": "Catch-all for deploy, test, and config scaffolding.",
+      "doc_only": false,
+      "loop_mode": "completion",
+      "execution_plan_policy": "long_horizon",
+      "paths": [
+        "deploy/**",
+        "tests/**",
+        "pyproject.toml",
+        "scripts/**",
+        "netlify.toml",
+        "apps/*.py",
+        "apps/reflect/**",
+        "apps/learning_agents/**"
+      ],
+      "read_first": [
+        "docs/agent/repo-map.md",
+        "docs/agent/architecture-guardrails.md"
+      ],
+      "fast_tests": [
+        "make agent-fast-gate"
+      ],
+      "feature_tests": []
+    }
+  ]
+}

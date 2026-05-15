@@ -1,0 +1,90 @@
+from __future__ import annotations
+
+import unittest
+from types import SimpleNamespace
+
+from apps.reflect.evidence import build_evidence
+from apps.reflect.features import resolve_features
+from apps.reflect.runner import _assemble_system_prompt, _compose_tools
+from packages.contracts.runtime import LearningJob
+
+
+class DreamFeatureTest(unittest.TestCase):
+    def test_dream_trigger_resolves_to_single_nightly_bundle(self) -> None:
+        features = resolve_features("dream")
+
+        self.assertEqual(tuple(feature.feature_id for feature in features), ("dream", "questions", "skills", "diary"))
+
+    def test_explicit_dream_drops_pm_learning_but_preserves_questions(self) -> None:
+        features = resolve_features("manual", explicit_features=("pm", "questions", "dream", "recall"))
+
+        self.assertEqual(tuple(feature.feature_id for feature in features), ("dream", "questions"))
+
+    def test_dream_trigger_with_legacy_explicit_metadata_adds_nightly_bundle(self) -> None:
+        features = resolve_features("dream", explicit_features=("dream", "questions"))
+
+        self.assertEqual(tuple(feature.feature_id for feature in features), ("dream", "questions", "skills", "diary"))
+
+    def test_explicit_dream_alone_stays_dream_only(self) -> None:
+        features = resolve_features("manual", explicit_features=("dream",))
+
+        self.assertEqual(tuple(feature.feature_id for feature in features), ("dream",))
+
+    def test_episode_close_resolves_to_pm_questions_and_skills_without_conversation_search(self) -> None:
+        features = resolve_features("episode_close")
+
+        self.assertEqual(tuple(feature.feature_id for feature in features), ("pm", "questions", "skills"))
+        self.assertNotIn("tool.conversation.search", _compose_tools(features))
+
+    def test_dream_prompt_requires_pm_consolidation_and_concise_claims(self) -> None:
+        features = resolve_features("dream")
+
+        prompt = _assemble_system_prompt(features, conservatism="medium")
+
+        self.assertIn("Dream is a nightly consolidation pass", prompt)
+        self.assertIn("expr=<target_date>", prompt)
+        self.assertNotIn("expr=today", prompt)
+        self.assertIn("tool.personal_model.search mode=inventory status=all", prompt)
+        self.assertIn("tool.skill.list", prompt)
+        self.assertIn("tool.diary.write", prompt)
+        self.assertIn("pruning unreasonable facts", prompt)
+        self.assertIn("deduplicating, merging overlapping claims", prompt)
+        self.assertIn("CLAIM TEXT RULE", prompt)
+        self.assertIn("short, clear, explicit, and unambiguous", prompt)
+
+    def test_dream_evidence_omits_episode_close_packet_when_questions_are_present(self) -> None:
+        class Repository:
+            def load_episode(self, episode_id: str) -> SimpleNamespace:
+                return SimpleNamespace(exit_summary="episode close summary should not appear")
+
+            def list_personal_model_facts(self, **_: object) -> tuple[object, ...]:
+                return ()
+
+        runtime = SimpleNamespace(
+            repository=Repository(),
+            inspect_user=lambda session_id: SimpleNamespace(timezone="Asia/Shanghai"),
+        )
+        job = LearningJob(
+            job_id="job-dream",
+            job_type="episode_boundary_learning",
+            trigger="dream",
+            status="queued",
+            personal_model_id="pm",
+            state_id="state",
+            episode_id="episode",
+            metadata={"target_date": "2026-05-14", "diary_target_date": "2026-05-13"},
+        )
+
+        evidence = build_evidence(runtime, job, resolve_features("dream"))
+
+        self.assertIn("## Dream context", evidence)
+        self.assertIn("target_date: 2026-05-14", evidence)
+        self.assertIn("## Diary context", evidence)
+        self.assertIn("target_date: 2026-05-13", evidence)
+        self.assertNotIn("## Episode summary", evidence)
+        self.assertNotIn("## Conversation turns", evidence)
+        self.assertNotIn("episode close summary should not appear", evidence)
+
+
+if __name__ == "__main__":
+    unittest.main()

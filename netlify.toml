@@ -1,0 +1,6 @@
+[build]
+command = "make site-build"
+publish = "apps/site/dist"
+
+[build.environment]
+NODE_VERSION = "20"

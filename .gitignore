@@ -1,0 +1,31 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.coverage
+.venv/
+.venv-agent/
+.agent-harness/
+.elephant-api.sqlite3
+provider-secrets.key
+.worktrees/
+apps/site/dist/
+apps/site/.docusaurus/
+apps/site/static/install.sh
+apps/site/node_modules/
+apps/dashboard/dist/
+apps/dashboard/node_modules/
+*.elephant-info/
+elephant_agent.egg-info/
+build/
+.git/
+.agents/
+# Local state skill trees (~/.elephant/skills/*, NOT the `packages/skills/` source tree).
+# Anchoring with `!packages/skills/` below re-admits the source tree.
+skills/
+!packages/skills/
+!packages/skills/**
+# Re-ignore bytecode caches that would be admitted by the `packages/skills/**`
+# whitelist above — we never want __pycache__ tracked anywhere.
+packages/skills/**/__pycache__/
+packages/skills/**/*.py[cod]
+_temp/

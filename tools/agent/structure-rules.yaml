@@ -1,0 +1,17 @@
+{
+  "directories": {
+    "apps": "Runnable surfaces or deployable entrypoints.",
+    "packages": "Reusable shared modules.",
+    "deploy": "Packaging and deployment topology assets.",
+    "tests": "Harness and product regression tests.",
+    "docs/agent": "Human-readable harness system of record.",
+    "docs/paper": "Outward-facing system-report sources and compiled paper artifacts.",
+    "tools/agent": "Executable harness manifests and scripts.",
+    ".github": "Contributor interface and CI."
+  },
+  "guardrails": [
+    "Do not land future product code in the repo root when apps/ or packages/ is a better surface.",
+    "Do not keep long-horizon execution state only in chat; use plans, ADRs, or debt entries.",
+    "Do not change CI logic without updating the canonical make targets or the matching docs."
+  ]
+}

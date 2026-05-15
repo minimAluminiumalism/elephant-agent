@@ -1,0 +1,14 @@
+[Unit]
+Description=Elephant Agent operator runtime support smoke
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/elephant
+EnvironmentFile=-/etc/elephant/elephant-runtime.env
+ExecStart=/usr/bin/docker compose -f deploy/docker/docker-compose.runtime-support.yml run --rm runtime-support health
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,13 @@
+services:
+  runtime-support:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/runtime-support.Dockerfile
+    image: elephant-runtime-support:latest
+    environment:
+      ELEPHANT_HOME: /var/lib/elephant
+      ELEPHANT_HERD_DIR: /var/lib/elephant/herd
+    volumes:
+      - ./runtime-home:/var/lib/elephant
+    command:
+      - health
