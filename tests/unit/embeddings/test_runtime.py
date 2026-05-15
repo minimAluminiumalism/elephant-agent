@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 import sys
 import tempfile
 import time
+import types
 import unittest
 from unittest import mock
 
@@ -11,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from packages.embeddings import (
+from packages.embeddings import (  # noqa: E402
     ELEPHANT_EMBED_MODEL_ID,
     ELEPHANT_EMBED_DEFAULT_DIMENSIONS,
     ELEPHANT_EMBED_ONLINE_DIMENSIONS,
@@ -36,6 +38,7 @@ from packages.embeddings import (
     embedding_root_is_healthy,
     resolve_embedding_dimensions,
 )
+import packages.embeddings.runtime as embedding_runtime  # noqa: E402
 
 
 def _unit_vector(dimensions: int, *, index: int = 0, weight: float = 1.0) -> tuple[float, ...]:
@@ -204,6 +207,64 @@ class EmbeddingRuntimeTest(unittest.TestCase):
 
             (root / "modules.json").write_text("[]", encoding="utf-8")
             self.assertTrue(embedding_root_is_healthy(str(root)))
+
+    def test_local_embedding_loader_passes_tokenizer_regex_fix(self) -> None:
+        provider = SentenceTransformerEmbeddingProvider(model_root="/tmp/elephant-embed")
+        sentence_transformer = mock.Mock(return_value=object())
+        fake_module = types.SimpleNamespace(SentenceTransformer=sentence_transformer)
+
+        with (
+            mock.patch("packages.embeddings.runtime.sentence_transformers_dependencies_ready", return_value=True),
+            mock.patch("packages.embeddings.runtime.embedding_root_is_healthy", return_value=True),
+            mock.patch.dict(sys.modules, {"sentence_transformers": fake_module}),
+        ):
+            provider._load_model()
+
+        sentence_transformer.assert_called_once_with(
+            "/tmp/elephant-embed",
+            local_files_only=True,
+            processor_kwargs={"fix_mistral_regex": True},
+        )
+
+    def test_local_embedding_loader_suppresses_known_tokenizer_regex_warning(self) -> None:
+        class _CaptureHandler(logging.Handler):
+            def emit(self, record: logging.LogRecord) -> None:
+                records.append(record)
+
+        records: list[logging.LogRecord] = []
+        logger = logging.getLogger("transformers.tokenization_utils_tokenizers")
+        handler = _CaptureHandler()
+        original_level = logger.level
+        original_propagate = logger.propagate
+
+        model_root = "/tmp/elephant-embed-regex-warning"
+        known_warning = (
+            f"The tokenizer you are loading from '{model_root}' with an incorrect regex pattern. "
+            "This warning is emitted by transformers for the local embedding tokenizer."
+        )
+        other_warning = (
+            "The tokenizer you are loading from '/tmp/other-model' with an incorrect regex pattern. "
+            "This warning should still be visible."
+        )
+
+        try:
+            logger.addHandler(handler)
+            logger.setLevel(logging.WARNING)
+            logger.propagate = False
+            embedding_runtime._suppress_local_embedding_load_warnings(model_root)
+
+            logger.warning(known_warning)
+            logger.warning(other_warning)
+            logger.warning("plain tokenizer warning")
+        finally:
+            logger.removeHandler(handler)
+            logger.setLevel(original_level)
+            logger.propagate = original_propagate
+
+        self.assertEqual(
+            [record.getMessage() for record in records],
+            [other_warning, "plain tokenizer warning"],
+        )
 
     def test_preload_and_background_backfill_fill_the_shared_cache(self) -> None:
         provider = SentenceTransformerEmbeddingProvider()

@@ -31,16 +31,35 @@ _HEALTHY_ROOT_MARKERS = (
     "config_sentence_transformers.json",
     "sentence_bert_config.json",
 )
-_SENTENCE_TRANSFORMERS_LOG_FILTER_INSTALLED = False
+_LOCAL_EMBEDDING_LOG_FILTER_INSTALLED = False
+_LOCAL_EMBEDDING_WARNING_MODEL_ROOTS: set[str] = set()
 
-def _suppress_sentence_transformers_version_warning() -> None:
-    global _SENTENCE_TRANSFORMERS_LOG_FILTER_INSTALLED
-    if not _SENTENCE_TRANSFORMERS_LOG_FILTER_INSTALLED:
-        class _VersionFilter(logging.Filter):
+
+def _is_incorrect_regex_warning_for_local_embedding_root(message: str) -> bool:
+    if not message.startswith("The tokenizer you are loading from "):
+        return False
+    if " with an incorrect regex pattern" not in message:
+        return False
+    return any(model_root in message for model_root in _LOCAL_EMBEDDING_WARNING_MODEL_ROOTS)
+
+
+def _suppress_local_embedding_load_warnings(model_root: str | None = None) -> None:
+    global _LOCAL_EMBEDDING_LOG_FILTER_INSTALLED
+    _LOCAL_EMBEDDING_WARNING_MODEL_ROOTS.add(str(embedding_model_root_path(model_root)))
+    if not _LOCAL_EMBEDDING_LOG_FILTER_INSTALLED:
+        class _LocalEmbeddingLoadFilter(logging.Filter):
             def filter(self, record: logging.LogRecord) -> bool:
-                return not record.getMessage().startswith("You try to use a model that was created with version ")
-        logging.getLogger("sentence_transformers.SentenceTransformer").addFilter(_VersionFilter())
-        _SENTENCE_TRANSFORMERS_LOG_FILTER_INSTALLED = True
+                message = record.getMessage()
+                if message.startswith("You try to use a model that was created with version "):
+                    return False
+                return not _is_incorrect_regex_warning_for_local_embedding_root(message)
+
+        for logger_name in (
+            "sentence_transformers.SentenceTransformer",
+            "transformers.tokenization_utils_tokenizers",
+        ):
+            logging.getLogger(logger_name).addFilter(_LocalEmbeddingLoadFilter())
+        _LOCAL_EMBEDDING_LOG_FILTER_INSTALLED = True
 
 
 def embedding_model_root_path(model_root: str | None = None) -> Path:
@@ -445,12 +464,13 @@ class SentenceTransformerEmbeddingProvider:
                 # Keep Hugging Face tokenizers and sentence-transformers from emitting
                 # compatibility warnings into the interactive TUI while the local embedder steadys.
                 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-                _suppress_sentence_transformers_version_warning()
+                _suppress_local_embedding_load_warnings(self.model_root)
                 from sentence_transformers import SentenceTransformer
 
                 self._model = SentenceTransformer(
                     str(embedding_model_root_path(self.model_root)),
                     local_files_only=True,
+                    processor_kwargs={"fix_mistral_regex": True},
                 )
             return self._model
 
