@@ -10,7 +10,7 @@ const installCommand = "curl -fsSL https://elephant.agentic-in.ai/install.sh | b
 const pageTitle = "Personal-Model-First Self-Evolving AI Agent";
 const pageTitleWithSite = `${pageTitle} | Elephant Agent`;
 const pageDescription =
-  "Elephant Agent grows a correctable Personal Model, asks with user-paced curiosity, and reflects after the turn so personal AI can evolve around you.";
+  "Elephant Agent starts from you, grows a correctable Personal Model, and self-evolves through curiosity and reflection.";
 const pageKeywords = [
   "personal-model-first AI",
   "personal AI agent",
@@ -46,21 +46,21 @@ const problemRows = [
     body:
       "You repeat the same people, projects, risks, and preferences every time.",
     note: "Elephant Agent carries the useful understanding forward.",
-    vs: "Others add memory slots. Elephant Agent grows a Personal Model.",
+    vs: "Others add memory slots. Elephant Agent grows understanding.",
   },
   {
     name: "Drift",
     body:
       "A strong answer today can still forget what mattered yesterday.",
     note: "Elephant Agent resumes from the right thread.",
-    vs: "Others extend context windows. Elephant Agent picks up the right thread.",
+    vs: "Others extend context windows. Elephant Agent keeps the path alive.",
   },
   {
     name: "Passivity",
     body:
       "Most agents wait for you to explain every missing piece.",
     note: "Elephant Agent can ask when the answer would change future help.",
-    vs: "Others wait. Elephant Agent gets curious at your pace, then reflects after the turn.",
+    vs: "Others wait. Elephant Agent asks gently and reflects after the turn.",
   },
 ];
 
@@ -68,17 +68,17 @@ const thesisCards = [
   {
     kicker: "01 →",
     title: "Personal Model first",
-    body: "Identity, World, Pulse, and Journey give the agent a correctable way to understand one person.",
+    body: "Identity, World, Pulse, and Journey keep understanding centered on one person.",
   },
   {
     kicker: "02 →",
     title: "Curiosity by design",
-    body: "Quiet, balanced, or active. Elephant Agent asks only when the answer would change how it helps.",
+    body: "Quiet, balanced, or active. It asks gently when one answer would change future help.",
   },
   {
     kicker: "03",
     title: "Reflect after the turn",
-    body: "Background reflect jobs turn lived Steps into durable, inspectable understanding instead of hidden profiling.",
+    body: "After the conversation, reflect jobs turn lived evidence into correctable Personal Model updates.",
   },
 ];
 
@@ -107,7 +107,7 @@ export default function HomePage(): React.JSX.Element {
             <div className="grid manifesto-grid">
               <div className="manifesto-title-wrap">
                 <span className="label" data-reveal>
-                  Personal-model-first AI
+                  PM-first self-evolving AI
                 </span>
                 <h1 className="manifesto-title" data-reveal>
                   <span>Elephant Agent</span>
@@ -119,10 +119,8 @@ export default function HomePage(): React.JSX.Element {
                   Elephants never forget.
                 </p>
                 <p>
-                  Elephant Agent is a Personal-Model-first self-evolving AI
-                  agent. It starts from you, asks gently when understanding is
-                  missing, and reflects after the turn so the right people,
-                  risks, rhythms, and decisions can guide what happens next.
+                  Personal-Model-first self-evolving AI agent, built around
+                  you. Curious by design. Reflective after the turn.
                 </p>
                 <div className="pill-row">
                   <span className="info-pill info-pill-highlight">PM-first</span>
@@ -186,14 +184,14 @@ export default function HomePage(): React.JSX.Element {
                   <strong className="memory-key">relationship</strong>.
                 </p>
                 <p>
-                  That is the inspiration behind Elephant Agent. A personal AI
+                  That is the inspiration behind Elephant Agent. Personal AI
                   should not archive every transcript and call it memory. It
-                  should turn memory into a{" "}
+                  should self-evolve around a{" "}
                   <strong className="memory-key">correctable Personal Model</strong>:
-                  episodic traces, social context, risk signals, current
-                  rhythms, and long-term lessons that help tomorrow feel
-                  continuous. Not more storage. A living understanding that can
-                  ask, learn, and be corrected.
+                  who you are, what surrounds you, what is alive right now, and
+                  what your path has taught you. Not more storage. A living
+                  understanding that asks, reflects, and becomes more yours
+                  over time.
                 </p>
               </div>
             </div>
