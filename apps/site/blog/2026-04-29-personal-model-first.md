@@ -1,14 +1,14 @@
 ---
 slug: personal-ai-you-create
-title: "Understanding First: Why We Built Elephant Agent"
+title: "Personal-Model-First: Why Elephant Agent Self-Evolves Around You"
 authors: [elephant-team]
 tags: [elephant, personal-ai, personal-model, curiosity, continuity, open-source]
-description: "Memory is the beginning. Personal AI needs a correctable Personal Model and the curiosity to keep it alive."
+description: "Memory is the beginning. Personal AI should self-evolve around a correctable Personal Model, user-paced curiosity, and background reflect."
 image: /assets/blog/1.png
 hide_table_of_contents: false
 ---
 
-# Understanding First: Why We Built Elephant Agent
+# Personal-Model-First: Why Elephant Agent Self-Evolves Around You
 
 <div className="blog-figure">
   <img src="/assets/blog/1.png" alt="Elephant Agent blog cover" />
@@ -401,7 +401,7 @@ the person it helps.
 
 Elephant Agent is our first version of that bet:
 
-> **Understanding first. Curious at your pace. Correctable as it grows.**
+> **Personal-Model-first. Self-evolving through curiosity and reflect. Correctable as it grows.**
 
 Memory helps. Skills help. But personal AI starts when the system can ask:
 what do I understand, why do I believe it, what is missing, and how should this

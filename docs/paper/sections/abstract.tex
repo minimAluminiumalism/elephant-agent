@@ -1,12 +1,12 @@
 Many personal-agent systems now include memory, and many self-evolving agent
 systems treat reusable skill acquisition as the primary path to improvement.
-For personal AI, both are downstream of a more central problem: how to maintain
-correctable understanding of one person over time. Elephant Agent is a
-\emph{personal-model-first} memory architecture for personal AI. It centers a
-Personal Model: a durable, grounded understanding across four lenses --- who
-the user is (\textit{Identity}), what surrounds them (\textit{World}), what is
-alive right now (\textit{Pulse}), and what their path has taught them
-(\textit{Journey}).
+For personal AI, both are downstream of a more central problem: how an agent can
+self-evolve around correctable understanding of one person over time. Elephant
+Agent is a \emph{personal-model-first} self-evolving architecture for personal
+AI. It centers a Personal Model: a durable, grounded understanding across four
+lenses --- who the user is (\textit{Identity}), what surrounds them
+(\textit{World}), what is alive right now (\textit{Pulse}), and what their path
+has taught them (\textit{Journey}).
 
 The system treats memory as five cooperating layers rather than a transcript
 archive or a vector store: Matriarch Core / Personal Model, Elephant State,
@@ -14,9 +14,12 @@ Episode / Loop / Step Trail, Contextual Recall, and Background Learning. Raw
 Steps preserve what happened; contextual recall retrieves support from Steps
 and Facts; proactive questions expose gaps, conflicts, stale Pulse, and useful
 adaptations; background learning decides when evidence should change durable
-claims. There is no free-form memory-note table or foreground memory write
-surface. Durable understanding is written through governed Personal Model
-tools and remains inspectable, correctable, and source-provenanced.
+claims. This is the system's self-evolution loop: curiosity identifies what
+would improve future help, and reflect jobs turn lived evidence into governed
+Personal Model updates. There is no free-form memory-note table or foreground
+memory write surface. Durable understanding is written through governed
+Personal Model tools and remains inspectable, correctable, and
+source-provenanced.
 
 This report describes the Elephant Agent architecture, four-lens Personal Model
 schema, proactive curiosity loop, local semantic recall path, background reflect

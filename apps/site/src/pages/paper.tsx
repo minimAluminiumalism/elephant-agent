@@ -382,16 +382,16 @@ export default function PaperPage(): React.JSX.Element {
   return (
     <Layout
       title="Paper"
-      description="Elephant Agent: Personal-Model-First Memory for Personal AI — full technical paper from Agentic Intelligence Lab."
+      description="Elephant Agent: Personal-Model-First Self-Evolution for Personal AI — full technical paper from Agentic Intelligence Lab."
     >
       <Head>
         <meta property="og:title" content="Paper — Elephant Agent" />
-        <meta property="og:description" content="Elephant Agent: Personal-Model-First Memory for Personal AI. Full technical paper from Agentic Intelligence Lab, MBZUAI, McGill University, and Mila." />
+        <meta property="og:description" content="Elephant Agent: Personal-Model-First Self-Evolution for Personal AI. Full technical paper from Agentic Intelligence Lab, MBZUAI, McGill University, and Mila." />
         <meta property="og:image" content={ogImage} />
         <meta property="og:type" content="article" />
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content="Paper — Elephant Agent" />
-        <meta name="twitter:description" content="Elephant Agent: Personal-Model-First Memory for Personal AI. Full technical paper from Agentic Intelligence Lab." />
+        <meta name="twitter:description" content="Elephant Agent: Personal-Model-First Self-Evolution for Personal AI. Full technical paper from Agentic Intelligence Lab." />
         <meta name="twitter:image" content={ogImage} />
       </Head>
 
@@ -401,7 +401,7 @@ export default function PaperPage(): React.JSX.Element {
             <span className={styles.heroLabel}>Research</span>
             <h1 className={styles.heroTitle}>Paper</h1>
             <p className={styles.heroDescription}>
-              <em>Elephant Agent: Personal-Model-First Memory for Personal AI</em>
+              <em>Elephant Agent: Personal-Model-First Self-Evolution for Personal AI</em>
               <br />
               Xunzhuo Liu, Hao Wu, Huamin Chen, Xue Liu, Bowei He
               <br />

@@ -7,10 +7,10 @@ import {githubRepoUrl} from "../components/siteData";
 import {useLandingEffects} from "../components/useLandingEffects";
 
 const installCommand = "curl -fsSL https://elephant.agentic-in.ai/install.sh | bash";
-const pageTitle = "Personal-model-first AI";
+const pageTitle = "Personal-Model-First Self-Evolving AI Agent";
 const pageTitleWithSite = `${pageTitle} | Elephant Agent`;
 const pageDescription =
-  "Elephant Agent is personal-model-first AI: it turns memory into correctable understanding, then gets curious at your pace.";
+  "Elephant Agent grows a correctable Personal Model, asks with user-paced curiosity, and reflects after the turn so personal AI can evolve around you.";
 const pageKeywords = [
   "personal-model-first AI",
   "personal AI agent",
@@ -60,7 +60,7 @@ const problemRows = [
     body:
       "Most agents wait for you to explain every missing piece.",
     note: "Elephant Agent can ask when the answer would change future help.",
-    vs: "Others wait. Elephant Agent gets curious at your pace.",
+    vs: "Others wait. Elephant Agent gets curious at your pace, then reflects after the turn.",
   },
 ];
 
@@ -68,17 +68,17 @@ const thesisCards = [
   {
     kicker: "01 →",
     title: "Personal Model first",
-    body: "Identity, World, Pulse, and Journey give the agent a typed way to understand one person.",
+    body: "Identity, World, Pulse, and Journey give the agent a correctable way to understand one person.",
   },
   {
     kicker: "02 →",
-    title: "Proactive curiosity",
+    title: "Curiosity by design",
     body: "Quiet, balanced, or active. Elephant Agent asks only when the answer would change how it helps.",
   },
   {
     kicker: "03",
-    title: "Continuity you can trust",
-    body: "Claims are correctable, inspectable, and tied back to evidence instead of hidden profiling.",
+    title: "Reflect after the turn",
+    body: "Background reflect jobs turn lived Steps into durable, inspectable understanding instead of hidden profiling.",
   },
 ];
 
@@ -107,7 +107,7 @@ export default function HomePage(): React.JSX.Element {
             <div className="grid manifesto-grid">
               <div className="manifesto-title-wrap">
                 <span className="label" data-reveal>
-                  Warm personal AI
+                  Personal-model-first AI
                 </span>
                 <h1 className="manifesto-title" data-reveal>
                   <span>Elephant Agent</span>
@@ -119,14 +119,15 @@ export default function HomePage(): React.JSX.Element {
                   Elephants never forget.
                 </p>
                 <p>
-                  Memory is the beginning. Elephant Agent grows a Personal
-                  Model so the right people, risks, rhythms, and decisions can
-                  guide what happens next.
+                  Elephant Agent is a Personal-Model-first self-evolving AI
+                  agent. It starts from you, asks gently when understanding is
+                  missing, and reflects after the turn so the right people,
+                  risks, rhythms, and decisions can guide what happens next.
                 </p>
                 <div className="pill-row">
-                  <span className="info-pill info-pill-highlight">Warm memory</span>
                   <span className="info-pill info-pill-highlight">PM-first</span>
-                  <span className="info-pill info-pill-highlight">Gentle curiosity</span>
+                  <span className="info-pill info-pill-highlight">Self-evolving</span>
+                  <span className="info-pill info-pill-highlight">Curiosity + reflect</span>
                 </div>
                 <div className="cta-row">
                   <a className="btn-pill btn-pill-strong" href="#quickstart">

@@ -6,7 +6,7 @@
   <h1>Elephant Agent</h1>
   <p>
     <strong>Elephants never forget.</strong><br />
-    Understanding first · Correctable Personal Model · Curiosity at your pace.
+    Personal-Model-first self-evolving AI agent · Curiosity at your pace · Reflect after the turn.
   </p>
   <p>
     <a href="https://elephant.agentic-in.ai/">Website</a>
@@ -54,6 +54,11 @@ transcript. It grows a **correctable understanding** of the **paths**, **people*
 - It becomes **more yours over time** because its understanding stays tied to you,
   not just to the current task.
 
+This is the self-evolving part: Elephant Agent does not evolve by collecting
+more transcripts or blindly adding skills. It evolves around you as curiosity
+and background reflect jobs turn lived evidence into a clearer, correctable
+Personal Model.
+
 One `elephant` is a durable companion for a line of work or life context. Many
 elephants form a `herd`.
 
@@ -77,7 +82,7 @@ That learning comes from four loops:
 
 - **Grounded learning** from explicit remembers, corrections, and dashboard edits.
 - **Curiosity-driven learning** from one useful question when a gap would change future help.
-- **Background learning** from reflect agents that read Episode steps after close, idle, diary, or manual triggers.
+- **Reflect-driven background learning** from agents that read Episode steps after close, idle, diary, or manual triggers.
 - **Skill fit learning** from visible capability use while keeping durable understanding inspectable.
 
 ## Curiosity, At Your Pace
