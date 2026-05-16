@@ -1,29 +1,26 @@
-# Harness
+# Harness Package
 
-Long-horizon harness subsystems. Owns the runtime behaviours that make a
-single task survive 24h+ unattended:
+This package owns long-horizon runtime support primitives.
 
-* **Retry policy** (`retry_policy.py`) — generic exponential-backoff wrapper
-  that honours `Retry-After`, classifies errors into retryable vs permanent,
-  and threads `RetryState` / idempotency keys back into `LoopState` so
-  resume replays reuse the same semantics.
-* **Wait conditions** — parsing / serialisation of `WaitCondition` records
-  carried by `LoopState`. Concrete subsystems (supervisor, event bus,
-  network probe) land alongside this package in later commits.
+## Own Here
 
-Design reference: `docs/system-design/system-layer-model.md` §Loop /
-§Runtime Flow; master plan `~/.claude-internal/plans/long-horizon-harness.md`.
+- retry policy and `RetryState` handling
+- supervisor heartbeat, crash-scan, and timer-wake loops
+- wait-condition support around parked `LoopState` records
+- storage-facing protocols used by the supervisor
 
-## Dependency direction
+## Do Not Own Here
 
-`packages/harness` depends on `packages/contracts` and `packages/storage`
-only. It is callable from `packages/kernel` and `packages/models/providers`.
-Apps (`apps/supervisor_command.py`, `apps/learning_worker_runtime.py`)
-consume the harness; the harness never imports from `apps/`.
+- app command rendering
+- model-provider adapter logic
+- storage schema implementation
+- kernel turn execution
 
-## No backward compatibility shims
+## Dependency Direction
 
-Per `CLAUDE.md`, every change to a contract or API lands in one commit
-with all call sites updated. This package is part of the Phase 1 plan
-(`~/.claude-internal/plans/toasty-launching-robin.md`) and will grow with
-Phases 2–5.
+`packages/harness` may depend on `packages/contracts` and storage-facing
+interfaces. It is callable from kernel and app process wiring, but it must not
+import from `apps/`.
+
+Use `docs/system-design/system-layer-model.md` as the durable design reference
+for Loop, WaitCondition, and runtime-flow semantics.

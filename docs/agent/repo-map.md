@@ -5,7 +5,7 @@
 ```
 ┌──────────────────────────────────────────────────────────┐
 │                         apps/                            │
-│  cli    api    gateway    dashboard    site    learning  │
+│  cli    api    gateway    dashboard    site    reflect   │
 └──────┬───┬───────┬──────────┬─────────┬────────┬───────┘
        │   │       │          │         │        │
        ▼   ▼       ▼          │         │        ▼

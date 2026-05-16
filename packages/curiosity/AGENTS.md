@@ -1,14 +1,21 @@
-# Curiosity Package Rules
+# Curiosity Package
 
-This package owns Elephant Agent's proactive-curiosity machinery. Runtime rules:
+This package owns proactive OpenQuestion behavior for Elephant Agent.
 
-- No direct storage writes outside the repository API.
-- OpenQuestion generation splits into three sources: coverage_gap
-  (produced by `packages/learning/consolidate.py`), ambiguity (emitted when
-  reconcile cannot resolve cross-source conflict), contextual (seeded by
-  `packages/learning/extract.py` via `generate_contextual_questions`).
-- Idle-clock semantics (ADR-0004): reset on the user's latest activity,
-  not on Elephant Agent's latest ask. This module never touches user timestamps;
-  callers pass `user_last_active_at`.
-- All rendering funnels through `question_renderer.py` so prompt wording
-  is centralized and sensitivity-aware.
+## Own Here
+
+- `OpenQuestion` generation from contextual and ambiguity seeds
+- proactive ask policy over caller-provided activity timestamps
+- question rendering and sensitivity-aware user-facing wording
+- tool surface behavior for answering, updating, and deleting questions
+
+## Do Not Own Here
+
+- direct storage writes outside repository APIs
+- background learning job execution
+- Personal Model fact promotion
+- CLI or dashboard layout
+
+Questions are created by background learning or runtime ambiguity detection.
+Keep rendering centralized in `question_renderer.py` and keep policy inputs
+explicit; callers own user activity timestamps.

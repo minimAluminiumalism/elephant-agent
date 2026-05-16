@@ -143,6 +143,7 @@ class ContextPack:
     acceptance_criteria: str = ""
     audit_warnings: list[str] = field(default_factory=list)
     context_repair_prompt: str = ""
+    covered_surfaces: set[str] = field(default_factory=set)
 
 
 def load_manifest(path: Path) -> dict[str, object]:
@@ -353,6 +354,11 @@ def build_context_pack(changed_files: list[str], matches: list[RuleMatch]) -> Co
 
     surfaces_section = context_map.get("surfaces", {})
     surface_path_map = load_surface_path_map()
+    covered_surfaces: set[str] = set(active_surfaces)
+    for match in matches[1:]:
+        matched_skill = skills.get(match.name, {})
+        covered_surfaces.update(matched_skill.get("required_surfaces", []))
+        covered_surfaces.update(matched_skill.get("conditional_surfaces", []))
     resolved_surfaces: dict[str, list[SurfaceRef]] = {}
     resolved_surface_paths: dict[str, tuple[str, ...]] = {}
     for surface_name in sorted(active_surfaces):
@@ -397,6 +403,7 @@ def build_context_pack(changed_files: list[str], matches: list[RuleMatch]) -> Co
         read_first=read_first,
         surfaces=resolved_surfaces,
         surface_paths=resolved_surface_paths,
+        covered_surfaces=covered_surfaces,
         local_agents_md=local_agents,
         validation=validation,
         acceptance_criteria=acceptance,
@@ -406,14 +413,20 @@ def build_context_pack(changed_files: list[str], matches: list[RuleMatch]) -> Co
 
 def audit_surface_coverage(changed_files: list[str], context_pack: ContextPack) -> list[str]:
     warnings: list[str] = []
-    touched = resolve_surfaces_for_files(changed_files)
-    active = set(context_pack.surfaces.keys())
+    surface_driving_files = [path for path in changed_files if not path.endswith("AGENTS.md")]
+    touched = resolve_surfaces_for_files(surface_driving_files)
+    active = set(context_pack.surfaces.keys()) | context_pack.covered_surfaces
     uncovered = touched - active
     for surface in sorted(uncovered):
         warnings.append(
             f"surface '{surface}' has matching files but is not in the active skill's required/conditional surfaces"
         )
-    unmatched = [p for p in changed_files if not any(match_any(p, patterns) for patterns in load_surface_path_map().values())]
+    unmatched = [
+        p
+        for p in changed_files
+        if not p.endswith("AGENTS.md")
+        and not any(match_any(p, patterns) for patterns in load_surface_path_map().values())
+    ]
     for path in unmatched:
         warnings.append(f"file does not belong to any surface: {path}")
     return warnings
@@ -720,6 +733,7 @@ def print_report_json(pack: ContextPack, changed_files: list[str], base_ref: str
             }
             for name, refs in pack.surfaces.items()
         },
+        "covered_surfaces": sorted(pack.covered_surfaces),
         "local_agents_md": pack.local_agents_md,
         "validation": pack.validation,
         "acceptance_criteria": pack.acceptance_criteria,

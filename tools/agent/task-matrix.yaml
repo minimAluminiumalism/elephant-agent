@@ -33,6 +33,7 @@
       "execution_plan_policy": "long_horizon",
       "paths": [
         "AGENTS.md",
+        "**/AGENTS.md",
         "docs/agent/**",
         ".github/PULL_REQUEST_TEMPLATE.md",
         ".github/ISSUE_TEMPLATE/**"

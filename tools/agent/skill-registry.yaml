@@ -5,6 +5,9 @@
       "label": "Repo Docs",
       "priority": 10,
       "summary": "Top-level docs, contributor contract, and stable written interface.",
+      "required_surfaces": [
+        "repo_docs"
+      ],
       "read_first": [
         "docs/agent/README.md",
         "CONTRIBUTING.md"
@@ -17,6 +20,9 @@
       "label": "Agent Text",
       "priority": 20,
       "summary": "Harness prose, task routing, plans, ADRs, and durable repo policy.",
+      "required_surfaces": [
+        "agent_text"
+      ],
       "read_first": [
         "docs/agent/governance.md",
         "docs/agent/change-surfaces.md"
@@ -30,6 +36,9 @@
       "label": "Agent Exec",
       "priority": 30,
       "summary": "Executable guardrails, make targets, scripts, and local hooks.",
+      "required_surfaces": [
+        "agent_exec"
+      ],
       "read_first": [
         "docs/agent/governance.md",
         "docs/agent/worktree-parallelism.md"
@@ -42,6 +51,9 @@
       "label": "Release Ops",
       "priority": 40,
       "summary": "CI, release-facing automation, and review interface changes.",
+      "required_surfaces": [
+        "release_ops"
+      ],
       "read_first": [
         "docs/agent/release-model.md",
         "docs/agent/testing-strategy.md"

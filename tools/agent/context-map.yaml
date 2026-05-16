@@ -303,6 +303,10 @@
         "reason": "Context assembly for generation prompts."
       },
       {
+        "path": "packages/semantic_index/AGENTS.md",
+        "reason": "Semantic index owns vector search and indexing primitives."
+      },
+      {
         "path": "docs/system-design/system-layer-model.md",
         "reason": "Context assembly bridges recall into the generation window."
       }
@@ -319,6 +323,26 @@
     ],
     "learning": [
       {
+        "path": "packages/curiosity/AGENTS.md",
+        "reason": "Curiosity owns proactive OpenQuestion behavior."
+      },
+      {
+        "path": "packages/growth/AGENTS.md",
+        "reason": "Growth owns Personal Model evolution workflows."
+      },
+      {
+        "path": "packages/understanding/AGENTS.md",
+        "reason": "Understanding owns Personal Model interpretation and governance helpers."
+      },
+      {
+        "path": "packages/experience/AGENTS.md",
+        "reason": "Experience owns trajectory and learning signal records."
+      },
+      {
+        "path": "packages/continuity/AGENTS.md",
+        "reason": "Continuity owns session resume projections."
+      },
+      {
         "path": "docs/system-design/system-layer-model.md",
         "reason": "Learning packages (curiosity, growth, understanding, experience, continuity) implement background evolution."
       }
@@ -327,6 +351,10 @@
       {
         "path": "packages/AGENTS.md",
         "reason": "Infrastructure packages share the package boundary rules."
+      },
+      {
+        "path": "packages/operator/AGENTS.md",
+        "reason": "Operator owns service and daemon management primitives."
       },
       {
         "path": "docs/agent/architecture-guardrails.md",
@@ -359,6 +387,10 @@
     ],
     "dashboard": [
       {
+        "path": "apps/dashboard/AGENTS.md",
+        "reason": "Dashboard owns the local inspection console UI."
+      },
+      {
         "path": "docs/agent/repo-map.md",
         "reason": "Dashboard frontend has its own build pipeline."
       }
@@ -370,6 +402,14 @@
       }
     ],
     "learning_agents": [
+      {
+        "path": "apps/reflect/AGENTS.md",
+        "reason": "Reflect owns composable background reflection runners."
+      },
+      {
+        "path": "apps/learning_agents/AGENTS.md",
+        "reason": "Learning agents app is a compatibility shim for background learning workers."
+      },
       {
         "path": "docs/system-design/system-layer-model.md",
         "reason": "Background reflect and learning workers implement the reflection and evolution model."

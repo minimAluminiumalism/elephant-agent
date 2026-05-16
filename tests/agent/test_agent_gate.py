@@ -177,6 +177,19 @@ class AgentGateTests(unittest.TestCase):
         self.assertIn("Context Repair", output)
         self.assertIn("tools/agent/context-map.yaml", output)
 
+    def test_audit_ignores_local_agents_docs_as_surface_drift(self) -> None:
+        matches = MODULE.resolve_rule_matches(["packages/growth/AGENTS.md"])
+        pack = MODULE.build_context_pack(["packages/growth/AGENTS.md"], matches)
+
+        self.assertEqual(MODULE.audit_surface_coverage(["packages/growth/AGENTS.md"], pack), [])
+
+    def test_audit_uses_also_matched_skill_surface_coverage(self) -> None:
+        changed_files = ["packages/semantic_index/AGENTS.md", "tools/agent/context-map.yaml"]
+        matches = MODULE.resolve_rule_matches(changed_files)
+        pack = MODULE.build_context_pack(changed_files, matches)
+
+        self.assertEqual(MODULE.audit_surface_coverage(changed_files, pack), [])
+
     def test_validate_compact_hides_check_details(self) -> None:
         buffer = io.StringIO()
         with redirect_stdout(buffer):
