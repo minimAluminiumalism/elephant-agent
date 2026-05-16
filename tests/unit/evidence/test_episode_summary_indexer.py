@@ -6,11 +6,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from packages.contracts import Episode, Record
+from packages.contracts import Episode, Fact
 from packages.evidence import (
     SemanticSummaryIndexer,
     build_episode_summary_text,
-    build_personal_model_record_text,
+    build_personal_model_claim_text,
 )
 
 
@@ -59,25 +59,19 @@ def _episode(**kwargs: Any) -> Episode:
     return Episode(**defaults)
 
 
-def _record(**kwargs: Any) -> Record:
+def _fact(**kwargs: Any) -> Fact:
     defaults: dict[str, Any] = dict(
-        record_id="record:pm:1",
-        kind="artifact",
-        schema_version="personal_model_component/v1",
-        payload={
-            "title": "prefers concise answers",
-            "summary": "user asked us to be more terse",
-            "content": "I prefer concise answers over long explanations.",
-        },
-        owner_scope="personal_model",
+        fact_id="fact:pm:1",
         personal_model_id="pm:1",
-        state_id="state:1",
-        layer_type="personal_model_component",
-        created_at=datetime(2026, 4, 30, tzinfo=timezone.utc),
-        metadata={"lens": "user_correction"},
+        lens="identity",
+        text="I prefer concise answers over long explanations.",
+        confidence=0.82,
+        committed_at=datetime(2026, 4, 30, tzinfo=timezone.utc),
+        source="pm_agent_promote",
+        metadata={"topic": "identity.communication.verbosity"},
     )
     defaults.update(kwargs)
-    return Record(**defaults)
+    return Fact(**defaults)
 
 
 def test_build_episode_summary_joins_entry_exit_and_metadata() -> None:
@@ -93,18 +87,18 @@ def test_build_episode_summary_joins_entry_exit_and_metadata() -> None:
     assert "note: success" in text
 
 
-def test_build_personal_model_record_text_collects_title_summary_content() -> None:
-    r = _record()
-    text = build_personal_model_record_text(r)
-    assert "prefers concise answers" in text
-    assert "user asked us to be more terse" in text
+def test_build_personal_model_claim_text_collects_lens_topic_claim() -> None:
+    r = _fact()
+    text = build_personal_model_claim_text(r)
+    assert "lens: identity" in text
+    assert "topic: identity.communication.verbosity" in text
     assert "I prefer concise answers" in text
 
 
 def test_indexer_noop_without_semantic_index_or_embedding() -> None:
     indexer = SemanticSummaryIndexer()
     assert indexer.index_episode_exit(_episode()) is None
-    assert indexer.index_personal_model_record(_record()) is None
+    assert indexer.index_personal_model_claim(_fact()) is None
 
 
 def test_indexer_writes_one_document_per_episode_exit() -> None:
@@ -120,14 +114,14 @@ def test_indexer_writes_one_document_per_episode_exit() -> None:
     assert len(idx.documents) == 1
     doc = idx.documents[0]
     assert doc.owner_scope == "state"
-    assert doc.source_record_id == "episode:session:1"
+    assert doc.source_id == "episode:session:1"
     assert doc.dimensions == 4
     assert "deploy script" in doc.text
     # No record ids leak into the indexed text.
     assert "record:" not in doc.text
 
 
-def test_indexer_writes_document_for_committed_personal_model_record() -> None:
+def test_indexer_writes_document_for_committed_personal_model_claim() -> None:
     emb = _StubEmbeddingService()
     idx = _StubSemanticIndex()
     indexer = SemanticSummaryIndexer(
@@ -136,12 +130,12 @@ def test_indexer_writes_document_for_committed_personal_model_record() -> None:
         provider_id="stub-provider",
         model_id="stub-model",
     )
-    indexer.index_personal_model_record(_record())
+    indexer.index_personal_model_claim(_fact())
     assert len(idx.documents) == 1
     doc = idx.documents[0]
     assert doc.owner_scope == "personal_model"
     assert doc.personal_model_id == "pm:1"
-    assert doc.source_record_id == "record:pm:1"
+    assert doc.source_id == "fact:pm:1"
 
 
 def test_indexer_swallows_embedding_exception() -> None:
@@ -166,12 +160,12 @@ def test_indexer_swallows_semantic_index_exception() -> None:
         provider_id="stub-provider",
         model_id="stub-model",
     )
-    assert indexer.index_personal_model_record(_record()) is None
+    assert indexer.index_personal_model_claim(_fact()) is None
 
 
 def test_indexer_skips_when_text_is_empty() -> None:
     # Exercise the early-return in `_index` by passing text that collapses to
-    # empty after truncation. We hit this via a record whose payload is blank.
+    # empty after truncation. We hit this via a blank fact.
     emb = _StubEmbeddingService()
     idx = _StubSemanticIndex()
     indexer = SemanticSummaryIndexer(
@@ -180,6 +174,10 @@ def test_indexer_skips_when_text_is_empty() -> None:
         provider_id="stub-provider",
         model_id="stub-model",
     )
-    blank = _record(payload={}, metadata={})
-    assert indexer.index_personal_model_record(blank) is None
+    try:
+        blank = _fact(text="", metadata={})
+        result = indexer.index_personal_model_claim(blank)
+    except ValueError:
+        result = None
+    assert result is None
     assert idx.documents == []

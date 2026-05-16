@@ -23,7 +23,7 @@ from .personal_model_governance import (
     inheritable_recall_metadata,
     is_protected_topic,
     is_single_active_topic,
-    memory_health_report,
+    personal_model_health_report,
     protected_topic_metadata,
     narrowing_suggestions,
     related_claims_for_selection,
@@ -185,20 +185,6 @@ def _low_information_query(query: str) -> bool:
     if len(ascii_tokens) >= 4 and all(len(token) <= 1 for token in ascii_tokens):
         return True
     return False
-def _record_inspect_payload(record: Any) -> dict[str, Any]:
-    return {
-        "record_id": _clean(getattr(record, "record_id", "")),
-        "kind": _clean(getattr(record, "kind", "")),
-        "schema_version": _clean(getattr(record, "schema_version", "")),
-        "owner_scope": _clean(getattr(record, "owner_scope", "")),
-        "personal_model_id": _clean(getattr(record, "personal_model_id", "")),
-        "state_id": _clean(getattr(record, "state_id", "")),
-        "layer_type": _clean(getattr(record, "layer_type", "")),
-        "created_at": getattr(getattr(record, "created_at", None), "isoformat", lambda: "")(),
-        "payload": dict(getattr(record, "payload", {}) or {}),
-        "metadata": dict(getattr(record, "metadata", {}) or {}),
-    }
-
 def _question_topic(lens: str, sub_lens: str) -> str:
     def segment(value: str, fallback: str) -> str:
         normalized = _normalized_text(value).replace(".", "_").replace("-", "_").replace("/", "_").replace(":", "_")
@@ -276,7 +262,7 @@ class PersonalModelUnderstandingSurface:
             return
         now = _utc_now()
         for entry in entries:
-            if getattr(entry, "source_record_id", "") != fact_id:
+            if getattr(entry, "source_id", "") != fact_id:
                 continue
             try:
                 upsert_entry(
@@ -490,7 +476,7 @@ class PersonalModelUnderstandingSurface:
         view: str = "conversation",
         limit: int = 8,
         personal_model_id: str = "",
-        include_current_episode: bool = True,
+        include_current_episode: bool = False,
     ) -> Mapping[str, Any]:
         pm_id = self._personal_model_id(session_id, personal_model_id)
         load_episode = getattr(self.repository, "load_episode_state", None)
@@ -598,14 +584,12 @@ class PersonalModelUnderstandingSurface:
         *,
         ref: str = "",
         topic: str = "",
-        record_id: str = "",
         query: str = "",
         personal_model_id: str = "",
         limit: int = 5,
     ) -> Mapping[str, Any]:
         pm_id = self._personal_model_id(session_id, personal_model_id)
         resolved_ref = _clean(ref)
-        resolved_record_id = _clean(record_id)
         resolved_topic = ensure_valid_topic_key(topic) if _clean(topic) else ""
         facts = tuple(
             self.repository.list_personal_model_facts(
@@ -621,15 +605,6 @@ class PersonalModelUnderstandingSurface:
         claim = claim_payload(selected[0]) if selected else None
         if selected and not resolved_topic:
             resolved_topic = _clean((selected[0].metadata or {}).get("topic"))
-        load_record = getattr(self.repository, "load_record", None)
-        source_records = []
-        if callable(load_record):
-            for item in (resolved_record_id, resolved_ref):
-                if not item:
-                    continue
-                record = load_record(item)
-                if record is not None:
-                    source_records.append(_record_inspect_payload(record))
         supersedes_refs: list[str] = []
         for fact in selected[: max(1, min(int(limit or 5), 10))]:
             if fact.supersedes_fact_id:
@@ -646,7 +621,7 @@ class PersonalModelUnderstandingSurface:
             for fact in facts
             if fact.fact_id == ref_id
         )
-        recall_query = _clean(query) or _clean((claim or {}).get("text") if isinstance(claim, Mapping) else "") or resolved_topic or resolved_record_id
+        recall_query = _clean(query) or _clean((claim or {}).get("text") if isinstance(claim, Mapping) else "") or resolved_topic
         history = ()
         if recall_query:
             history_result = self.recall_personal_model(
@@ -660,11 +635,9 @@ class PersonalModelUnderstandingSurface:
             "personal_model_id": pm_id,
             "ref": resolved_ref,
             "topic": resolved_topic,
-            "record_id": resolved_record_id,
             "claim": claim,
             "claims": tuple(claim_payload(fact) for fact in selected[: max(1, min(int(limit or 5), 10))]),
             "history": history,
-            "source_records": tuple(source_records),
             "supersedes_chain": chain,
         }
     def audit_personal_model(
@@ -688,7 +661,7 @@ class PersonalModelUnderstandingSurface:
                 status=("active", "retired", "disputed"),
             )
         )
-        health = memory_health_report(facts)
+        health = personal_model_health_report(facts)
         result: dict[str, Any] = {"personal_model_id": pm_id, "action": resolved_action}
         if resolved_action in {"health", "conflicts", "stale"}:
             result["health_report"] = health

@@ -19,7 +19,7 @@ update skill affinity through governed paths.
 | Episode close | Reviews the just-finished runtime window. | No, it writes through Personal Model tools. |
 | Diary | Produces a readable reflection of what Elephant Agent picked up. | No, it remains inspectable output unless promoted. |
 | Dream | Consolidates long-running patterns and stale material. | No, it proposes or writes governed updates. |
-| Grounding | Maintains identity, world, pulse, and journey anchors. | Only through explicit claim updates. |
+| Orientation | Maintains identity, world, pulse, and journey anchors. | Only through explicit claim updates. |
 | Skill affinity | Notices which skills fit the user or workflow. | No hidden skill profile; skills stay visible. |
 
 ## Lifecycle
@@ -64,4 +64,3 @@ Good background learning is quiet, bounded, and correctable:
 - it preserves provenance to source Steps
 - it updates Personal Model claims through the same correction path as foreground edits
 - it can return no update when nothing should be learned
-

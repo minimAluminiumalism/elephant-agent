@@ -3,7 +3,7 @@
 ## The gap this closes
 
 Without a producer hook, the `semantic_index` package is inert — nothing
-ever calls `index_document()`, so `memory.recall` can only fall back to
+ever calls `index_document()`, so recall can only fall back to
 substring scans. We fix that by writing committed content (personal-model
 records, episode exit summaries, state insights) into the index right after
 they are persisted, so the *next* turn's recall has a populated search
@@ -16,7 +16,7 @@ surface.
         embedding_service=DefaultEmbeddingService(...),
     )
     indexer.index_episode_exit(episode)
-    indexer.index_personal_model_record(record)
+    indexer.index_personal_model_claim(fact)
 
 Every call is best-effort: a missing service, an embedding failure, or a
 backend outage returns ``None`` without raising. The producer path must
@@ -31,13 +31,12 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from packages.contracts import Episode, Fact, Record, Step
+from packages.contracts import Episode, Fact, Step
 
 
 __all__ = [
     "SemanticSummaryIndexer",
     "build_episode_summary_text",
-    "build_personal_model_record_text",
     "build_personal_model_claim_text",
     "build_step_recall_text",
 ]
@@ -54,7 +53,7 @@ _NOISY_STEP_ACTIONS = frozenset(
         "effective_user_query",
         "model",
         "reflect",
-        "write_memory",
+        "write_state",
     }
 )
 
@@ -111,18 +110,6 @@ def build_episode_summary_text(episode: Episode) -> str:
     return _truncate(" | ".join(parts))
 
 
-def build_personal_model_record_text(record: Record) -> str:
-    """Flatten a personal-model record's title/summary/content for indexing."""
-    payload = dict(record.payload or {})
-    metadata = dict(record.metadata or {})
-    pieces: list[str] = []
-    for key in ("title", "summary", "content", "reason"):
-        value = str(payload.get(key) or metadata.get(key) or "").strip()
-        if value:
-            pieces.append(value)
-    return _truncate(" | ".join(pieces))
-
-
 def build_personal_model_claim_text(fact: Fact) -> str:
     """Flatten one active Personal Model claim for semantic recall."""
     metadata = dict(fact.metadata or {})
@@ -165,10 +152,8 @@ class SemanticSummaryIndexer:
     `embedding_service`: an object exposing `embed_text(text, *, request_id, ...)
                         -> EmbeddingVector` (matches `DefaultEmbeddingService`).
     `repository`: optional RuntimeStorageRepository. When provided and the
-                  `source_record_id` does not already exist, the indexer
-                  writes a stub Record first so the semantic_index_entries
-                  FK is satisfied. Required for `index_episode_exit` because
-                  Episode rows live in the `episodes` table, not `records`.
+                  Step, Episode, and Fact sources are reconstructed from their
+                  canonical tables plus semantic index metadata.
     """
 
     semantic_index: Any = None
@@ -199,21 +184,16 @@ class SemanticSummaryIndexer:
         self,
         *,
         text: str,
-        source_record_id: str,
+        source_id: str,
         owner_scope: str,
         personal_model_id: str | None,
         state_id: str | None,
         metadata: Mapping[str, str] | None = None,
-        ensure_record: bool = False,
-        record_kind: str = "derived",
-        record_schema_version: str = "",
-        record_layer_type: str | None = None,
-        record_created_at: datetime | None = None,
     ) -> object | None:
         service = self.semantic_index
         if service is None:
             return None
-        if not source_record_id.strip() or not text.strip():
+        if not source_id.strip() or not text.strip():
             return None
         vec_values, dimensions = self._embed(text)
         if vec_values is None or dimensions <= 0:
@@ -234,33 +214,9 @@ class SemanticSummaryIndexer:
         )
         if not provider_id or not model_id:
             return None
-        if ensure_record and self.repository is not None:
-            try:
-                existing = self.repository.load_record(source_record_id)
-            except Exception:
-                existing = None
-            if existing is None:
-                pm_ref = personal_model_id if owner_scope == "personal_model" else None
-                state_ref = state_id if owner_scope in {"state", "episode"} else None
-                try:
-                    stub = Record(
-                        record_id=source_record_id,
-                        kind=record_kind,
-                        schema_version=record_schema_version or f"{owner_scope}_summary/v1",
-                        owner_scope=owner_scope,
-                        personal_model_id=pm_ref,
-                        state_id=state_ref,
-                        layer_type=record_layer_type,
-                        payload={"text": text},
-                        created_at=record_created_at or _utc_now(),
-                        metadata={k: str(v) for k, v in dict(metadata or {}).items()},
-                    )
-                    self.repository.upsert_record(stub)
-                except Exception:
-                    return None
         try:
             document = SemanticIndexDocument(
-                source_record_id=source_record_id,
+                source_id=source_id,
                 owner_scope=owner_scope,
                 text=text,
                 vector=tuple(vec_values),
@@ -289,7 +245,7 @@ class SemanticSummaryIndexer:
         state_id = str(getattr(episode, "state_id", "") or "").strip() or None
         return self._index(
             text=text,
-            source_record_id=f"episode:{episode.episode_id}",
+            source_id=f"episode:{episode.episode_id}",
             owner_scope="state",
             personal_model_id=personal_model_id,
             state_id=state_id,
@@ -297,13 +253,8 @@ class SemanticSummaryIndexer:
                 "kind": "episode_summary",
                 "episode_id": episode.episode_id,
                 "status": str(getattr(episode, "status", "") or ""),
-                "memory_lifecycle": "episode",
+                "retention_lifecycle": "episode",
             },
-            ensure_record=True,
-            record_kind="derived",
-            record_schema_version="episode_summary/v1",
-            record_layer_type="episode_summary",
-            record_created_at=getattr(episode, "ended_at", None) or getattr(episode, "started_at", None),
         )
 
     def index_step(self, step: Step) -> object | None:
@@ -316,7 +267,7 @@ class SemanticSummaryIndexer:
         metadata = dict(step.metadata or {})
         return self._index(
             text=text,
-            source_record_id=f"record:{step.step_id}",
+            source_id=f"step:{step.step_id}",
             owner_scope="state",
             personal_model_id=step.personal_model_id,
             state_id=step.state_id,
@@ -328,36 +279,7 @@ class SemanticSummaryIndexer:
                 "action": step.action,
                 "phase": step.phase,
                 "status": step.status,
-                "memory_lifecycle": "episode",
-            },
-            ensure_record=True,
-            record_kind="derived",
-            record_schema_version="step/v1",
-            record_layer_type="step",
-            record_created_at=step.created_at,
-        )
-
-    def index_personal_model_record(self, record: Record) -> object | None:
-        """Index a committed Personal Model record for future recall."""
-        if record is None:
-            return None
-        text = build_personal_model_record_text(record)
-        if not text:
-            return None
-        personal_model_id = str(getattr(record, "personal_model_id", "") or "").strip() or None
-        state_id = str(getattr(record, "state_id", "") or "").strip() or None
-        metadata = dict(getattr(record, "metadata", {}) or {})
-        return self._index(
-            text=text,
-            source_record_id=record.record_id,
-            owner_scope="personal_model",
-            personal_model_id=personal_model_id,
-            state_id=state_id,
-            metadata={
-                "kind": "personal_model_record",
-                "record_id": record.record_id,
-                "layer_type": str(getattr(record, "layer_type", "") or ""),
-                "memory_lifecycle": "preference",
+                "retention_lifecycle": "episode",
             },
         )
 
@@ -371,7 +293,7 @@ class SemanticSummaryIndexer:
         metadata = dict(fact.metadata or {})
         return self._index(
             text=text,
-            source_record_id=fact.fact_id,
+            source_id=fact.fact_id,
             owner_scope="personal_model",
             personal_model_id=fact.personal_model_id,
             state_id=None,
@@ -383,10 +305,6 @@ class SemanticSummaryIndexer:
                 "text": fact.text,
                 "reason": str(metadata.get("reason") or ""),
                 "confidence": str(fact.confidence),
-                "memory_lifecycle": "preference",
+                "retention_lifecycle": "preference",
             },
-            ensure_record=True,
-            record_kind="derived",
-            record_schema_version="personal_model_claim/v1",
-            record_layer_type="personal_model_claim",
         )

@@ -1,7 +1,7 @@
 """Shared construction of the durable `SemanticIndexService` + backend.
 
-Both the producer side (episode close hook, personal-model record indexer,
-skill index writer) and the consumer side (`memory.recall`, skill re-rank)
+Both the producer side (episode close hook, personal-model fact indexer,
+skill index writer) and the consumer side (recall, skill re-rank)
 must read and write the SAME SQLite-backed vector index. If the producer
 uses a tempdir path while the consumer uses the runtime state dir, writes
 are invisible to reads — that is the exact "indexer wrote it, recall can't

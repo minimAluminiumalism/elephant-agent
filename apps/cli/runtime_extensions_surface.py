@@ -95,7 +95,7 @@ class CliRuntimeExtensionsMixin(CliRuntimeSubAgentsMixin):
         return session
 
     def _steady_embedding_runtime(self) -> None:
-        evidence_retriever = getattr(self.memory_runtime.retriever, "evidence_retriever", None)
+        evidence_retriever = getattr(self.recall_runtime.retriever, "evidence_retriever", None)
         embedding_service = getattr(evidence_retriever, "embedding_service", None)
         steady_async = getattr(embedding_service, "steady_async", None)
         if not callable(steady_async):
@@ -108,7 +108,7 @@ class CliRuntimeExtensionsMixin(CliRuntimeSubAgentsMixin):
             return
 
     def state_focus_runtime_status(self) -> Mapping[str, object]:
-        evidence_retriever = getattr(self.memory_runtime.retriever, "evidence_retriever", None)
+        evidence_retriever = getattr(self.recall_runtime.retriever, "evidence_retriever", None)
         embedding_service = getattr(evidence_retriever, "embedding_service", None)
         if embedding_service is None:
             return {
@@ -1139,7 +1139,7 @@ class CliRuntimeExtensionsMixin(CliRuntimeSubAgentsMixin):
                 elephant_files.mkdir(parents=True, exist_ok=True)
                 return elephant_files
             return Path.cwd()
-        embedding_service = self.memory_runtime.retriever.evidence_retriever.embedding_service
+        embedding_service = self.recall_runtime.retriever.evidence_retriever.embedding_service
         semantic_summary_indexer = None
         if self.semantic_index_bundle is not None and embedding_service is not None:
             from packages.evidence import SemanticSummaryIndexer

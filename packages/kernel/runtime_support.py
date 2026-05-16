@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from packages.capabilities.runtime import (
     ContextCapability,
     DeliveryAdapterCapability,
-    MemoryCapability,
+    RecallCapability,
     ModelProviderCapability,
     TelemetrySinkCapability,
     ToolCapability,
@@ -34,7 +34,6 @@ from packages.contracts.layers import Episode, Loop, PersonalModel, State, Step
 from packages.contracts.runtime import (
     LoopState,
     LoopStep,
-    ElephantIdentityRecord,
     ContextBundle,
     EvidenceRetrievalRequest,
     EventEnvelope,
@@ -42,15 +41,12 @@ from packages.contracts.runtime import (
     PendingToolCall,
     RetryState,
     StateFocusDecision,
-    MemoryRecord,
+    RecallEvidence,
     PlanDraft,
     PromptMessage,
     PersonalModelRuntimeState,
-    RelationshipMemoryRecord,
-    UserCardRecord,
     WaitCondition,
 )
-from packages.contracts.support import Grounding, Record
 from packages.tools.tool_result_storage import (
     ToolResultBudgetConfig,
     enforce_tool_observation_budget,
@@ -118,49 +114,6 @@ class KernelStoragePort(Protocol):
     ) -> None:
         """Persist an elephant State."""
 
-    def upsert_record(self, record: Record) -> None:
-        """Persist a durable source or derived record."""
-
-    def load_record(self, record_id: str) -> Record | None:
-        """Load a durable source or derived record."""
-
-    def list_records(
-        self,
-        *,
-        owner_scope: str | None = None,
-        state_id: str | None = None,
-        personal_model_id: str | None = None,
-    ) -> tuple[Record, ...]:
-        """List durable source or derived records."""
-
-    def upsert_grounding(
-        self,
-        grounding: Grounding,
-        *,
-        owner_scope: str | None = None,
-        personal_model_id: str | None = None,
-        state_id: str | None = None,
-    ) -> None:
-        """Persist runtime-owned grounding for durable writes."""
-
-    def list_groundings(
-        self,
-        *,
-        owner_scope: str | None = None,
-        state_id: str | None = None,
-        personal_model_id: str | None = None,
-    ) -> tuple[Grounding, ...]:
-        """List runtime-owned grounding records."""
-
-    def list_memory_entries(
-        self,
-        *,
-        owner_scope: str | None = None,
-        state_id: str | None = None,
-        personal_model_id: str | None = None,
-    ) -> tuple[object, ...]:
-        """List canonical memory entries for context projection."""
-
     def upsert_episode(self, episode: Episode) -> None:
         """Persist an Episode."""
 
@@ -204,7 +157,7 @@ class KernelStoragePort(Protocol):
 class KernelDependencies:
     storage: KernelStoragePort
     context: ContextCapability
-    memory: MemoryCapability
+    recall: RecallCapability
     model_provider: ModelProviderCapability
     telemetry: TelemetrySinkCapability
     tools: ToolCapability | None = None
@@ -213,7 +166,7 @@ class KernelDependencies:
     security_policy: SecurityPolicy | None = None
     skill_runtime: object | None = None
     # Optional hook for producer-side semantic indexing — episode summaries
-    # and committed personal-model records get pushed into the semantic index
+    # and committed personal-model facts get pushed into the semantic index
     # on commit, so the NEXT turn's recall block can retrieve them with
     # BM25+vector fusion.
     semantic_summary_indexer: object | None = None
@@ -245,8 +198,8 @@ class KernelSourceRequest:
     episode_reuse_idle_seconds: int = 1800
 
     @property
-    def source_record_id(self) -> str:
-        return f"record:{self.request_id}"
+    def source_id(self) -> str:
+        return f"source:{self.request_id}"
 
     @property
     def event_id(self) -> str:
@@ -258,7 +211,7 @@ class KernelSourceRequest:
             "content": self.prompt,
             "summary": self.prompt,
             **dict(self.source_payload),
-            "source_record_id": self.source_record_id,
+            "source_id": self.source_id,
         }
         if self.owner_scope is not None:
             payload["owner_scope"] = self.owner_scope
@@ -288,36 +241,6 @@ class KernelSourceRequest:
     def event(self) -> EventEnvelope:
         return self.to_event()
 
-    def to_source_record(self, *, created_at: datetime | None = None) -> Record:
-        return Record(
-            record_id=self.source_record_id,
-            kind="artifact",
-            schema_version="kernel.source.v1",
-            owner_scope=self.owner_scope,
-            personal_model_id=self.personal_model_id,
-            state_id=self.state_id,
-            layer_type="source",
-            payload={
-                "request_id": self.request_id,
-                "event_id": self.event_id,
-                "event_type": self.source_event_type,
-                "route_id": self.route_id,
-                "surface": self.surface,
-                "owner_scope": self.owner_scope or "",
-                "personal_model_id": self.personal_model_id or "",
-                "state_id": self.state_id or "",
-                "episode_id": self.episode_id or "",
-                "loop_id": self.loop_id or "",
-                "prompt": self.prompt,
-                "state_query": self.state_query or "",
-                "tool_name": self.tool_name or "",
-                "source_payload": dict(self.source_payload),
-            },
-            created_at=created_at,
-            metadata={"source": "kernel.ingress"},
-        )
-
-
 @dataclass(frozen=True, slots=True)
 class KernelStageRecord:
     stage: str
@@ -328,14 +251,13 @@ class KernelStageRecord:
 @dataclass(frozen=True, slots=True)
 class KernelOutcome:
     event: EventEnvelope
-    source_record: Record
+    source_id: str
     personal_model: PersonalModel
     state: State
     episode: Episode
     loop: Loop
     steps: tuple[Step, ...]
-    groundings: tuple[Grounding, ...]
-    memories: tuple[MemoryRecord, ...]
+    recall_items: tuple[RecallEvidence, ...]
     context: ContextBundle
     execution: ExecutionResult
     delivery: ExecutionResult | None
@@ -347,16 +269,8 @@ class KernelOutcome:
         return self.event.episode_id
 
     @property
-    def record_id(self) -> str:
-        return self.source_record.record_id
-
-    @property
     def step_ids(self) -> tuple[str, ...]:
         return tuple(step.step_id for step in self.steps)
-
-    @property
-    def grounding_ids(self) -> tuple[str, ...]:
-        return tuple(grounding.grounding_id for grounding in self.groundings)
 
     def step_action_count(self, action: str, *, status: str | None = None) -> int:
         return sum(
@@ -409,25 +323,6 @@ class _ArtifactRequest:
 
 
 @dataclass(frozen=True, slots=True)
-class _RecoveredStateBundle:
-    identity: ElephantIdentityRecord | None
-    user: UserCardRecord | None
-    relationship: RelationshipMemoryRecord | None
-
-    @property
-    def initiative_hint(self) -> str | None:
-        if self.identity is None:
-            return None
-        return self.identity.initiative
-
-    @property
-    def continuity_notes(self) -> tuple[str, ...]:
-        if self.relationship is None:
-            return ()
-        return self.relationship.continuity_notes
-
-
-@dataclass(frozen=True, slots=True)
 class _Clock:
     local_datetime: datetime
     timezone_name: str
@@ -436,8 +331,8 @@ class _Clock:
 
 
 @dataclass(frozen=True, slots=True)
-class _MemoryRecoverySelection:
-    memories: tuple[MemoryRecord, ...]
+class _RecallSelection:
+    recall_items: tuple[RecallEvidence, ...]
     query: str
     work_item_ids: tuple[str, ...]
     scope_episode_ids: tuple[str, ...]

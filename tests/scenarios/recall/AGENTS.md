@@ -1,12 +1,12 @@
-# Memory Scenario Fixtures
+# Recall Scenario Fixtures
 
-Use this directory for longitudinal memory-evaluation fixtures.
+Use this directory for longitudinal recall-evaluation fixtures.
 
 ## Own Here
 
 - long-term recovery after a time gap
-- memory correction and deletion behavior
-- retrieval explainability for grounded State and Personal Model memory
+- Personal Model correction and deletion behavior
+- retrieval explainability for grounded State and Personal Model evidence
 
 ## Rules
 

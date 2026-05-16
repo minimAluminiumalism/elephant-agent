@@ -2,7 +2,7 @@
 
 Canonical identity, user, and relationship state live in structured DB rows
 (`states`, `personal_models`) plus persisted component records
-(`elephant_identity/v1`, `user_card/v1`, `relationship_memory/v1`). Read those via
+(`elephant_identity/v1`, `user_profile/v1`, `relationship/v1`). Read those via
 :func:`load_runtime_profile` to obtain a ``LoadedProfile``.
 
 Operator extension configuration — skill overrides, tool overrides, the lists
@@ -206,7 +206,7 @@ def load_runtime_profile(
 
     The returned profile's ``state.display_name`` is the companion's
     display name (``State.elephant_name``). The personal-model-global preferred
-    username lives in ``UserCardRecord.preferred_name`` and is projected
+    username lives in ``RenderedUserProfileView.preferred_name`` and is projected
     into ``user_profile_text``.
 
     When ``profile_loader`` is given, its extension-manifest map is merged
@@ -234,7 +234,7 @@ def load_runtime_profile(
     if resolved_state is None:
         stub = _stub_profile(personal_model_id=personal_model_id)
         # Even without an elephant anchor, honour the persisted personal-model
-        # elephant_identity / user_card records so the operator-facing "root
+        # elephant_identity / user_profile records so the operator-facing "root
         # profile" view reflects settings the user has curated.
         canonical_pm_id = stub.state.profile_id
         try:
@@ -251,11 +251,11 @@ def load_runtime_profile(
                     overlay_elephant_identity_text = candidate_text
                 overlay_companion = _companion_settings_from_identity(
                     identity_record=persisted.elephant_identity,
-                    relationship_record=persisted.relationship_memory,
+                    relationship_record=persisted.relationship,
                     fallback_mode=stub.state.mode,
                 )
-            if persisted.user_card is not None:
-                overlay_user_profile_text = _user_profile_text_from_card(persisted.user_card)
+            if persisted.user_profile is not None:
+                overlay_user_profile_text = _user_profile_text_from_card(persisted.user_profile)
         return LoadedProfile(
             state=stub.state,
             companion=overlay_companion,
@@ -270,7 +270,7 @@ def load_runtime_profile(
     persisted = load_persisted_canonical_state(repository, resolved_state.personal_model_id)
     companion_settings = _companion_settings_from_identity(
         identity_record=persisted.elephant_identity,
-        relationship_record=persisted.relationship_memory,
+        relationship_record=persisted.relationship,
         fallback_mode=resolved_state.identity_mode or "companion",
     )
     elephant_identity_text = (resolved_state.elephant_identity_text or "").strip() or None
@@ -285,7 +285,7 @@ def load_runtime_profile(
         preferences=(),
         enabled_capabilities=(),
     )
-    user_profile_text_value = _user_profile_text_from_card(persisted.user_card)
+    user_profile_text_value = _user_profile_text_from_card(persisted.user_profile)
     return build_loaded_profile_from_state(
         runtime_state,
         manifest=manifest,
@@ -296,7 +296,7 @@ def load_runtime_profile(
         user_profile_text=user_profile_text_value,
         user_profile_path=None,
         identity_record=None,
-        user_card=None,
+        user_profile=None,
         relationship_record=None,
     )
 
@@ -448,9 +448,9 @@ def _flag(
     return fallback
 
 
-def _user_profile_text_from_card(user_card) -> str | None:
-    if user_card is None:
+def _user_profile_text_from_card(user_profile) -> str | None:
+    if user_profile is None:
         return None
-    from .projection import render_user_card_profile_text
+    from .projection import render_user_profile_projection_text
 
-    return render_user_card_profile_text(user_card)
+    return render_user_profile_projection_text(user_profile)

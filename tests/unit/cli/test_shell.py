@@ -83,7 +83,6 @@ from packages.contracts import (
     OpenQuestion,
     StateFocusReason,
     PromptEnvelope,
-    Record,
 )
 from packages.contracts.runtime import StateFocusDecision
 from packages.growth import GrowthTurnSignals, apply_turn_growth, default_growth_state
@@ -721,31 +720,7 @@ class ShellPaletteTest(unittest.TestCase):
 
     def test_growth_panel_keeps_removed_procedural_memory_out_of_learning_overview(self) -> None:
         shell = self._make_shell()
-        now = datetime.now(timezone.utc)
         session = shell.runtime.inspect_session(shell.session_id)
-        state = shell.runtime.ensure_elephant_state(session)
-        shell.runtime.repository.upsert_record(
-            Record(
-                record_id="procedure:release-state-recovery",
-                kind="derived",
-                schema_version="personal_model.procedural_memory/v1",
-                owner_scope="personal_model",
-                personal_model_id=state.personal_model_id,
-                state_id=state.state_id,
-                layer_type="procedural_memory",
-                created_at=now,
-                payload={
-                    "title": "Release State Recovery",
-                    "summary": "Recovered the active release State and clarified the next governed step.",
-                    "status": "active",
-                    "maturity_state": "committed",
-                    "approval_state": "approved",
-                    "behavioral_state": "active",
-                    "trigger_conditions": ("release recovery",),
-                    "steps": ("Keep release recovery work grounded in current State evidence.",),
-                },
-            )
-        )
 
         continuity = shell.runtime.inspect_continuity(session_id=shell.session_id)
         provider = dict(shell.runtime.provider_summary())
@@ -756,31 +731,7 @@ class ShellPaletteTest(unittest.TestCase):
 
     def test_growth_panel_filters_noisy_failure_experiences_from_learning_overview(self) -> None:
         shell = self._make_shell()
-        now = datetime.now(timezone.utc)
         session = shell.runtime.inspect_session(shell.session_id)
-        state = shell.runtime.ensure_elephant_state(session)
-        shell.runtime.repository.upsert_record(
-            Record(
-                record_id="procedure:skill-manager-trouble",
-                kind="derived",
-                schema_version="personal_model.procedural_memory/v1",
-                owner_scope="personal_model",
-                personal_model_id=state.personal_model_id,
-                state_id=state.state_id,
-                layer_type="procedural_memory",
-                created_at=now,
-                payload={
-                    "title": "It looks like the skill manager is having some trouble",
-                    "summary": "It looks like the skill catalog is having some trouble. unknown skill source.",
-                    "status": "active",
-                    "maturity_state": "committed",
-                    "approval_state": "approved",
-                    "behavioral_state": "active",
-                    "trigger_conditions": ("skill failure",),
-                    "steps": ("Do not promote noisy failure text as useful operator guidance.",),
-                },
-            )
-        )
 
         continuity = shell.runtime.inspect_continuity(session_id=shell.session_id)
         provider = dict(shell.runtime.provider_summary())
@@ -850,7 +801,7 @@ class ShellPaletteTest(unittest.TestCase):
             profile=profile.state,
             session=session,
             work_items=(),
-            memories=shell.runtime.inspect_memories(shell.session_id),
+            memories=shell.runtime.inspect_recall_evidence(shell.session_id),
             plan=None,
             execution=None,
             delivery=None,
@@ -1638,8 +1589,8 @@ class ShellPaletteTest(unittest.TestCase):
             TranscriptEntry(
                 kind="growth",
                 title="Elephant Agent",
-                body="Something settled into memory — checkpoint 1 in Memory I. I'll carry it forward.",
-                meta="memory · checkpoint",
+                body="Something settled into the Personal Model — checkpoint 1 in Evidence I. I'll carry it forward.",
+                meta="understanding · checkpoint",
             )
         )
         plain = rendered.plain if hasattr(rendered, "plain") else str(rendered)
@@ -1649,17 +1600,17 @@ class ShellPaletteTest(unittest.TestCase):
             self.assertEqual(
                 lines[0],
                 shell._pad_history_line(
-                    "› Something settled into memory — checkpoint 1 in Memory I. I'll carry it forward."
+                    "› Something settled into the Personal Model — checkpoint 1 in Evidence I. I'll carry it forward."
                 ),
             )
-            self.assertEqual(lines[1], shell._pad_history_line("  memory · checkpoint"))
+            self.assertEqual(lines[1], shell._pad_history_line("  understanding · checkpoint"))
             styles = {str(span.style) for span in rendered.spans}
             self.assertIn(f"{USER_HISTORY_FG} on {USER_HISTORY_BG}", styles)
             self.assertIn(f"{BRAND_MUTED} on {USER_HISTORY_BG}", styles)
             self.assertIn(f"{GROWTH_HIGHLIGHT_FG} on {USER_HISTORY_BG}", styles)
         else:
-            self.assertEqual(lines[0], "Something settled into memory — checkpoint 1 in Memory I. I'll carry it forward.")
-            self.assertEqual(lines[1], "memory · checkpoint")
+            self.assertEqual(lines[0], "Something settled into the Personal Model — checkpoint 1 in Evidence I. I'll carry it forward.")
+            self.assertEqual(lines[1], "understanding · checkpoint")
 
     def test_composer_divider_tracks_console_width_without_old_cap(self) -> None:
         shell = self._make_shell()
@@ -2069,7 +2020,7 @@ class ShellPaletteTest(unittest.TestCase):
             profile=profile.state,
             session=session,
             work_items=(),
-            memories=(),
+            recall_items=(),
             plan=None,
             execution=ExecutionResult(
                 execution_id="exec:first",
@@ -2122,7 +2073,7 @@ class ShellPaletteTest(unittest.TestCase):
             profile=profile.state,
             session=session,
             work_items=(),
-            memories=(),
+            recall_items=(),
             plan=None,
             execution=ExecutionResult(
                 execution_id="exec:first",
@@ -2155,7 +2106,7 @@ class ShellPaletteTest(unittest.TestCase):
             profile=profile.state,
             session=session,
             work_items=(),
-            memories=(),
+            recall_items=(),
             plan=None,
             execution=ExecutionResult(
                 execution_id="exec:second",
@@ -2284,7 +2235,7 @@ class ShellPaletteTest(unittest.TestCase):
         rendered = "".join(text for _style, text in fragments)
 
         self.assertIn("12s", rendered)
-        self.assertIn("Memory I", rendered)
+        self.assertIn("Evidence I", rendered)
         self.assertIn(shell._build_context_bar(update.after.progress_percent), rendered)
         self.assertIn(f"checkpoint {update.after.level} · {update.after.progress_percent}%", rendered)
 
@@ -2365,7 +2316,7 @@ class ShellPaletteTest(unittest.TestCase):
             fragments = shell._status_bar_fragments()
         rendered = "".join(text for _style, text in fragments)
 
-        self.assertIn("Memory I", rendered)
+        self.assertIn("Evidence I", rendered)
         self.assertIn("checkpoint", rendered)
 
     def test_turn_progress_frame_uses_growing_copy(self) -> None:
@@ -2610,7 +2561,7 @@ class ShellPaletteTest(unittest.TestCase):
             ),
             plan=None,
             work_items=(),
-            memories=(),
+            recall_items=(),
         )
 
         shell._append_outcome(outcome)
@@ -3021,7 +2972,7 @@ class ShellPaletteTest(unittest.TestCase):
         self.assertNotIn("ELEPHANT // wake", rendered)
         self.assertNotIn("waking", rendered.lower())
         self.assertIn("Picking up your thread", rendered)
-        self.assertIn("Memory I", rendered)
+        self.assertIn("Evidence I", rendered)
 
     def test_startup_sequence_does_not_render_boot_animation(self) -> None:
         shell = self._make_shell()
@@ -3957,13 +3908,16 @@ class ShellPaletteTest(unittest.TestCase):
         self.assertGreater(len(shell.transcript), 1)
         original_session_id = shell.session_id
 
-        with mock.patch.object(
-            CliRuntime,
-            "generate_opening_reply",
-            return_value=SimpleNamespace(execution=SimpleNamespace(summary="startup-reply:I'm back in the thread.")),
-        ) as generate_opening_reply:
-            with mock.patch.object(shell, "_refresh_shell_frame") as refresh:
-                handled = shell._handle_slash_command("/clear")
+        with (
+            mock.patch.object(
+                CliRuntime,
+                "generate_opening_reply",
+                return_value=SimpleNamespace(execution=SimpleNamespace(summary="startup-reply:I'm back in the thread.")),
+            ) as generate_opening_reply,
+            mock.patch("apps.learning_worker_runtime.ensure_learning_worker_running", return_value=True),
+            mock.patch.object(shell, "_refresh_shell_frame") as refresh,
+        ):
+            handled = shell._handle_slash_command("/clear")
 
         self.assertFalse(handled)
         generate_opening_reply.assert_called_once()
@@ -3974,9 +3928,28 @@ class ShellPaletteTest(unittest.TestCase):
         self.assertEqual(shell.transcript[0].kind, "assistant")
         self.assertEqual(shell.transcript[0].body, "startup-reply:I'm back in the thread.")
         self.assertEqual(shell.transcript[1].kind, "notice")
-        self.assertIn("fresh Loop", shell.transcript[1].body)
+        self.assertIn("fresh Episode", shell.transcript[1].body)
+        jobs = shell.runtime.repository.list_learning_jobs(episode_id=original_session_id)
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0].trigger, "episode_close")
 
-    def test_append_growth_update_message_surfaces_visible_memory_checkpoint_reply(self) -> None:
+    def test_exit_closes_episode_and_queues_episode_close_learning(self) -> None:
+        shell = self._make_shell(prime_transcript=True)
+        original_session_id = shell.session_id
+
+        with mock.patch("apps.learning_worker_runtime.ensure_learning_worker_running", return_value=True):
+            handled = shell._handle_slash_command("/exit")
+
+        self.assertTrue(handled)
+        closed = shell.runtime.repository.load_episode(original_session_id)
+        self.assertIsNotNone(closed)
+        assert closed is not None
+        self.assertEqual(closed.status, "closed")
+        jobs = shell.runtime.repository.list_learning_jobs(episode_id=original_session_id)
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0].trigger, "episode_close")
+
+    def test_append_growth_update_message_surfaces_visible_understanding_checkpoint_reply(self) -> None:
         shell = self._make_shell()
         now = datetime.now(timezone.utc)
         initial = default_growth_state(shell.runtime.current_profile().state.profile_id, now=now)
@@ -4004,10 +3977,10 @@ class ShellPaletteTest(unittest.TestCase):
         shell._append_growth_update_message(update)
 
         self.assertEqual(shell.transcript[-1].kind, "growth")
-        self.assertIn("checkpoint 1 in Memory I", shell.transcript[-1].body)
-        self.assertEqual(shell.transcript[-1].meta, "memory · checkpoint")
+        self.assertIn("checkpoint 1 in Evidence I", shell.transcript[-1].body)
+        self.assertEqual(shell.transcript[-1].meta, "understanding · checkpoint")
 
-    def test_dispatch_schedules_memory_followup_after_turn(self) -> None:
+    def test_dispatch_schedules_growth_followup_after_turn(self) -> None:
         shell = self._make_shell()
         shell.console = _CaptureConsole(120)
         outcome = SimpleNamespace(execution=SimpleNamespace(prompt_tokens=0))
@@ -4065,7 +4038,7 @@ class ShellPaletteTest(unittest.TestCase):
             profile=profile.state,
             session=session,
             work_items=(),
-            memories=(),
+            recall_items=(),
             plan=None,
             execution=ExecutionResult(
                 execution_id="exec:first",

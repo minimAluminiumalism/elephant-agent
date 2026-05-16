@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from packages.contracts import ExperienceRecord, Record, State
+from packages.contracts import ExperienceRecord, State
 from packages.contracts.runtime import PersonalModelRuntimeState
 from packages.security import SecurityPolicy
 from packages.storage import RuntimeStorageRepository

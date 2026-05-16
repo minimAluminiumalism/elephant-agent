@@ -18,6 +18,29 @@ from packages.contracts import (
     Step,
 )
 from packages.storage import RuntimeStorageRepository
+from packages.storage.repository_bootstrap_methods import LEGACY_STORAGE_TABLES
+
+
+def _singular_table_name(table_name: str) -> str:
+    if table_name.endswith("ies"):
+        return f"{table_name[:-3]}y"
+    if table_name.endswith("s"):
+        return table_name[:-1]
+    return table_name
+
+
+def _removed_legacy_storage_method_names() -> tuple[str, ...]:
+    table_method_names: list[str] = []
+    for table_name in sorted(LEGACY_STORAGE_TABLES):
+        singular = _singular_table_name(table_name)
+        table_method_names.extend(
+            [
+                f"upsert_{singular}",
+                f"load_{singular}",
+                f"list_{table_name}",
+            ]
+        )
+    return tuple(table_method_names)
 
 
 class StorageSystemLayerRepositoryTest(unittest.TestCase):
@@ -34,7 +57,7 @@ class StorageSystemLayerRepositoryTest(unittest.TestCase):
             "load_" + "agent_run",
             "upsert_evidence_record_bundle",
             "load_evidence_record_bundle",
-            "append_memory_ledger",
+                "append_" + "memory_ledger",
         ):
             self.assertFalse(hasattr(repository, method_name), method_name)
 
@@ -160,24 +183,13 @@ class StorageSystemLayerRepositoryTest(unittest.TestCase):
         self.assertEqual(loaded_loop, loop)
         self.assertEqual(loaded_step, step)
 
-    def test_legacy_evidence_memory_methods_are_noops(self) -> None:
+    def test_legacy_storage_methods_are_removed(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             repository = RuntimeStorageRepository(Path(tmpdir) / "state" / "elephant.sqlite3")
             repository.bootstrap()
 
-            repository.upsert_record(object())
-            repository.upsert_grounding(object())
-            repository.upsert_memory_entry(object())
-            repository.upsert_reflection_proposal(object())
-
-            self.assertIsNone(repository.load_record("record-legacy"))
-            self.assertEqual(repository.list_records(), ())
-            self.assertIsNone(repository.load_grounding("grounding-legacy"))
-            self.assertEqual(repository.list_groundings(), ())
-            self.assertIsNone(repository.load_memory_entry("memory-legacy"))
-            self.assertEqual(repository.list_memory_entries(), ())
-            self.assertIsNone(repository.load_reflection_proposal("proposal-legacy"))
-            self.assertEqual(repository.list_reflection_proposals(), ())
+            for method_name in _removed_legacy_storage_method_names():
+                self.assertFalse(hasattr(repository, method_name), method_name)
 
     def test_elephant_delete_removes_state_scoped_semantic_rows_only(self) -> None:
         now = datetime(2026, 4, 23, tzinfo=timezone.utc)
@@ -190,7 +202,7 @@ class StorageSystemLayerRepositoryTest(unittest.TestCase):
                 SemanticIndexEntry(
                     semantic_index_entry_id="semantic-state",
                     owner_scope="state",
-                    source_record_id="source-state",
+                    source_id="source-state",
                     provider_id="local-elephant",
                     model_id="elephant-embedding",
                     dimensions=384,
@@ -205,7 +217,7 @@ class StorageSystemLayerRepositoryTest(unittest.TestCase):
                 SemanticIndexEntry(
                     semantic_index_entry_id="semantic-personal",
                     owner_scope="personal_model",
-                    source_record_id="source-personal",
+                    source_id="source-personal",
                     provider_id="local-elephant",
                     model_id="elephant-embedding",
                     dimensions=384,

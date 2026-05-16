@@ -9,8 +9,8 @@ import json
 from typing import Any, Mapping
 
 from packages.auth import AuthProfile
-from packages.contracts import Episode, MemoryRecord, State
-from packages.contracts.runtime import PersonalModelRuntimeState
+from packages.contracts import Episode, State
+from packages.contracts.runtime import RecallEvidence, PersonalModelRuntimeState
 from packages.growth import ProgressionProjection
 from packages.kernel import KernelOutcome
 
@@ -128,9 +128,9 @@ class APIEpisodeInspection:
     state: State
     episode: Episode
     lineage: tuple[Episode, ...]
-    memories: tuple[MemoryRecord, ...]
+    recall_items: tuple[RecallEvidence, ...]
     latest_loop: APILoopRecord | None
-    memory_count: int
+    recall_count: int
     telemetry_count: int
     provider_profile: AuthProfile | None = None
     progression: ProgressionProjection | None = None
@@ -141,9 +141,9 @@ class APIEpisodeInspection:
             "state": self.state,
             "episode": self.episode,
             "lineage": self.lineage,
-            "memories": self.memories,
+            "recall_items": self.recall_items,
             "latest_loop": self.latest_loop,
-            "memory_count": self.memory_count,
+            "recall_count": self.recall_count,
             "telemetry_count": self.telemetry_count,
             "provider_profile": self.provider_profile,
             "progression": self.progression,

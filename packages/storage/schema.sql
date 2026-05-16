@@ -123,7 +123,7 @@ CREATE INDEX idx_steps_episode_sequence
 CREATE TABLE semantic_index_entries (
     semantic_index_entry_id TEXT PRIMARY KEY,
     owner_scope TEXT NOT NULL CHECK(owner_scope IN ('state', 'personal_model')),
-    source_record_id TEXT NOT NULL,
+    source_id TEXT NOT NULL,
     provider_id TEXT NOT NULL,
     model_id TEXT NOT NULL,
     dimensions INTEGER NOT NULL CHECK(dimensions > 0),
@@ -141,7 +141,7 @@ CREATE TABLE semantic_index_entries (
     FOREIGN KEY(state_id) REFERENCES states(state_id) ON DELETE CASCADE,
     CHECK(owner_scope != 'personal_model' OR personal_model_id IS NOT NULL),
     CHECK(owner_scope != 'state' OR state_id IS NOT NULL),
-    UNIQUE(source_record_id, provider_id, model_id, dimensions, content_hash)
+    UNIQUE(source_id, provider_id, model_id, dimensions, content_hash)
 );
 
 CREATE TABLE learning_jobs (
@@ -191,7 +191,6 @@ CREATE TABLE personal_model_facts (
     confidence REAL NOT NULL,
     committed_at TEXT NOT NULL,
     source TEXT NOT NULL,
-    source_observation_ids TEXT NOT NULL DEFAULT '[]',
     source_episode_ids TEXT NOT NULL DEFAULT '[]',
     status TEXT NOT NULL DEFAULT 'active',
     supersedes_fact_id TEXT,
@@ -276,39 +275,6 @@ CREATE TABLE canonical_elephant_identities (
     governance_flags_json TEXT NOT NULL DEFAULT '[]',
     source_manifest_path TEXT,
     source_elephant_path TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    FOREIGN KEY(profile_id) REFERENCES personal_models(personal_model_id) ON DELETE CASCADE
-);
-
-CREATE TABLE canonical_user_cards (
-    profile_id TEXT PRIMARY KEY,
-    user_card_id TEXT NOT NULL,
-    preferred_name TEXT,
-    locale TEXT,
-    timezone TEXT,
-    communication_preferences_json TEXT NOT NULL DEFAULT '[]',
-    boundaries_json TEXT NOT NULL DEFAULT '[]',
-    biography_fragments_json TEXT NOT NULL DEFAULT '[]',
-    durable_notes_json TEXT NOT NULL DEFAULT '[]',
-    shared_preferences_json TEXT NOT NULL DEFAULT '[]',
-    source_user_profile_path TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    FOREIGN KEY(profile_id) REFERENCES personal_models(personal_model_id) ON DELETE CASCADE
-);
-
-CREATE TABLE canonical_relationship_memories (
-    profile_id TEXT PRIMARY KEY,
-    relationship_id TEXT NOT NULL,
-    elephant_id TEXT NOT NULL,
-    user_card_id TEXT,
-    interaction_preferences_json TEXT NOT NULL DEFAULT '[]',
-    repair_history_json TEXT NOT NULL DEFAULT '[]',
-    trust_markers_json TEXT NOT NULL DEFAULT '[]',
-    expectations_json TEXT NOT NULL DEFAULT '[]',
-    local_corrections_json TEXT NOT NULL DEFAULT '[]',
-    continuity_notes_json TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY(profile_id) REFERENCES personal_models(personal_model_id) ON DELETE CASCADE

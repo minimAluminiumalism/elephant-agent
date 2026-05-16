@@ -4,10 +4,10 @@ This package owns the canonical runtime lifecycle.
 
 ## Own Here
 
-- source `Record` ingestion orchestration
+- source event ingestion orchestration
 - default `PersonalModel` and active elephant `State` resolution
 - `Episode`, `Loop`, and `Step` orchestration
-- runtime-owned `Grounding` attachment for durable writes
+- Step and Fact provenance wiring for durable writes
 - calls into context, memory, semantic index, reflection, tool, and capability layers
 - post-action persistence, reflection triggers, and telemetry hooks
 

@@ -21,7 +21,7 @@ def test_agent_policy_marks_changeable_memory_as_review() -> None:
     )
 
     assert result.lifecycle == "review"
-    assert result.metadata["memory_lifecycle"] == "review"
+    assert result.metadata["retention_lifecycle"] == "review"
     assert result.metadata["last_verified_at"] == _NOW.isoformat()
     assert result.metadata["review_after_days"] == "14"
     assert result.metadata["lifecycle_inferred"] == "false"
@@ -39,7 +39,7 @@ def test_rapport_preference_stays_preference_without_review_clock() -> None:
     )
 
     assert result.lifecycle == "preference"
-    assert result.metadata["memory_lifecycle"] == "preference"
+    assert result.metadata["retention_lifecycle"] == "preference"
     assert "last_verified_at" not in result.metadata
     assert "review_after_days" not in result.metadata
 
@@ -71,7 +71,7 @@ def test_knowledge_without_agent_policy_defaults_to_stable_not_keyword_guess() -
 
     assert result.metadata["recall_policy"] == "stable"
     assert result.metadata["recall_policy_source"] == "structural_default"
-    assert result.metadata["memory_lifecycle"] == "preference"
+    assert result.metadata["retention_lifecycle"] == "preference"
     assert "last_verified_at" not in result.metadata
 
 
@@ -80,11 +80,11 @@ def test_explicit_lifecycle_is_preserved() -> None:
         lens="knowledge",
         topic="misc.anything.value",
         text="Some status-like text with followers.",
-        metadata={"memory_lifecycle": "permanent", "review_after_days": "90"},
+        metadata={"retention_lifecycle": "permanent", "review_after_days": "90"},
         now=_NOW,
     )
 
     assert result.lifecycle == "permanent"
     assert result.inferred is False
-    assert result.metadata["memory_lifecycle"] == "permanent"
+    assert result.metadata["retention_lifecycle"] == "permanent"
     assert result.metadata["review_after_days"] == "90"

@@ -9,29 +9,11 @@ from apps.gateway.runtime_capabilities import GatewayContextCapability
 from packages.context import (
     SessionContextEpoch,
     next_session_context_epoch,
-    session_context_epoch_record_id,
-    write_repository_session_context_epoch,
 )
-from packages.contracts import Record
+from packages.context.epoch_store import FileEpochStore, InMemoryEpochStore
 from packages.contracts.layers import Episode
 from packages.contracts.runtime import ContextBundle, EventEnvelope, ExecutionResult, PersonalModelRuntimeState, PromptMessage, PromptEnvelope
 from packages.state import CompanionSettings, build_loaded_profile_from_state, render_user_profile_text
-from packages.storage import RuntimeStorageRepository
-
-
-class _EpochRepository:
-    def __init__(self, session: Episode) -> None:
-        self.session = session
-        self.records: dict[str, Record] = {}
-
-    def load_record(self, record_id: str) -> Record | None:
-        return self.records.get(record_id)
-
-    def upsert_record(self, record: Record) -> None:
-        self.records[record.record_id] = record
-
-    def load_episode_state(self, episode_id: str) -> Episode | None:
-        return self.session if episode_id == self.session.episode_id else None
 
 
 class GatewayContextHistoryTest(unittest.TestCase):
@@ -61,9 +43,8 @@ class GatewayContextHistoryTest(unittest.TestCase):
             started_at=datetime(2026, 5, 7, 3, 0, tzinfo=timezone.utc),
             updated_at=datetime(2026, 5, 7, 3, 2, tzinfo=timezone.utc),
         )
-        repository = _EpochRepository(session)
-        write_repository_session_context_epoch(
-            repository,
+        epoch_store = InMemoryEpochStore()
+        epoch_store.save(
             SessionContextEpoch(
                 session_id=session.episode_id,
                 frozen=True,
@@ -74,12 +55,10 @@ class GatewayContextHistoryTest(unittest.TestCase):
                     PromptMessage(role="assistant", content="你是想倒倒苦水说一下在忙什么，还是就想有人知道你今天很忙？"),
                 ),
             ),
-            personal_model_id="you",
-            state_id="state:zoey",
         )
         capability = GatewayContextCapability(
             self._loaded_profile(),
-            repository=repository,
+            epoch_store=epoch_store,
         )
 
         bundle = capability.assemble(session, (), ())
@@ -91,64 +70,34 @@ class GatewayContextHistoryTest(unittest.TestCase):
         self.assertEqual(envelope.messages[0].content, "工作好忙")
         self.assertIn("倒倒苦水", envelope.messages[1].content)
 
-    def test_session_epoch_persists_with_storage_owner_scope(self) -> None:
-        session = Episode(
-            episode_id="episode:wx",
-            state_id="state:test",
-            personal_model_id="you",
-            entry_surface="test",
-            elephant_id="zoey",
-            status="open",
-            started_at=datetime(2026, 5, 7, 3, 0, tzinfo=timezone.utc),
-            updated_at=datetime(2026, 5, 7, 3, 2, tzinfo=timezone.utc),
-        )
+    def test_session_epoch_persists_with_epoch_store(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            repository = RuntimeStorageRepository(Path(tmpdir) / "elephant.sqlite3")
-            repository.bootstrap()
-            repository.create_state(
-                personal_model_id="you",
-                state_id="state:test",
-                elephant_id="zoey",
-                elephant_name="Zoey",
-            )
-            repository.upsert_episode_state(session)
-
-            write_repository_session_context_epoch(
-                repository,
+            store = FileEpochStore(Path(tmpdir))
+            store.save(
                 SessionContextEpoch(
-                    session_id=session.episode_id,
+                    session_id="episode:wx",
                     frozen=True,
                     frozen_prefix="FROZEN PREFIX",
                     history_messages=(PromptMessage(role="user", content="ping"),),
                 ),
-                personal_model_id="you",
-                state_id="state:test",
             )
-
-            record = repository.load_record(session_context_epoch_record_id(session.episode_id))
-
-            preflight_session_id = "episode:wx:preflight"
-            write_repository_session_context_epoch(
-                repository,
+            store.save(
                 SessionContextEpoch(
-                    session_id=preflight_session_id,
+                    session_id="episode:wx:preflight",
                     frozen=True,
                     history_messages=(PromptMessage(role="user", content="preflight"),),
                 ),
-                personal_model_id="you",
-                state_id=None,
             )
-            preflight_record = repository.load_record(session_context_epoch_record_id(preflight_session_id))
+            epoch = store.load("episode:wx")
+            preflight_epoch = store.load("episode:wx:preflight")
 
-        self.assertIsNotNone(record)
-        assert record is not None
-        self.assertEqual(record.owner_scope, "state")
-        self.assertEqual(record.metadata["episode_id"], session.episode_id)
-        self.assertIsNotNone(preflight_record)
-        assert preflight_record is not None
-        self.assertEqual(preflight_record.owner_scope, "personal_model")
-        self.assertEqual(preflight_record.personal_model_id, "you")
-        self.assertIsNone(preflight_record.state_id)
+        self.assertIsNotNone(epoch)
+        assert epoch is not None
+        self.assertEqual(epoch.session_id, "episode:wx")
+        self.assertEqual(epoch.frozen_prefix, "FROZEN PREFIX")
+        self.assertIsNotNone(preflight_epoch)
+        assert preflight_epoch is not None
+        self.assertEqual(preflight_epoch.history_messages[0].content, "preflight")
 
     def test_im_idle_gap_resets_projection_tail_before_appending_new_burst(self) -> None:
         base = datetime(2026, 5, 7, 3, 0, tzinfo=timezone.utc)

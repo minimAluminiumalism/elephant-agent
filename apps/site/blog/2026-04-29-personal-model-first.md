@@ -125,6 +125,12 @@ topic, text, status, confidence, and source episode provenance. Only active
 claims enter the stable prompt. Retired and disputed claims remain inspectable,
 but they do not shape future answers.
 
+Within a lens, Elephant Agent uses **facets** as stable topic keys. A facet is
+not a survey field; it is the naming layer that keeps one claim attached to the
+right slice of understanding, such as `world.skills.affinity.python`,
+`pulse.current_focus`, or `journey.lessons.debugging`. This lets search and
+correction operate on claims instead of ambiguous profile blobs.
+
 This is intentionally smaller than a profile and deeper than a chat log.
 
 The elephant-inspired memory model maps onto the runtime as five layers:
@@ -256,7 +262,7 @@ still true, whether the wording changed, whether it happened recently, whether
 it belongs to a stable identity or a temporary mood, and whether the memory is a
 belief or only a clue.
 
-Elephant Agent brings that judgment into memory search.
+Elephant Agent brings that judgment into recall search.
 
 **The algorithm is multilingual** because real personal context is multilingual.
 One person may explain a project in English, correct a preference in Chinese,
@@ -320,7 +326,7 @@ dimension and normalized again. That lets one compact local model support
 different latency and depth postures.
 
 The semantic index has two parts. Metadata rows live in SQLite as
-`SemanticIndexEntry`: owner scope, source record, provider, model, dimensions,
+`SemanticIndexEntry`: owner scope, source item, provider, model, dimensions,
 content hash, status, and provenance pointers. Vectors live behind a
 `sqlite-vec` backend when available. If vector indexing is degraded, the
 metadata still records the state, and lexical search can continue to help.
@@ -330,7 +336,7 @@ That gives Elephant Agent a practical local recall stack:
 1. foreground claim writes are indexed immediately,
 2. Step and Fact chunks can be embedded locally,
 3. vector search is fused with lexical and keyword signals,
-4. matches point back to their source records,
+4. matches point back to their source items,
 5. recall support remains support, not truth.
 
 This is the technical reason the product can say "correctable understanding"

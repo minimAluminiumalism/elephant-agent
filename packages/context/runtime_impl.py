@@ -10,8 +10,7 @@ from typing import Any, Mapping, Protocol, runtime_checkable
 
 from packages.capabilities.runtime import CapabilityDescriptor, ContextCapability
 from packages.contracts.layers import Episode
-from packages.contracts.runtime import ContextBundle, StateFocusDecision, MemoryRecord, StructuredTurnSlot
-from packages.evidence import parse_structured_turn_memory
+from packages.contracts.runtime import ContextBundle, StateFocusDecision, RecallEvidence, StructuredTurnSlot
 
 
 
@@ -48,9 +47,9 @@ from .runtime_layers import (
 from .runtime_support import (
     _budget_for,
     _work_item_line,
-    _memory_line,
-    _select_steady_memories,
-    _steady_memory_refs,
+    _evidence_line,
+    _select_steady_recall_items,
+    _steady_recall_refs,
     _work_item_trace_reason,
     _derived_source_refs,
     _loop_context_trace_reason,
@@ -68,7 +67,7 @@ from .runtime_support import (
     _split_retrieval_requests,
     _infer_replay_specs,
     _schedule_replay_requests,
-    _select_replay_memory,
+    _select_replay_evidence,
     _replay_rank,
     _project_replay_slot,
     _replay_lines,
@@ -77,7 +76,7 @@ from .runtime_support import (
     _tokenize,
     _thematic_tokens,
     _continuity_marker_tokens,
-    _context_memory_score,
+    _context_evidence_score,
     _retrieval_priority_bucket,
     _plan_rationale,
     _snapshot_work_items,
@@ -101,7 +100,7 @@ class LayeredContextPlanner:
         *,
         session: Episode,
         work_items: tuple[...],
-        memories: tuple[MemoryRecord, ...],
+        recall_items: tuple[RecallEvidence, ...],
         total_tokens: int,
         instruction_refs: tuple[str, ...],
         recent_loop_context: tuple[str, ...],
@@ -112,7 +111,7 @@ class LayeredContextPlanner:
         requests = self._build_budget_requests(
             session,
             work_items,
-            memories,
+            recall_items,
             instruction_refs,
             recent_loop_context,
             state_focus,
@@ -123,11 +122,11 @@ class LayeredContextPlanner:
         retrieval_requests = self._retrieval_scheduler.schedule(
             session=session,
             work_items=work_items,
-            memories=memories,
+            recall_items=recall_items,
             recent_loop_context=recent_loop_context,
             token_budget=max(
                 self._snapshot_retrieval_budget(budgets, state_focus=state_focus),
-                self._suggest_retrieval_budget(memories, state_focus=state_focus),
+                self._suggest_retrieval_budget(recall_items, state_focus=state_focus),
                 max(total_tokens - budgets.allocated_tokens, 0),
             ),
             budget_plan=budgets,
@@ -137,7 +136,7 @@ class LayeredContextPlanner:
             session,
             budgets,
             work_items,
-            memories,
+            recall_items,
             recent_loop_context,
             state_focus,
             profile_snapshot_refs,
@@ -146,7 +145,7 @@ class LayeredContextPlanner:
         source_trace = self._build_source_trace(
             session=session,
             work_items=work_items,
-            memories=memories,
+            recall_items=recall_items,
             instruction_refs=instruction_refs,
             state_focus=state_focus,
             profile_snapshot_refs=profile_snapshot_refs,
@@ -155,13 +154,13 @@ class LayeredContextPlanner:
             summary_requests=summary_requests,
             retrieval_requests=retrieval_requests,
         )
-        rationale = _plan_rationale(session, work_items, memories, budgets, retrieval_requests, state_focus=state_focus)
+        rationale = _plan_rationale(session, work_items, recall_items, budgets, retrieval_requests, state_focus=state_focus)
         frame = EpisodeFrameBuilder().build(
             session=session,
             instruction_refs=instruction_refs,
             profile_snapshot_refs=profile_snapshot_refs,
             work_items=work_items,
-            memories=memories,
+            recall_items=recall_items,
             recent_loop_context=recent_loop_context,
             request_attachments=artifacts,
             budgets=budgets,
@@ -188,7 +187,7 @@ class LayeredContextPlanner:
         self,
         session: Episode,
         work_items: tuple[...],
-        memories: tuple[MemoryRecord, ...],
+        recall_items: tuple[RecallEvidence, ...],
         instruction_refs: tuple[str, ...],
         recent_loop_context: tuple[str, ...],
         state_focus: StateFocusDecision | None,
@@ -200,7 +199,7 @@ class LayeredContextPlanner:
         snapshot_tokens = max(
             96,
             int(
-                max(144, len(profile_snapshot_refs) * 6 + len(snapshot_work_items) * 28 + min(len(memories), 6) * 24)
+                max(144, len(profile_snapshot_refs) * 6 + len(snapshot_work_items) * 28 + min(len(recall_items), 6) * 24)
                 * _state_focus_budget_multiplier(state_focus)
             ),
         )
@@ -227,7 +226,7 @@ class LayeredContextPlanner:
                         (
                             *profile_snapshot_refs,
                             *(work_item.work_item_id for work_item in snapshot_work_items),
-                            *(memory.memory_id for memory in memories),
+                            *(evidence.evidence_id for evidence in recall_items),
                         )
                     )
                 ),
@@ -274,7 +273,7 @@ class LayeredContextPlanner:
         session: Episode,
         budgets: ContextBudgetPlan,
         work_items: tuple[...],
-        memories: tuple[MemoryRecord, ...],
+        recall_items: tuple[RecallEvidence, ...],
         recent_loop_context: tuple[str, ...],
         state_focus: StateFocusDecision | None,
         profile_snapshot_refs: tuple[str, ...],
@@ -293,7 +292,7 @@ class LayeredContextPlanner:
                             (
                                 *profile_snapshot_refs,
                                 *(work_item.work_item_id for work_item in snapshot_work_items),
-                                *(memory.memory_id for memory in memories),
+                                *(evidence.evidence_id for evidence in recall_items),
                             )
                         )
                     ),
@@ -311,9 +310,9 @@ class LayeredContextPlanner:
                     layer_name="replay_packet",
                     source_refs=tuple(
                         dict.fromkeys(
-                            memory_id
+                            evidence_ref
                             for request in replay_retrieval_requests
-                            for memory_id in request.memory_ids
+                            for evidence_ref in request.evidence_refs
                         )
                     ),
                     token_budget=replay_budget.allocated_tokens,
@@ -340,13 +339,13 @@ class LayeredContextPlanner:
 
     def _suggest_retrieval_budget(
         self,
-        memories: tuple[MemoryRecord, ...],
+        recall_items: tuple[RecallEvidence, ...],
         *,
         state_focus: StateFocusDecision | None,
     ) -> int:
-        if not memories:
+        if not recall_items:
             return 0
-        base = min(128, max(24, len(memories) * 24))
+        base = min(128, max(24, len(recall_items) * 24))
         if state_focus is not None and state_focus.context_budget == "narrow":
             return max(24, base - 24)
         if state_focus is not None and state_focus.context_budget == "broad":
@@ -358,7 +357,7 @@ class LayeredContextPlanner:
         *,
         session: Episode,
         work_items: tuple[...],
-        memories: tuple[MemoryRecord, ...],
+        recall_items: tuple[RecallEvidence, ...],
         instruction_refs: tuple[str, ...],
         state_focus: StateFocusDecision | None,
         profile_snapshot_refs: tuple[str, ...],
@@ -367,20 +366,20 @@ class LayeredContextPlanner:
         summary_requests: tuple[ContextSummaryRequest, ...],
         retrieval_requests: tuple[ContextRetrievalRequest, ...],
     ) -> tuple[ContextSourceTrace, ...]:
-        steady_memories = _select_steady_memories(memories, session=session, work_items=work_items, state_focus=state_focus)
+        steady_recall_items = _select_steady_recall_items(recall_items, session=session, work_items=work_items, state_focus=state_focus)
         snapshot_work_items = _snapshot_work_items(work_items, state_focus=state_focus)
-        steady_refs = tuple(memory.memory_id for memory in steady_memories)
+        steady_refs = tuple(evidence.evidence_id for evidence in steady_recall_items)
         snapshot_retrieval_requests, replay_retrieval_requests = _split_retrieval_requests(retrieval_requests)
-        retrieved_memory_ids = tuple(
-            dict.fromkeys(memory_id for request in snapshot_retrieval_requests for memory_id in request.memory_ids)
+        retrieved_evidence_refs = tuple(
+            dict.fromkeys(evidence_ref for request in snapshot_retrieval_requests for evidence_ref in request.evidence_refs)
         )
-        replay_memory_ids = tuple(
-            dict.fromkeys(memory_id for request in replay_retrieval_requests for memory_id in request.memory_ids)
+        replay_evidence_refs = tuple(
+            dict.fromkeys(evidence_ref for request in replay_retrieval_requests for evidence_ref in request.evidence_refs)
         )
         omitted_snapshot_refs = tuple(
-            memory.memory_id
-            for memory in memories
-            if memory.memory_id not in steady_refs and memory.memory_id not in retrieved_memory_ids and memory.memory_id not in replay_memory_ids
+            evidence.evidence_id
+            for evidence in recall_items
+            if evidence.evidence_id not in steady_refs and evidence.evidence_id not in retrieved_evidence_refs and evidence.evidence_id not in replay_evidence_refs
         )
         traces: list[ContextSourceTrace] = [
             ContextSourceTrace(
@@ -396,17 +395,17 @@ class LayeredContextPlanner:
                             *profile_snapshot_refs,
                             *(work_item.work_item_id for work_item in snapshot_work_items),
                             *steady_refs,
-                            *retrieved_memory_ids,
+                            *retrieved_evidence_refs,
                         )
                     )
                 ),
                 reason=_session_snapshot_trace_reason(
                     session,
                     work_items,
-                    memories,
+                    recall_items,
                     state_focus=state_focus,
                     profile_snapshot_refs=profile_snapshot_refs,
-                    steady_memories=steady_memories,
+                    steady_recall_items=steady_recall_items,
                     retrieval_requests=snapshot_retrieval_requests,
                     summary_requests=summary_requests,
                 ),
@@ -414,14 +413,14 @@ class LayeredContextPlanner:
             ),
         ]
         if replay_retrieval_requests:
-            structured_turn_refs = tuple(memory.memory_id for memory in memories if parse_structured_turn_memory(memory) is not None)
+            structured_turn_refs: tuple[str, ...] = ()
             traces.append(
                 ContextSourceTrace(
                     layer_name="replay_packet",
-                    selected_refs=replay_memory_ids,
+                    selected_refs=replay_evidence_refs,
                     reason=_replay_packet_trace_reason(replay_retrieval_requests),
                     omitted_refs=tuple(
-                        memory_id for memory_id in structured_turn_refs if memory_id not in replay_memory_ids
+                        evidence_ref for evidence_ref in structured_turn_refs if evidence_ref not in replay_evidence_refs
                     ),
                 )
             )
@@ -476,7 +475,7 @@ class ContextRuntime(ContextCapability):
         self,
         session: Episode,
         work_items: tuple[...],
-        memories: tuple[MemoryRecord, ...],
+        recall_items: tuple[RecallEvidence, ...],
         *,
         recent_loop_context: tuple[str, ...] = (),
         state_focus: StateFocusDecision | None = None,
@@ -487,7 +486,7 @@ class ContextRuntime(ContextCapability):
         return self._planner.plan(
             session=session,
             work_items=work_items,
-            memories=memories,
+            recall_items=recall_items,
             total_tokens=total_tokens if total_tokens is not None else self._total_tokens,
             instruction_refs=self._instruction_refs,
             recent_loop_context=recent_loop_context,
@@ -500,11 +499,11 @@ class ContextRuntime(ContextCapability):
         self,
         session: Episode,
         work_items: tuple[...],
-        memories: tuple[MemoryRecord, ...],
+        recall_items: tuple[RecallEvidence, ...],
         *,
         state_focus: StateFocusDecision | None = None,
     ) -> ContextBundle:
-        plan = self.plan(session, work_items, memories, state_focus=state_focus)
+        plan = self.plan(session, work_items, recall_items, state_focus=state_focus)
         rendered = self._renderer.render(plan)
         prompt_envelope = build_prompt_envelope(plan.frame)
         return ContextBundle(
@@ -512,7 +511,7 @@ class ContextRuntime(ContextCapability):
             episode_id=session.episode_id,
             instruction_refs=self._instruction_refs,
             work_item_ids=tuple(work_item.work_item_id for work_item in work_items),
-            memory_ids=tuple(memory.memory_id for memory in memories),
+            evidence_refs=tuple(evidence.evidence_id for evidence in recall_items),
             artifact_ids=(),
             token_budget=plan.total_tokens,
             prompt_envelope=prompt_envelope,
@@ -523,7 +522,7 @@ class ContextRuntime(ContextCapability):
         self,
         session: Episode,
         work_items: tuple[...],
-        memories: tuple[MemoryRecord, ...],
+        recall_items: tuple[RecallEvidence, ...],
         *,
         recent_loop_context: tuple[str, ...] = (),
         state_focus: StateFocusDecision | None = None,
@@ -534,7 +533,7 @@ class ContextRuntime(ContextCapability):
         plan = self.plan(
             session,
             work_items,
-            memories,
+            recall_items,
             recent_loop_context=recent_loop_context,
             state_focus=state_focus,
             profile_snapshot_refs=profile_snapshot_refs,
@@ -548,17 +547,17 @@ class ContextRuntime(ContextCapability):
             for layer in plan.layers
             if layer.summary is not None
         }
-        retrieved_memory_ids = tuple(
-            memory_id
+        retrieved_evidence_refs = tuple(
+            evidence_ref
             for request in plan.retrieval_requests
-            for memory_id in request.memory_ids
+            for evidence_ref in request.evidence_refs
         )
         bundle = ContextBundle(
             bundle_id=f"{session.episode_id}:context",
             episode_id=session.episode_id,
             instruction_refs=self._instruction_refs,
             work_item_ids=tuple(work_item.work_item_id for work_item in work_items),
-            memory_ids=tuple(memory.memory_id for memory in memories),
+            evidence_refs=tuple(evidence.evidence_id for evidence in recall_items),
             artifact_ids=artifacts,
             token_budget=plan.total_tokens,
             prompt_envelope=prompt_envelope,
@@ -569,7 +568,7 @@ class ContextRuntime(ContextCapability):
             plan=plan,
             rendered_prompt=rendered,
             summary_by_layer=summary_by_layer,
-            retrieved_memory_ids=retrieved_memory_ids,
+            retrieved_evidence_refs=retrieved_evidence_refs,
             source_trace=plan.source_trace,
             frame=plan.frame,
         )

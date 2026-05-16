@@ -26,14 +26,14 @@
       ]
     },
     {
-      "id": "continuity.memory-recovery",
-      "file": "memory-recovery.md",
+      "id": "continuity.recall-recovery",
+      "file": "recall-recovery.md",
       "owner_profile": "QA and evaluation engineer",
-      "purpose": "Reconstruct relevant memory after partial context loss or correction.",
+      "purpose": "Reconstruct relevant recall evidence after partial context loss or correction.",
       "primary_assertions": [
-        "retrieved memory is linked to the active state and current work",
-        "stale or corrected memory is not reused blindly",
-        "memory recovery is explainable to the user"
+        "retrieved evidence is linked to the active state and current work",
+        "stale or corrected fact is not reused blindly",
+        "recall recovery is explainable to the user"
       ]
     },
     {

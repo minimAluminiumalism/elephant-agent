@@ -92,7 +92,7 @@ CLI_HELP_COMMANDS = (
     ("dashboard", "Launch the local operator dashboard when frontend assets are present."),
     ("herd", "Create, inspect, select, or retire existing Elephant Agent herd."),
     ("provider", "Configure or inspect the active provider, model, reasoning effort, and context window."),
-    ("memory", "Inspect or retire Personal Model understanding without entering wake."),
+    ("facts", "Inspect or retire Personal Model facts without entering wake."),
     ("reflect", "Run, inspect, and manage background reflect agents (PM learning, dream, diary, audit)."),
     ("skills", "Inspect, search, install, and toggle skill packages without entering wake."),
     ("gateway", "Manage IM providers and accounts."),
@@ -108,7 +108,7 @@ CLI_COMMAND_GLYPHS = (
     ("elephant herd new", "🐘"),
     ("elephant herd", "🐘"),
     ("elephant provider", "🧩"),
-    ("elephant memory", "🐘"),
+    ("elephant facts", "🐘"),
     ("elephant reflect", "🌱"),
     ("elephant skills", "📚"),
     ("elephant gateway", "💬"),
@@ -289,24 +289,24 @@ def build_parser() -> argparse.ArgumentParser:
     elephant_delete.add_argument("elephant_id", nargs="?", help="Name the Elephant Agent elephant to delete.")
     elephant_delete.add_argument("--all", action="store_true", dest="delete_all", help="Delete every elephant.")
 
-    memory = subparsers.add_parser(
-        "memory",
-        help="Inspect or retire Personal Model understanding without entering wake.",
+    facts = subparsers.add_parser(
+        "facts",
+        help="Inspect or retire Personal Model facts without entering wake.",
     )
-    memory.add_argument("--elephant-id", default=None, help="Resolve Personal Model understanding through a named elephant.")
-    memory_subparsers = memory.add_subparsers(dest="memory_command")
-    memory_list = memory_subparsers.add_parser(
+    facts.add_argument("--elephant-id", default=None, help="Resolve Personal Model facts through a named elephant.")
+    facts_subparsers = facts.add_subparsers(dest="facts_command")
+    facts_list = facts_subparsers.add_parser(
         "list",
-        help="List Personal Model understanding for the current or named elephant.",
+        help="List Personal Model facts for the current or named elephant.",
     )
-    memory_list.add_argument("--elephant-id", default=None, help="Resolve Personal Model understanding through a named elephant.")
-    memory_delete = memory_subparsers.add_parser(
+    facts_list.add_argument("--elephant-id", default=None, help="Resolve Personal Model facts through a named elephant.")
+    facts_delete = facts_subparsers.add_parser(
         "delete",
         help="Retire one Personal Model entry by id.",
     )
-    memory_delete.add_argument("memory_id", help="Name the Personal Model entry to retire.")
-    memory_delete.add_argument("--elephant-id", default=None, help="Resolve Personal Model understanding through a named elephant.")
-    memory_delete.add_argument("--reason", default=None, help="Record why this Personal Model entry is being retired.")
+    facts_delete.add_argument("fact_id", help="Name the Personal Model entry to retire.")
+    facts_delete.add_argument("--elephant-id", default=None, help="Resolve Personal Model facts through a named elephant.")
+    facts_delete.add_argument("--reason", default=None, help="Record why this Personal Model entry is being retired.")
 
     _add_wake_parser("wake")
 

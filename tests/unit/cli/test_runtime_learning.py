@@ -185,7 +185,7 @@ class CliRuntimeLearningTest(unittest.TestCase):
             agent_result = SimpleNamespace(
                 status="completed",
                 summary="done",
-                result_record_id="",
+                result_source_id="",
                 child_episode_id=child.episode_id,
             )
 

@@ -5,7 +5,7 @@ harness plan:
 
 * ``LoopState`` carries ``schema_version=2`` plus ``wait_condition``,
   ``pending_tool_calls``, ``retry_state``, ``partial_assistant``,
-  ``context_bundle_id``, ``active_memory_ids``, ``heartbeat_at``,
+  ``context_bundle_id``, ``active_evidence_refs``, ``heartbeat_at``,
   ``crash_marker``.
 * ``_loop_metadata`` / ``_loop_state_from_loop`` round-trip every v2 field
   without loss.
@@ -81,7 +81,7 @@ def _populated_v2_state(now: datetime) -> LoopState:
         ),
         partial_assistant="Once upon a time",
         context_bundle_id="bundle-42",
-        active_memory_ids=("m-1", "m-2"),
+        active_evidence_refs=("m-1", "m-2"),
         retry_state=RetryState(
             attempt=2,
             last_error_kind="http_429",
@@ -133,7 +133,7 @@ class LoopStateSchemaV2Test(unittest.TestCase):
         self.assertIsNone(state.retry_state)
         self.assertIsNone(state.heartbeat_at)
         self.assertIsNone(state.crash_marker)
-        self.assertEqual(state.active_memory_ids, ())
+        self.assertEqual(state.active_evidence_refs, ())
 
     def test_roundtrip_preserves_every_v2_field(self) -> None:
         now = _now()
@@ -151,7 +151,7 @@ class LoopStateSchemaV2Test(unittest.TestCase):
         self.assertEqual(restored.wait_condition.tool_handle_id, "h-1")
         self.assertEqual(restored.partial_assistant, "Once upon a time")
         self.assertEqual(restored.context_bundle_id, "bundle-42")
-        self.assertEqual(restored.active_memory_ids, ("m-1", "m-2"))
+        self.assertEqual(restored.active_evidence_refs, ("m-1", "m-2"))
         self.assertIsNotNone(restored.retry_state)
         self.assertEqual(restored.retry_state.attempt, 2)
         self.assertEqual(restored.retry_state.last_error_kind, "http_429")

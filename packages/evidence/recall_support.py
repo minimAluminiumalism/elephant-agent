@@ -1,6 +1,6 @@
 """Shared lexical recall helper for internal current-turn recall paths.
 
-Ranks committed personal-model / state memory entries and episode exit
+Ranks committed Personal Model facts, State facts, and episode exit
 summaries against a user query in a language-agnostic way (works for English
 tokens AND CJK substrings), then returns human-readable hits with no record
 ids. CLI, API, and gateway surfaces all funnel through this module so recall
@@ -45,7 +45,7 @@ _COMPACT_TEXT_RE = re.compile(r"[a-z0-9\u3400-\u9fff\uf900-\ufaff\u3040-\u30ff\u
 class RecallCandidate:
     """One candidate chunk to rank against the query.
 
-    The candidate is a neutral wrapper — it hides memory-entry vs episode
+    The candidate is a neutral wrapper — it hides PM/State fact vs episode
     storage differences from the ranker, which only needs a text body, a
     timestamp, and display metadata.
     """
@@ -164,8 +164,8 @@ def rank_recall_candidates(
     """Rank candidates by hybrid multi-signal score; return human hits.
 
     When the query is empty we still return the most recent candidates, which
-    keeps `recall_memory(query="", scope="personal_model")` behaving like a
-    tailed-list over committed personal-model entries.
+    keeps `recall_evidence(query="", scope="personal_model")` behaving like a
+    tailed-list over committed Personal Model facts.
     """
     capped = max(1, int(limit or 1))
     now_ts = (now or datetime.now(timezone.utc)).timestamp()
@@ -214,7 +214,7 @@ def render_recall_hit(hit: RecallHit) -> dict[str, object]:
         "when": hit.when,
         "content": hit.content,
     }
-    for key in ("document_id", "episode_id", "loop_id", "step_id", "source_record_id"):
+    for key in ("document_id", "episode_id", "loop_id", "step_id", "source_id"):
         value = str(metadata.get(key) or "").strip()
         if value:
             payload[key] = value

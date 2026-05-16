@@ -51,7 +51,7 @@ in a later prompt.
 
 ## Agent pages
 
-| Page | Use it for | Grounding rule |
+| Page | Use it for | Provenance rule |
 | --- | --- | --- |
 | **Models** | Choose dialogue and reasoning providers. | Provider choice changes how Elephant Agent thinks, not what is true. |
 | **Skills** | Inspect and toggle workflow packages. | Skills are visible capabilities around understanding. |
@@ -60,7 +60,7 @@ in a later prompt.
 
 ## System pages
 
-| Page | Use it for | Grounding rule |
+| Page | Use it for | Provenance rule |
 | --- | --- | --- |
 | **Messaging** | Connect Feishu, Discord, WeChat, and other adapters. | Messaging extends one elephant; it does not create a second memory. |
 | **Job** | Schedule local prompts and system jobs. | Jobs should stay visible and pausable. |

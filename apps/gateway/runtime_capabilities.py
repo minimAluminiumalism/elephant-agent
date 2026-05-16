@@ -24,11 +24,10 @@ from packages.models.runtime_capability import provider_fallback_summary, provid
 from packages.capabilities.runtime import (
     CapabilityDescriptor,
     ContextCapability,
-    MemoryCapability,
+    RecallCapability,
     ModelProviderCapability,
     TelemetrySinkCapability,
 )
-from packages.contracts import Record
 from packages.context import (
     ContextRuntime,
     apply_session_context_epoch,
@@ -42,7 +41,7 @@ from packages.contracts.runtime import (
     StateFocusDecision,
     EvidenceRetrievalRequest,
     EvidenceRetrievalResult,
-    MemoryRecord,
+    RecallEvidence,
     RuntimeModelChoice,
     PersonalModelRuntimeState,
     GenerationModelProfile,
@@ -66,8 +65,8 @@ from packages.gateway_core import (
     InMemoryGatewayIdentityStore,
     InMemoryGatewaySessionStore,
 )
-from packages.kernel import KernelDependencies, KernelService, KernelSourceRequest, ObservationPipeline, StateReconciler
-from packages.evidence import MemoryRuntime
+from packages.kernel import KernelDependencies, KernelService, KernelSourceRequest, ReconciliationPipeline, StateReconciler
+from packages.evidence import RecallRuntime
 from packages.skills import SkillPromptContextBuilder
 from packages.state import DEFAULT_ELEPHANT_IDENTITY_TEXT, LoadedProfile, ProfileLoader, build_prompt_contract
 from packages.state import load_runtime_profile
@@ -101,40 +100,18 @@ class GatewayTelemetrySink(TelemetrySinkCapability):
     def emit(self, event: Mapping[str, Any]) -> None:
         self._events.append(dict(event))
 
-class GatewayMemoryCapability(MemoryCapability):
-    def __init__(self, runtime: MemoryRuntime) -> None:
+class GatewayRecallCapability(RecallCapability):
+    def __init__(self, runtime: RecallRuntime) -> None:
         self.descriptor = CapabilityDescriptor(
-            capability_id="gateway.memory",
-            kind="memory",
+            capability_id="gateway.recall",
+            kind="recall",
             version="1.0.0",
-            metadata={"description": "Shared memory adapter for gateway turns."},
+            metadata={"description": "Shared evidence recall adapter for gateway turns."},
         )
         self.runtime = runtime
 
-    def record(self, memory: MemoryRecord) -> None:
-        self.runtime.store.upsert(memory)
-
     def retrieve_evidence(self, request: EvidenceRetrievalRequest) -> EvidenceRetrievalResult:
         return self.runtime.retrieve_evidence(request)
-
-    def search(
-        self,
-        session_id: str,
-        query: str,
-        *,
-        work_item_ids: tuple[str, ...] = (),
-        scope_session_ids: tuple[str, ...] = (),
-        scope_episode_ids: tuple[str, ...] = (),
-        scope_reason: str = "",
-    ) -> tuple[MemoryRecord, ...]:
-        result = self.runtime.retrieve(
-            session_id,
-            query,
-            work_item_ids=work_item_ids,
-            scope_episode_ids=scope_episode_ids or scope_session_ids,
-            scope_reason=scope_reason,
-        )
-        return tuple(candidate.record for candidate in result.candidates)
 
 
 
@@ -195,7 +172,7 @@ class GatewayContextCapability(ContextCapability):
         self,
         session: Episode,
         work_items: tuple[object, ...],
-        memories: tuple[MemoryRecord, ...],
+        recall_items: tuple[RecallEvidence, ...],
         *,
         state_focus: StateFocusDecision | None = None,
     ) -> ContextBundle:
@@ -213,10 +190,10 @@ class GatewayContextCapability(ContextCapability):
                     total_tokens=runtime.total_tokens,
                 )
         self._last_session_id = session.episode_id
-        bundle = runtime.assemble(session, work_items, memories, state_focus=state_focus)
+        bundle = runtime.assemble(session, work_items, recall_items, state_focus=state_focus)
         bundle = replace(
             bundle,
-            bundle_id=f"bundle:{session.episode_id}:{len(work_items)}:{len(memories)}",
+            bundle_id=f"bundle:{session.episode_id}:{len(work_items)}:{len(recall_items)}",
             instruction_refs=runtime.instruction_refs,
         )
         epoch = (
@@ -255,7 +232,7 @@ class GatewayContextCapability(ContextCapability):
         self.epoch_store.save(updated)
         return compress_result
 
-    def flush_projection_memory(self) -> None:
+    def flush_projection_cache(self) -> None:
         return None
 
 class GatewayPreviewModelProvider(ModelProviderCapability):

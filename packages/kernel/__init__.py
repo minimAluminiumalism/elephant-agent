@@ -1,12 +1,12 @@
 """Canonical turn lifecycle orchestration."""
 
 from .reconciliation import (
-    ObservationPipeline,
+    ReconciliationPipeline,
     StateReconciler,
-    TurnObservation,
+    TurnSignal,
     TurnProfileDelta,
     TurnReconciliationReport,
-    WakeObservation,
+    WakeSignal,
     WakeReconciliationReport,
     merge_preference_updates,
 )
@@ -28,12 +28,12 @@ __all__ = [
     "KernelStageRecord",
     "KernelSourceRequest",
     "KernelStoragePort",
-    "ObservationPipeline",
+    "ReconciliationPipeline",
     "StateReconciler",
-    "TurnObservation",
+    "TurnSignal",
     "TurnProfileDelta",
     "TurnReconciliationReport",
-    "WakeObservation",
+    "WakeSignal",
     "WakeReconciliationReport",
     "merge_preference_updates",
 ]

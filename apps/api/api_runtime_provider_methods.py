@@ -29,16 +29,15 @@ from packages.contracts import (
     Episode,
     EventEnvelope,
     ExecutionResult,
-    MemoryRecord,
 )
-from packages.contracts.runtime import PersonalModelRuntimeState
-from packages.kernel import KernelDependencies, KernelOutcome, KernelService, KernelSourceRequest, ObservationPipeline, StateReconciler
-from packages.evidence import MemoryRuntime
-from packages.operator import (
-    MemoryOperatorDetail,
-    MemorySearchHit,
+from packages.contracts.runtime import PersonalModelRuntimeState, RecallEvidence
+from packages.kernel import KernelDependencies, KernelOutcome, KernelService, KernelSourceRequest, ReconciliationPipeline, StateReconciler
+from packages.evidence.recall_runtime import RecallRuntime
+from packages.operator.runtime import (
+    RecallEvidenceOperatorDetail,
+    RecallEvidenceSearchHit,
     ProcedureOperatorDetail,
-    build_memory_operator_surface,
+    build_recall_evidence_operator_surface,
     build_procedure_operator_surface,
     build_profile_operator_surface,
 )
@@ -51,7 +50,7 @@ from packages.tools.browser_backend import create_playwright_browser_backend
 from .capabilities import (
     APIContextCapability,
     APIDeliveryCapability,
-    APIMemoryCapability,
+    APIRecallCapability,
     APIModelProvider,
     APITelemetrySink,
     APIToolExecution,
@@ -216,7 +215,7 @@ def _provider_probe(
         episode_id=session.episode_id,
         instruction_refs=("apps/api",),
         work_item_ids=(),
-        memory_ids=(),
+        evidence_refs=(),
         artifact_ids=(),
         token_budget=512,
         rendered_prompt="provider test",

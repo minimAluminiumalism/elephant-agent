@@ -662,7 +662,7 @@ def _tool_trace_preview(arguments, *, tool_id: str | None = None) -> str:
         "relationship_text",
         "relationship_content",
         "reference",
-        "memory_id",
+        "evidence_ref",
         "skill_id",
         "server_id",
     )

@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from packages.contracts import ElephantIdentityRecord, PersonalModelRecordBundle, RelationshipMemoryRecord, UserCardRecord
+from packages.contracts import ElephantIdentityRecord
 from packages.storage.repository_support import canonical_personal_model_id
+from .rendered_views import RenderedRelationshipView, RenderedUserProfileView
 
 from .governance import (
     build_companion_identity_state,
@@ -19,23 +20,22 @@ from .loader import LoadedProfile
 @dataclass(frozen=True, slots=True)
 class CanonicalProfileIds:
     elephant_id: str
-    user_card_id: str
+    user_profile_id: str
     relationship_id: str
 
 
 @dataclass(frozen=True, slots=True)
 class CanonicalPersonalModelRuntimeStateBundle:
-    personal_model_record_bundle: PersonalModelRecordBundle
     elephant_identity: ElephantIdentityRecord
-    user_card: UserCardRecord
-    relationship_memory: RelationshipMemoryRecord
+    user_profile: RenderedUserProfileView
+    relationship: RenderedRelationshipView
 
 
 def canonical_profile_ids(profile_id: str) -> CanonicalProfileIds:
     normalized = canonical_personal_model_id(profile_id)
     return CanonicalProfileIds(
         elephant_id=f"{normalized}:elephant",
-        user_card_id=f"{normalized}:user-card",
+        user_profile_id=f"{normalized}:user-profile",
         relationship_id=f"{normalized}:relationship",
     )
 
@@ -44,53 +44,25 @@ def build_canonical_profile_state(
     profile: LoadedProfile,
     *,
     elephant_id: str | None = None,
-    user_card_id: str | None = None,
+    user_profile_id: str | None = None,
     relationship_id: str | None = None,
 ) -> CanonicalPersonalModelRuntimeStateBundle:
     ids = canonical_profile_ids(profile.state.profile_id)
     resolved_elephant_id = elephant_id or ids.elephant_id
-    resolved_user_card_id = user_card_id or ids.user_card_id
+    resolved_user_profile_id = user_profile_id or ids.user_profile_id
     resolved_relationship_id = relationship_id or ids.relationship_id
     elephant_identity = build_elephant_identity_record(profile, elephant_id=resolved_elephant_id)
-    user_card = build_user_card_record(profile, user_card_id=resolved_user_card_id)
-    relationship_memory = build_relationship_memory_record(
+    user_profile = build_user_profile_projection(profile, user_profile_id=resolved_user_profile_id)
+    relationship = build_relationship_projection(
         profile,
         elephant_id=resolved_elephant_id,
-        user_card_id=resolved_user_card_id,
+        user_profile_id=resolved_user_profile_id,
         relationship_id=resolved_relationship_id,
     )
     return CanonicalPersonalModelRuntimeStateBundle(
-        personal_model_record_bundle=build_personal_model_record_bundle(
-            profile,
-            elephant_identity=elephant_identity,
-            user_card=user_card,
-            relationship_memory=relationship_memory,
-        ),
         elephant_identity=elephant_identity,
-        user_card=user_card,
-        relationship_memory=relationship_memory,
-    )
-
-
-def build_personal_model_record_bundle(
-    profile: LoadedProfile,
-    *,
-    elephant_identity: ElephantIdentityRecord | None = None,
-    user_card: UserCardRecord | None = None,
-    relationship_memory: RelationshipMemoryRecord | None = None,
-) -> PersonalModelRecordBundle:
-    resolved_elephant_identity = elephant_identity or build_elephant_identity_record(profile)
-    resolved_user_card = user_card or build_user_card_record(profile)
-    resolved_relationship_memory = relationship_memory or build_relationship_memory_record(
-        profile,
-        elephant_id=resolved_elephant_identity.elephant_id,
-        user_card_id=resolved_user_card.user_card_id,
-    )
-    return PersonalModelRecordBundle(
-        profile=profile.state,
-        elephant_identity=resolved_elephant_identity,
-        user_card=resolved_user_card,
-        relationship_memory=resolved_relationship_memory,
+        user_profile=user_profile,
+        relationship=relationship,
     )
 
 
@@ -118,11 +90,11 @@ def build_elephant_identity_record(
     )
 
 
-def build_user_card_record(
+def build_user_profile_projection(
     profile: LoadedProfile,
     *,
-    user_card_id: str | None = None,
-) -> UserCardRecord:
+    user_profile_id: str | None = None,
+) -> RenderedUserProfileView:
     parsed_profile = parse_user_profile_content(profile.user_profile_text or "")
     fields = dict(parsed_profile.field_values)
     locale = _strip_or_none(str(profile.manifest.get("locale") or ""))
@@ -131,8 +103,8 @@ def build_user_card_record(
     biography_fragments = _biography_fragments(fields)
     boundaries = _maybe_singleton(fields.get("boundaries"))
     ids = canonical_profile_ids(profile.state.profile_id)
-    return UserCardRecord(
-        user_card_id=user_card_id or ids.user_card_id,
+    return RenderedUserProfileView(
+        user_profile_id=user_profile_id or ids.user_profile_id,
         profile_id=profile.state.profile_id,
         preferred_name=_strip_or_none(fields.get("preferred_name")),
         locale=locale,
@@ -146,21 +118,21 @@ def build_user_card_record(
     )
 
 
-def build_relationship_memory_record(
+def build_relationship_projection(
     profile: LoadedProfile,
     *,
     elephant_id: str | None = None,
-    user_card_id: str | None = None,
+    user_profile_id: str | None = None,
     relationship_id: str | None = None,
-) -> RelationshipMemoryRecord:
+) -> RenderedRelationshipView:
     ids = canonical_profile_ids(profile.state.profile_id)
     companion = resolved_companion_settings(profile)
     identity = build_companion_identity_state(profile)
-    return RelationshipMemoryRecord(
+    return RenderedRelationshipView(
         relationship_id=relationship_id or ids.relationship_id,
         profile_id=profile.state.profile_id,
         elephant_id=elephant_id or ids.elephant_id,
-        user_card_id=user_card_id or ids.user_card_id,
+        user_profile_id=user_profile_id or ids.user_profile_id,
         interaction_preferences=_interaction_preferences(companion),
         expectations=(
             f"initiative:{companion.initiative}",
@@ -228,7 +200,7 @@ __all__ = [
     "CanonicalPersonalModelRuntimeStateBundle",
     "build_canonical_profile_state",
     "build_elephant_identity_record",
-    "build_relationship_memory_record",
-    "build_user_card_record",
+    "build_relationship_projection",
+    "build_user_profile_projection",
     "canonical_profile_ids",
 ]

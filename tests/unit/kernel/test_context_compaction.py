@@ -18,7 +18,7 @@ class ContextCompactionKernelTest(unittest.TestCase):
             request_id="request-1",
             episode_id="episode-1",
             loop_id="loop-1",
-            source_record_id="record-1",
+            source_id="record-1",
         )
         result = ContextProjectionCompactionResult(
             compacted=True,
@@ -96,10 +96,10 @@ class ContextCompactionKernelTest(unittest.TestCase):
                 self.reason = reason
                 return result
 
-            def flush_projection_memory(self) -> None:
+            def flush_projection_cache(self) -> None:
                 self.flushed = True
 
-            def assemble(self, session, work_items, memories, state_focus=None):
+            def assemble(self, session, work_items, recall_items, state_focus=None):
                 return assembled
 
         capability = _ContextCapability()
@@ -118,13 +118,13 @@ class ContextCompactionKernelTest(unittest.TestCase):
                 request_id="request-2",
                 episode_id="episode-2",
                 loop_id="loop-2",
-                source_record_id="record-2",
+                source_id="record-2",
             ),
             profile=SimpleNamespace(),
             session=SimpleNamespace(),
             state_focus=None,
             work_items=(),
-            memories=(),
+            recall_items=(),
             decision=None,
             plan=None,
             continuity=None,

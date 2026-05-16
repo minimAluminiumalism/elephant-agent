@@ -6,32 +6,33 @@ from dataclasses import replace
 from uuid import uuid4
 
 from packages.context import ContextAssemblyResult
-from packages.contracts.runtime import ElephantIdentityRecord, RelationshipMemoryRecord, UserCardRecord
+from packages.contracts.runtime import ElephantIdentityRecord
+from packages.state.rendered_views import RenderedRelationshipView, RenderedUserProfileView
 from packages.continuity import ContinuityProjectionService
-from packages.operator import (
-    MemoryOperatorDetail,
-    MemorySearchHit,
+from packages.operator.runtime import (
+    RecallEvidenceOperatorDetail,
+    RecallEvidenceSearchHit,
     ProcedureOperatorDetail,
     build_canonical_procedure_detail,
-    build_memory_operator_surface,
+    build_recall_evidence_operator_surface,
     build_procedure_operator_surface,
     build_profile_operator_surface,
 )
 from packages.state import (
     CompanionSettings,
     LoadedProfile,
-    apply_user_card_update,
-    build_canonical_profile_state,
     read_elephant_identity_file,
     user_profile_updates,
     is_companion_mode,
-    load_persisted_canonical_state,
     normalize_profile_mode,
     render_default_elephant_identity,
-    render_user_card_profile_text,
     resolve_personality_preset,
     write_elephant_identity_file,
 )
+from packages.state.canonical import build_canonical_profile_state
+from packages.state.persistence import load_persisted_canonical_state
+from packages.state.projection import render_user_profile_projection_text
+from packages.state.user_updates import apply_user_profile_update
 from packages.security import ApprovalClass, SecurityRequest, evaluate_with_telemetry
 
 from .runtime_cognition import _CliContextCapability
@@ -90,10 +91,10 @@ class CliRuntimeProfileMixin:
             identity_record=identity,
             relationship_record=relationship,
         )
-        recovery = self._planning_memory_recovery(session)
+        recovery = self._planning_recall_evidence_recovery(session)
         wake_action = "continue" if active_state_focus else "idle"
         wake_summary = active_state_focus if active_state_focus else "No durable elephant focus is available yet."
-        wake_factors: tuple[str, ...] = tuple(("state-continuity", f"memory-scope={','.join(recovery.scope_episode_ids)}"))
+        wake_factors: tuple[str, ...] = tuple(("state-continuity", f"recall-scope={','.join(recovery.scope_episode_ids)}"))
         return ContinuityStatus(
             profile=profile,
             session=session,
@@ -115,7 +116,7 @@ class CliRuntimeProfileMixin:
 
     def inspect_context_frame(self, session_id: str) -> ContextAssemblyResult:
         session = self.inspect_session(session_id)
-        memories = self.inspect_memories(session_id)
+        recall_items = self.inspect_recall_evidence(session_id)
         state_focus = load_snapshot_state_focus(self, session_id=session_id)
         capability = _CliContextCapability(
             profile_loader=self.profile_loader,
@@ -130,7 +131,7 @@ class CliRuntimeProfileMixin:
             install_root=self.paths.home_dir,
             workspaces_dir=self.paths.workspaces_dir,
         )
-        return capability.assemble_detailed(session, (), memories, state_focus=state_focus)
+        return capability.assemble_detailed(session, (), recall_items, state_focus=state_focus)
 
     def inspect_profile_surface(self, session_id: str):
         session = self.inspect_session(session_id)
@@ -190,34 +191,34 @@ class CliRuntimeProfileMixin:
             )
         return self.inspect_profile_surface(session_id)
 
-    def inspect_memory_surface(self, session_id: str):
-        memories = tuple(
-            MemoryOperatorDetail(
-                memory=memory,
-                state=self.memory_state(memory.memory_id),
-                lineage=self.memory_lineage(memory.memory_id),
+    def inspect_recall_evidence_surface(self, session_id: str):
+        evidence_items = tuple(
+            RecallEvidenceOperatorDetail(
+                evidence=evidence,
+                state=self.recall_evidence_state(evidence.evidence_id),
+                lineage=self.recall_evidence_lineage(evidence.evidence_id),
             )
-            for memory in self.inspect_memories(session_id)
+            for evidence in self.inspect_recall_evidence(session_id)
         )
-        return build_memory_operator_surface(session_id=session_id, memories=memories)
+        return build_recall_evidence_operator_surface(session_id=session_id, evidence_items=evidence_items)
 
-    def search_memory_surface(self, session_id: str, *, query: str, limit: int = 5):
+    def search_recall_evidence_surface(self, session_id: str, *, query: str, limit: int = 5):
         retrieval = self.retrieve_evidence(session_id, query, limit=limit)
-        memories = tuple(
-            MemoryOperatorDetail(
-                memory=memory,
-                state=self.memory_state(memory.memory_id),
-                lineage=self.memory_lineage(memory.memory_id),
+        evidence_items = tuple(
+            RecallEvidenceOperatorDetail(
+                evidence=evidence,
+                state=self.recall_evidence_state(evidence.evidence_id),
+                lineage=self.recall_evidence_lineage(evidence.evidence_id),
             )
-            for memory in self.inspect_memories(session_id)
+            for evidence in self.inspect_recall_evidence(session_id)
         )
-        return build_memory_operator_surface(
+        return build_recall_evidence_operator_surface(
             session_id=session_id,
-            memories=memories,
+            evidence_items=evidence_items,
             search_query=query,
             search_hits=tuple(
-                MemorySearchHit(
-                    memory=candidate.memory,
+                RecallEvidenceSearchHit(
+                    evidence=candidate.evidence,
                     score=candidate.score,
                     reasons=tuple(reason.detail for reason in candidate.reasons if reason.detail),
                 )
@@ -228,7 +229,7 @@ class CliRuntimeProfileMixin:
         )
 
     def _canonical_procedure_details(self, session_id: str) -> tuple[ProcedureOperatorDetail, ...]:
-        return ()  # Procedural memory removed.
+        return ()  # Procedure projection removed.
 
     def inspect_procedure_surface(self, session_id: str, *, minimum_support: int = 2):
         session = self.inspect_session(session_id)
@@ -290,32 +291,32 @@ class CliRuntimeProfileMixin:
         *,
         session_id: str | None = None,
         profile_id: str | None = None,
-    ) -> UserCardRecord:
+    ) -> RenderedUserProfileView:
         resolved_profile_id = self._resolve_extension_profile_id(
             session_id=session_id,
             profile_id=profile_id,
         )
         loaded = self._load_profile(resolved_profile_id)
-        persisted = load_persisted_canonical_state(self.repository, loaded.state.profile_id).user_card
+        persisted = load_persisted_canonical_state(self.repository, loaded.state.profile_id).user_profile
         if persisted is not None:
             return persisted
-        return build_canonical_profile_state(loaded).user_card
+        return build_canonical_profile_state(loaded).user_profile
 
     def inspect_relationship(
         self,
         *,
         session_id: str | None = None,
         profile_id: str | None = None,
-    ) -> RelationshipMemoryRecord:
+    ) -> RenderedRelationshipView:
         resolved_profile_id = self._resolve_extension_profile_id(
             session_id=session_id,
             profile_id=profile_id,
         )
         loaded = self._load_profile(resolved_profile_id)
-        persisted = load_persisted_canonical_state(self.repository, loaded.state.profile_id).relationship_memory
+        persisted = load_persisted_canonical_state(self.repository, loaded.state.profile_id).relationship
         if persisted is not None:
             return persisted
-        return build_canonical_profile_state(loaded).relationship_memory
+        return build_canonical_profile_state(loaded).relationship
 
     def current_profile(self) -> LoadedProfile:
         return self._load_profile(self.profile_loader.load_state().profile_id)
@@ -563,7 +564,7 @@ class CliRuntimeProfileMixin:
         fields: Mapping[str, object] | None = None,
         append: bool = False,
         clear: bool = False,
-    ) -> UserCardRecord:
+    ) -> RenderedUserProfileView:
         resolved_profile_id = self._resolve_extension_profile_id(session_id=session_id, profile_id=profile_id)
         loaded = self._load_profile(resolved_profile_id)
         current_user = self.inspect_user(profile_id=resolved_profile_id)
@@ -573,7 +574,7 @@ class CliRuntimeProfileMixin:
             description="update user state",
             metadata={"profile_id": resolved_profile_id},
         )
-        next_user = apply_user_card_update(
+        next_user = apply_user_profile_update(
             current_user,
             text=_normalized_profile_text(text),
             field_values=user_profile_updates(fields) if fields else None,
@@ -587,7 +588,7 @@ class CliRuntimeProfileMixin:
                 profile_dir=loaded.profile_dir,
                 manifest_path=loaded.manifest_path,
                 elephant_identity_text=loaded.elephant_identity_text,
-                user_profile_text=render_user_card_profile_text(next_user),
+                user_profile_text=render_user_profile_projection_text(next_user),
                 user_profile_path=loaded.user_profile_path,
                 manifest=dict(loaded.manifest),
             ),
@@ -603,7 +604,7 @@ class CliRuntimeProfileMixin:
         text: str | None = None,
         append: bool = False,
         clear: bool = False,
-    ) -> RelationshipMemoryRecord:
+    ) -> RenderedRelationshipView:
         resolved_profile_id = self._resolve_extension_profile_id(session_id=session_id, profile_id=profile_id)
         loaded = self._load_profile(resolved_profile_id)
         latest_session = self.latest_session()

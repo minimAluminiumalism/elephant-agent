@@ -11,7 +11,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from packages.evidence import summarize_recall_hits
-from packages.evidence.memory_recall_support import RecallHit
+from packages.evidence.recall_support import RecallHit
 
 
 class _SummariseTest(unittest.TestCase):

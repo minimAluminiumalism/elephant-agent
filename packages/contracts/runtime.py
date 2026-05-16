@@ -115,63 +115,6 @@ class ElephantIdentityRecord:
     updated_at: datetime | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class UserCardRecord:
-    user_card_id: str
-    profile_id: str
-    preferred_name: str | None = None
-    locale: str | None = None
-    timezone: str | None = None
-    communication_preferences: tuple[str, ...] = ()
-    boundaries: tuple[str, ...] = ()
-    biography_fragments: tuple[str, ...] = ()
-    durable_notes: tuple[str, ...] = ()
-    shared_preferences: tuple[str, ...] = ()
-    source_user_profile_path: str | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class RelationshipMemoryRecord:
-    relationship_id: str
-    profile_id: str
-    elephant_id: str
-    user_card_id: str | None = None
-    interaction_preferences: tuple[str, ...] = ()
-    repair_history: tuple[str, ...] = ()
-    trust_markers: tuple[str, ...] = ()
-    expectations: tuple[str, ...] = ()
-    local_corrections: tuple[str, ...] = ()
-    continuity_notes: tuple[str, ...] = ()
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class PersonalModelRecordBundle:
-    profile: PersonalModelRuntimeState
-    elephant_identity: ElephantIdentityRecord
-    user_card: UserCardRecord
-    relationship_memory: RelationshipMemoryRecord
-
-    def __post_init__(self) -> None:
-        profile_id = self.profile.profile_id
-        if self.elephant_identity.profile_id != profile_id:
-            raise ValueError("elephant identity must reference the same profile")
-        if self.user_card.profile_id != profile_id:
-            raise ValueError("user card must reference the same profile")
-        if self.relationship_memory.profile_id != profile_id:
-            raise ValueError("relationship memory must reference the same profile")
-        if self.relationship_memory.elephant_id != self.elephant_identity.elephant_id:
-            raise ValueError("relationship memory must reference the same elephant identity")
-        if (
-            self.relationship_memory.user_card_id is not None
-            and self.relationship_memory.user_card_id != self.user_card.user_card_id
-        ):
-            raise ValueError("relationship memory must reference the same user card")
-
-
 # DEPRECATED: EpisodeState is now Episode (from packages.contracts.layers).
 # This alias exists only as a migration bridge — do not use in new code.
 from packages.contracts.layers import Episode as EpisodeState  # noqa: F401
@@ -376,7 +319,7 @@ class StructuredTurnSlot:
 
 
 @dataclass(frozen=True, slots=True)
-class StructuredTurnRecord:
+class StepReplayRecord:
     turn_id: str
     episode_id: str
     source: str
@@ -392,19 +335,23 @@ class StructuredTurnRecord:
     compression_tier: str = "raw_turn"
     work_item_ids: tuple[str, ...] = ()
     source_turn_ids: tuple[str, ...] = ()
-    correction_memory_ids: tuple[str, ...] = ()
+    correction_evidence_ids: tuple[str, ...] = ()
     artifact_ids: tuple[str, ...] = ()
     created_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
-class MemoryRecord:
-    memory_id: str
+class RecallEvidence:
+    evidence_id: str
     episode_id: str
     kind: str
     content: str
-    source_event_id: str | None = None
-    work_item_refs: tuple[str, ...] = ()
+    source_id: str = ""
+    source_kind: str = "semantic_index"
+    semantic_index_entry_id: str | None = None
+    step_id: str | None = None
+    loop_id: str | None = None
+    work_item_ids: tuple[str, ...] = ()
     tags: tuple[str, ...] = ()
     created_at: datetime | None = None
     metadata: Mapping[str, object] = field(default_factory=dict)
@@ -433,7 +380,7 @@ class ExperienceRecord:
 
 
 @dataclass(frozen=True, slots=True)
-class ArtifactRecord:
+class RuntimeArtifact:
     artifact_id: str
     episode_id: str
     kind: str
@@ -444,17 +391,17 @@ class ArtifactRecord:
 
 
 @dataclass(frozen=True, slots=True)
-class EvidenceRecordBundle:
+class RuntimeEvidenceBundle:
     episode_id: str
-    memories: tuple[MemoryRecord, ...] = ()
-    artifacts: tuple[ArtifactRecord, ...] = ()
+    recall_items: tuple[RecallEvidence, ...] = ()
+    artifacts: tuple[RuntimeArtifact, ...] = ()
 
     def __post_init__(self) -> None:
-        _ensure_unique_ids(tuple(memory.memory_id for memory in self.memories), name="memory")
+        _ensure_unique_ids(tuple(item.evidence_id for item in self.recall_items), name="recall evidence")
         _ensure_unique_ids(tuple(artifact.artifact_id for artifact in self.artifacts), name="artifact")
-        for memory in self.memories:
-            if memory.episode_id != self.episode_id:
-                raise ValueError("every memory must reference the same episode")
+        for item in self.recall_items:
+            if item.episode_id != self.episode_id:
+                raise ValueError("every recall item must reference the same episode")
         for artifact in self.artifacts:
             if artifact.episode_id != self.episode_id:
                 raise ValueError("every artifact must reference the same episode")
@@ -509,7 +456,7 @@ class EvidenceRetrievalRequest:
 @dataclass(frozen=True, slots=True)
 class EvidenceCandidate:
     evidence_id: str
-    memory: MemoryRecord
+    evidence: RecallEvidence
     score: float
     lexical_score: float = 0.0
     vector_score: float = 0.0
@@ -517,7 +464,7 @@ class EvidenceCandidate:
     matched_scopes: tuple[str, ...] = ()
     reasons: tuple[RecallReason, ...] = ()
     embedding_mode: str = ""
-    replay_record: StructuredTurnRecord | None = None
+    replay_record: StepReplayRecord | None = None
     replay_slots: tuple[str, ...] = ()
     replay_summary: str = ""
 
@@ -685,7 +632,7 @@ class ContextBundle:
     episode_id: str
     instruction_refs: tuple[str, ...] = ()
     work_item_ids: tuple[str, ...] = ()
-    memory_ids: tuple[str, ...] = ()
+    evidence_refs: tuple[str, ...] = ()
     artifact_ids: tuple[str, ...] = ()
     token_budget: int = 0
     prompt_envelope: PromptEnvelope = field(default_factory=PromptEnvelope)
@@ -857,7 +804,7 @@ class LoopState:
     pending_tool_calls: tuple[PendingToolCall, ...] = ()
     partial_assistant: str | None = None
     context_bundle_id: str | None = None
-    active_memory_ids: tuple[str, ...] = ()
+    active_evidence_refs: tuple[str, ...] = ()
     retry_state: RetryState | None = None
     heartbeat_at: datetime | None = None
     crash_marker: str | None = None

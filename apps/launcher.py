@@ -93,7 +93,7 @@ def build_typer_app() -> typer.Typer:
     app = typer.Typer(
         name="elephant",
         help=(
-            "Elephant Agent launcher with explicit init, wake, dashboard, herd, provider, memory, learn, skills, gateway, cron, and status entrypoints."
+            "Elephant Agent launcher with explicit init, wake, dashboard, herd, provider, facts, learn, skills, gateway, cron, and status entrypoints."
         ),
         no_args_is_help=False,
         rich_markup_mode="rich",
@@ -228,10 +228,10 @@ def build_typer_app() -> typer.Typer:
         obj = ctx.obj or {}
         raise typer.Exit(_forward_cli(["herd", *ctx.args], state_dir=obj["state_dir"]))
 
-    @app.command("memory", help=CLI_COMMAND_HELP["memory"], context_settings=passthrough_settings)
-    def memory_passthrough(ctx: typer.Context) -> None:
+    @app.command("facts", help=CLI_COMMAND_HELP["facts"], context_settings=passthrough_settings)
+    def facts_passthrough(ctx: typer.Context) -> None:
         obj = ctx.obj or {}
-        raise typer.Exit(_forward_cli(["memory", *ctx.args], state_dir=obj["state_dir"]))
+        raise typer.Exit(_forward_cli(["facts", *ctx.args], state_dir=obj["state_dir"]))
 
     @app.command("reflect", help=CLI_COMMAND_HELP["reflect"], context_settings=passthrough_settings)
     def reflect_passthrough(ctx: typer.Context) -> None:

@@ -8,7 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 from apps.provider_runtime import capture_runtime_secret_env, provider_profile_from_payload
-from packages.continuity import RelationshipMemoryPolicy, build_relationship_memory_policy
+from packages.continuity import RelationshipPolicy, build_relationship_policy
 from packages.auth import AuthProfile, SecretReference
 from packages.embeddings import (
     ELEPHANT_EMBED_DEFAULT_DIMENSIONS,
@@ -781,9 +781,9 @@ class CliRuntimeProviderMixin:
         )
         return self._load_profile(loaded.state.profile_id)
 
-    def relationship_memory_policy(self, loaded_profile: LoadedProfile) -> RelationshipMemoryPolicy:
+    def relationship_projection_policy(self, loaded_profile: LoadedProfile) -> RelationshipPolicy:
         companion = loaded_profile.companion or CompanionSettings()
-        return build_relationship_memory_policy(
+        return build_relationship_policy(
             loaded_profile.state.mode,
             text_first=companion.text_first,
             preserve_relationship_timeline=companion.preserve_relationship_timeline,

@@ -10,7 +10,6 @@ ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from packages.contracts import Record
 from packages.semantic_index import (
     HybridSemanticSearcher,
     SQLiteVecSemanticIndex,
@@ -36,9 +35,8 @@ class HybridSemanticSearchTest(unittest.TestCase):
             service = SemanticIndexService(repository=repository, backend=backend)
 
             self._index(
-                repository,
                 service,
-                record_id="record-alpha-error",
+                source_id="step:alpha-error",
                 state_id=alpha.state_id,
                 personal_model_id=alpha.personal_model_id,
                 text="ERR_PACKAGE_VERIFY failed while checking dashboard assets.",
@@ -46,9 +44,8 @@ class HybridSemanticSearchTest(unittest.TestCase):
                 created_at=now,
             )
             self._index(
-                repository,
                 service,
-                record_id="record-alpha-vector",
+                source_id="step:alpha-vector",
                 state_id=alpha.state_id,
                 personal_model_id=alpha.personal_model_id,
                 text="Lunch notes unrelated to release verification.",
@@ -56,9 +53,8 @@ class HybridSemanticSearchTest(unittest.TestCase):
                 created_at=now,
             )
             self._index(
-                repository,
                 service,
-                record_id="record-beta-error",
+                source_id="step:beta-error",
                 state_id=beta.state_id,
                 personal_model_id=beta.personal_model_id,
                 text="ERR_PACKAGE_VERIFY belongs to another elephant.",
@@ -78,12 +74,12 @@ class HybridSemanticSearchTest(unittest.TestCase):
                 )
             )
 
-        self.assertEqual(tuple(match.record.record_id for match in matches), ("record-alpha-error", "record-alpha-vector"))
+        self.assertEqual(tuple(match.document.source_id for match in matches), ("step:alpha-error", "step:alpha-vector"))
         self.assertIn("keyword_exact", matches[0].signal_scores)
         self.assertIn("vector", matches[0].signal_scores)
         self.assertIn("vector", matches[1].signal_scores)
         self.assertGreater(matches[0].score, matches[1].score)
-        self.assertNotIn("record-beta-error", {match.record.record_id for match in matches})
+        self.assertNotIn("step:beta-error", {match.document.source_id for match in matches})
 
     def test_degraded_vector_search_falls_back_to_lexical_signals(self) -> None:
         now = datetime(2026, 4, 23, tzinfo=timezone.utc)
@@ -96,9 +92,8 @@ class HybridSemanticSearchTest(unittest.TestCase):
             service = SemanticIndexService(repository=repository, backend=backend)
 
             self._index(
-                repository,
                 service,
-                record_id="record-heartbeat",
+                source_id="step:heartbeat",
                 state_id=state.state_id,
                 personal_model_id=state.personal_model_id,
                 text="Dashboard heartbeat panel records latency spikes and telemetry drift.",
@@ -106,9 +101,8 @@ class HybridSemanticSearchTest(unittest.TestCase):
                 created_at=now,
             )
             self._index(
-                repository,
                 service,
-                record_id="record-release",
+                source_id="step:release",
                 state_id=state.state_id,
                 personal_model_id=state.personal_model_id,
                 text="Release checklist tracks package verification and certification gates.",
@@ -128,7 +122,7 @@ class HybridSemanticSearchTest(unittest.TestCase):
                 )
             )
 
-        self.assertEqual(tuple(match.record.record_id for match in matches), ("record-heartbeat",))
+        self.assertEqual(tuple(match.document.source_id for match in matches), ("step:heartbeat",))
         self.assertEqual(backend.search_calls, 0)
         self.assertEqual(set(matches[0].signal_scores), {"token_coverage", "keyword_exact", "bm25", "ngram"})
         self.assertNotIn("vector", matches[0].signal_scores)
@@ -143,9 +137,8 @@ class HybridSemanticSearchTest(unittest.TestCase):
             backend = _DegradedVectorBackend()
             service = SemanticIndexService(repository=repository, backend=backend)
             self._index(
-                repository,
                 service,
-                record_id="record-fog-crossing",
+                source_id="step:fog-crossing",
                 state_id=state.state_id,
                 personal_model_id=state.personal_model_id,
                 text="我喜欢像站在起雾的路口那样慢慢做决定。",
@@ -153,9 +146,8 @@ class HybridSemanticSearchTest(unittest.TestCase):
                 created_at=now,
             )
             self._index(
-                repository,
                 service,
-                record_id="record-quiet-corner",
+                source_id="step:quiet-corner",
                 state_id=state.state_id,
                 personal_model_id=state.personal_model_id,
                 text="能量低的时候，我需要一个安静角落。",
@@ -181,37 +173,25 @@ class HybridSemanticSearchTest(unittest.TestCase):
                 )
             )
 
-        self.assertEqual(tuple(match.record.record_id for match in split_matches), ("record-fog-crossing",))
-        self.assertEqual(tuple(match.record.record_id for match in fuzzy_matches), ("record-quiet-corner",))
+        self.assertEqual(tuple(match.document.source_id for match in split_matches), ("step:fog-crossing",))
+        self.assertEqual(tuple(match.document.source_id for match in fuzzy_matches), ("step:quiet-corner",))
         self.assertTrue({"token_coverage", "ngram"} & set(split_matches[0].signal_scores))
         self.assertIn("ngram", fuzzy_matches[0].signal_scores)
 
     def _index(
         self,
-        repository: RuntimeStorageRepository,
         service: SemanticIndexService,
         *,
-        record_id: str,
+        source_id: str,
         state_id: str,
         personal_model_id: str,
         text: str,
         vector: tuple[float, ...],
         created_at: datetime,
     ) -> None:
-        record = Record(
-            record_id=record_id,
-            kind="derived",
-            schema_version="1",
-            owner_scope="state",
-            personal_model_id=personal_model_id,
-            state_id=state_id,
-            payload={"text": text},
-            created_at=created_at,
-        )
-        repository.upsert_record(record)
         service.index_document(
             SemanticIndexDocument(
-                source_record_id=record_id,
+                source_id=source_id,
                 owner_scope="state",
                 text=text,
                 vector=vector,
@@ -220,6 +200,7 @@ class HybridSemanticSearchTest(unittest.TestCase):
                 dimensions=4,
                 personal_model_id=personal_model_id,
                 state_id=state_id,
+                metadata={"indexed_text": text, "created_at": created_at.isoformat()},
             )
         )
 

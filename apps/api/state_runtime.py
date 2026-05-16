@@ -6,22 +6,25 @@ from dataclasses import dataclass, replace
 from typing import Any, cast
 
 from packages.continuity import ContinuityProjection, ContinuityProjectionService
-from packages.contracts import ElephantIdentityRecord, Episode, RelationshipMemoryRecord, UserCardRecord
+from packages.contracts import ElephantIdentityRecord, Episode
+from packages.state.rendered_views import RenderedRelationshipView, RenderedUserProfileView
 from packages.contracts.runtime import PersonalModelRuntimeState
-from packages.evidence import MemoryRuntime
+from packages.evidence.recall_runtime import RecallRuntime
 from packages.state import (
     CompanionSettings,
-    apply_user_card_update,
-    build_canonical_profile_state,
     build_loaded_profile_from_state,
     is_companion_mode,
-    load_persisted_canonical_state,
-    render_user_card_profile_text,
     resolve_personality_preset,
-    resolve_runtime_state,
-    sync_canonical_profile_state,
     user_profile_updates,
 )
+from packages.state.canonical import build_canonical_profile_state
+from packages.state.persistence import (
+    load_persisted_canonical_state,
+    resolve_runtime_state,
+    sync_canonical_profile_state,
+)
+from packages.state.projection import render_user_profile_projection_text
+from packages.state.user_updates import apply_user_profile_update
 from packages.storage import RuntimeStorageRepository
 from packages.storage.repository_support import canonical_personal_model_id
 
@@ -32,8 +35,8 @@ class APIContinuityInspection:
     state: Any
     episode: Episode
     identity: ElephantIdentityRecord
-    user: UserCardRecord
-    relationship: RelationshipMemoryRecord
+    user: RenderedUserProfileView
+    relationship: RenderedRelationshipView
     continuity: ContinuityProjection
     wake_action: str
     wake_summary: str
@@ -57,14 +60,14 @@ class APIContinuityInspection:
 @dataclass(frozen=True, slots=True)
 class _CanonicalStateRecords:
     identity: ElephantIdentityRecord
-    user: UserCardRecord
-    relationship: RelationshipMemoryRecord
+    user: RenderedUserProfileView
+    relationship: RenderedRelationshipView
 
 
 @dataclass(frozen=True, slots=True)
 class APIStateService:
     repository: RuntimeStorageRepository
-    memory_runtime: MemoryRuntime
+    recall_runtime: RecallRuntime
 
     def ensure_personal_model_state(
         self,
@@ -91,13 +94,13 @@ class APIStateService:
         persisted = load_persisted_canonical_state(self.repository, canonical_personal_model.profile_id)
         if (
             persisted.elephant_identity is not None
-            and persisted.user_card is not None
-            and persisted.relationship_memory is not None
+            and persisted.user_profile is not None
+            and persisted.relationship is not None
         ):
             return _CanonicalStateRecords(
                 identity=cast(ElephantIdentityRecord, persisted.elephant_identity),
-                user=cast(UserCardRecord, persisted.user_card),
-                relationship=cast(RelationshipMemoryRecord, persisted.relationship_memory),
+                user=cast(RenderedUserProfileView, persisted.user_profile),
+                relationship=cast(RenderedRelationshipView, persisted.relationship),
             )
         bundle = build_canonical_profile_state(
             build_loaded_profile_from_state(canonical_personal_model),
@@ -108,15 +111,15 @@ class APIStateService:
             bundle,
             previous=persisted,
             sync_source=sync_source,
-            memory_runtime=self.memory_runtime,
+            recall_runtime=self.recall_runtime,
             surface="api",
             state_id=resolved_state.state_id if resolved_state is not None else state_id,
             episode_id=episode_id,
         )
         return _CanonicalStateRecords(
             identity=cast(ElephantIdentityRecord, synced.elephant_identity),
-            user=cast(UserCardRecord, synced.user_card),
-            relationship=cast(RelationshipMemoryRecord, synced.relationship_memory),
+            user=cast(RenderedUserProfileView, synced.user_profile),
+            relationship=cast(RenderedRelationshipView, synced.relationship),
         )
 
     def inspect_identity(
@@ -139,7 +142,7 @@ class APIStateService:
         state_id: str | None = None,
         episode_id: str | None = None,
         personal_model_id: str | None = None,
-    ) -> UserCardRecord:
+    ) -> RenderedUserProfileView:
         personal_model = self._resolve_personal_model(
             state_id=state_id,
             episode_id=episode_id,
@@ -153,7 +156,7 @@ class APIStateService:
         state_id: str | None = None,
         episode_id: str | None = None,
         personal_model_id: str | None = None,
-    ) -> RelationshipMemoryRecord:
+    ) -> RenderedRelationshipView:
         personal_model = self._resolve_personal_model(
             state_id=state_id,
             episode_id=episode_id,
@@ -203,7 +206,7 @@ class APIStateService:
         loaded = build_loaded_profile_from_state(
             updated_personal_model,
             identity_record=identity_record,
-            user_card=current.user,
+            user_profile=current.user,
             relationship_record=current.relationship,
         )
         companion = loaded.companion or CompanionSettings()
@@ -236,7 +239,7 @@ class APIStateService:
             bundle,
             previous=load_persisted_canonical_state(self.repository, canonical_personal_model_id(updated_personal_model.profile_id)),
             sync_source="api.identity.update",
-            memory_runtime=self.memory_runtime,
+            recall_runtime=self.recall_runtime,
             surface="api",
             state_id=resolved_state.state_id if resolved_state is not None else state_id,
             episode_id=episode_id,
@@ -253,7 +256,7 @@ class APIStateService:
         fields: dict[str, object] | None = None,
         append: bool = False,
         clear: bool = False,
-    ) -> UserCardRecord:
+    ) -> RenderedUserProfileView:
         personal_model = self._resolve_personal_model(
             state_id=state_id,
             episode_id=episode_id,
@@ -270,10 +273,10 @@ class APIStateService:
         loaded = build_loaded_profile_from_state(
             personal_model,
             identity_record=current.identity,
-            user_card=current.user,
+            user_profile=current.user,
             relationship_record=current.relationship,
         )
-        next_user = apply_user_card_update(
+        next_user = apply_user_profile_update(
             current.user,
             text=_normalized_text(text),
             field_values=user_profile_updates(fields) if fields else None,
@@ -281,7 +284,7 @@ class APIStateService:
             clear=clear,
         )
         bundle = build_canonical_profile_state(
-            replace(loaded, user_profile_text=render_user_card_profile_text(next_user)),
+            replace(loaded, user_profile_text=render_user_profile_projection_text(next_user)),
             elephant_id=resolved_state.elephant_id if resolved_state is not None and resolved_state.elephant_id else None,
         )
         synced = sync_canonical_profile_state(
@@ -289,12 +292,12 @@ class APIStateService:
             bundle,
             previous=load_persisted_canonical_state(self.repository, canonical_personal_model_id(personal_model.profile_id)),
             sync_source="api.user.update",
-            memory_runtime=self.memory_runtime,
+            recall_runtime=self.recall_runtime,
             surface="api",
             state_id=resolved_state.state_id if resolved_state is not None else state_id,
             episode_id=episode_id,
         )
-        return cast(UserCardRecord, synced.user_card)
+        return cast(RenderedUserProfileView, synced.user_profile)
 
     def update_relationship_state(
         self,
@@ -305,7 +308,7 @@ class APIStateService:
         text: str | None = None,
         append: bool = False,
         clear: bool = False,
-    ) -> RelationshipMemoryRecord:
+    ) -> RenderedRelationshipView:
         personal_model = self._resolve_personal_model(
             state_id=state_id,
             episode_id=episode_id,
@@ -326,7 +329,7 @@ class APIStateService:
         loaded = build_loaded_profile_from_state(
             personal_model,
             identity_record=current.identity,
-            user_card=current.user,
+            user_profile=current.user,
             relationship_record=current.relationship,
         )
         companion = loaded.companion or CompanionSettings()
@@ -349,12 +352,12 @@ class APIStateService:
             bundle,
             previous=load_persisted_canonical_state(self.repository, canonical_personal_model_id(personal_model.profile_id)),
             sync_source="api.relationship.update",
-            memory_runtime=self.memory_runtime,
+            recall_runtime=self.recall_runtime,
             surface="api",
             state_id=resolved_state.state_id if resolved_state is not None else state_id,
             episode_id=episode_id,
         )
-        return cast(RelationshipMemoryRecord, synced.relationship_memory)
+        return cast(RenderedRelationshipView, synced.relationship)
 
     def inspect_continuity(self, state_id: str) -> APIContinuityInspection:
         state = self._state(state_id)
@@ -373,7 +376,7 @@ class APIStateService:
         loaded = build_loaded_profile_from_state(
             personal_model,
             identity_record=records.identity,
-            user_card=records.user,
+            user_profile=records.user,
             relationship_record=records.relationship,
         )
         lineage = self.repository.episode_lineage(latest_episode.episode_id)

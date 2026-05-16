@@ -5,59 +5,16 @@ from __future__ import annotations
 from datetime import datetime
 import json
 from packages.auth import AuthProfile, EncryptedSecretValue, SecretReference
-from packages.contracts import MemoryEntry, ReflectionProposal, SemanticIndexEntry
+from packages.contracts import SemanticIndexEntry
 
 from .repository_support import (
     _iso,
     _json_mapping,
-    _memory_entry_from_row,
     _parse_datetime,
-    _reflection_proposal_from_row,
     _semantic_index_entry_from_row,
     canonical_personal_model_id,
     canonical_personal_model_ref,
 )
-
-
-def upsert_memory_entry(self, entry: MemoryEntry) -> None:
-    # Legacy no-op: memory_entries table is deprecated. Facts are the durable store.
-    pass
-
-
-def load_memory_entry(self, memory_entry_id: str) -> MemoryEntry | None:
-    return None
-
-
-def list_memory_entries(
-    self,
-    *,
-    owner_scope: str | None = None,
-    state_id: str | None = None,
-    personal_model_id: str | None = None,
-) -> tuple[MemoryEntry, ...]:
-    # Legacy no-op: memory_entries is not part of the clean storage schema.
-    return ()
-
-
-def upsert_reflection_proposal(self, proposal: ReflectionProposal) -> None:
-    # Legacy no-op: reflection_proposals table is deprecated. Reflect agents write facts directly.
-    pass
-
-
-def load_reflection_proposal(self, reflection_proposal_id: str) -> ReflectionProposal | None:
-    return None
-
-
-def list_reflection_proposals(
-    self,
-    *,
-    owner_scope: str | None = None,
-    state_id: str | None = None,
-    personal_model_id: str | None = None,
-    status: str | None = None,
-    proposal_type: str | None = None,
-) -> tuple[ReflectionProposal, ...]:
-    return ()
 
 
 def upsert_semantic_index_entry(self, entry: SemanticIndexEntry) -> None:
@@ -68,13 +25,13 @@ def upsert_semantic_index_entry(self, entry: SemanticIndexEntry) -> None:
         connection.execute(
             """
             INSERT INTO semantic_index_entries (
-                semantic_index_entry_id, owner_scope, source_record_id, provider_id,
+                semantic_index_entry_id, owner_scope, source_id, provider_id,
                 model_id, dimensions, content_hash, personal_model_id, state_id,
                 backend, vector_ref, status, metadata_json, created_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(semantic_index_entry_id) DO UPDATE SET
                 owner_scope = excluded.owner_scope,
-                source_record_id = excluded.source_record_id,
+                source_id = excluded.source_id,
                 provider_id = excluded.provider_id,
                 model_id = excluded.model_id,
                 dimensions = excluded.dimensions,
@@ -90,7 +47,7 @@ def upsert_semantic_index_entry(self, entry: SemanticIndexEntry) -> None:
             (
                 entry.semantic_index_entry_id,
                 entry.owner_scope,
-                entry.source_record_id,
+                entry.source_id,
                 entry.provider_id,
                 entry.model_id,
                 entry.dimensions,

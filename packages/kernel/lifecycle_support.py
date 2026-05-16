@@ -280,15 +280,15 @@ def open_episode_lifecycle(
                 )
                 storage.upsert_episode(refreshed)
                 return KernelEpisodeLifecycle(episode=refreshed, close_on_completion=False)
-            closed = replace(
-                episode,
-                status="closed",
-                ended_at=current,
-                updated_at=current,
-                exit_summary="closed after gateway idle timeout",
-                metadata={**dict(episode.metadata), "closed_reason": "idle_timeout"},
+            from .episode_state_machine import close_episode
+
+            closed = close_episode(
+                storage,
+                episode.episode_id,
+                reason="idle_timeout",
+                summary="closed after gateway idle timeout",
+                current=current,
             )
-            storage.upsert_episode(closed)
             idle_closed.append(closed)
 
     episode = _new_episode(request, identity, policy=policy, current=current)

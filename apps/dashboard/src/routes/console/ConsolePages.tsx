@@ -333,7 +333,7 @@ function youFactRows(facts: readonly YouProfileFact[]): YouFactRow[] {
 }
 
 // Ordered labels we want to show prominently. Any extra keys on the
-// user_card still render underneath, but these come first and with
+// user_profile still render underneath, but these come first and with
 // steady human phrasing rather than raw field names.
 const YOU_FACT_ORDER: readonly { key: string; label: string }[] = [
   { key: "preferred_name", label: "Name" },
@@ -359,8 +359,8 @@ function youProfileFacts(row: DashboardRow | undefined): {
   facts: YouProfileFact[];
   lists: YouProfileList[];
 } {
-  const card = row && typeof row.user_card === "object" && row.user_card !== null
-    ? row.user_card as Record<string, unknown>
+  const card = row && typeof row.user_profile === "object" && row.user_profile !== null
+    ? row.user_profile as Record<string, unknown>
     : {};
   const facts: YouProfileFact[] = [];
   const seen = new Set<string>();
@@ -371,8 +371,8 @@ function youProfileFacts(row: DashboardRow | undefined): {
       seen.add(key);
     }
   }
-  // Fall back to top-level preferred_name from the model row when user_card
-  // is missing (e.g. historic profiles written before user_card was split
+  // Fall back to top-level preferred_name from the model row when user_profile
+  // is missing (e.g. historic profiles written before user_profile was split
   // into its own record).
   if (!seen.has("preferred_name")) {
     const fallback = personalPreferredName(row);
@@ -405,8 +405,8 @@ function youFirstPersonName(row: DashboardRow | undefined): string {
 }
 
 function userCard(row: DashboardRow | undefined): Record<string, unknown> {
-  return row && typeof row.user_card === "object" && row.user_card !== null
-    ? row.user_card as Record<string, unknown>
+  return row && typeof row.user_profile === "object" && row.user_profile !== null
+    ? row.user_profile as Record<string, unknown>
     : {};
 }
 
@@ -732,7 +732,7 @@ const PERSONAL_DETAIL_LABELS: Record<string, string> = {
   candidate_count: "Candidate count",
   candidate_signals: "Candidate signals",
   candidate_updates: "Candidate updates",
-  committed_record_ids: "Committed support IDs",
+  committed_source_ids: "Committed support IDs",
   communication_preferences: "Communication preferences",
   confidence: "Confidence",
   content: "Content",
@@ -743,7 +743,6 @@ const PERSONAL_DETAIL_LABELS: Record<string, string> = {
   label: "Label",
   layer_type: "Layer type",
   lens: "Lens",
-  memory_entry_id: "Understanding entry ID",
   metadata: "Metadata",
   maturity_state: "Maturity state",
   observer: "Observer",
@@ -755,24 +754,21 @@ const PERSONAL_DETAIL_LABELS: Record<string, string> = {
   proposal_status: "Proposal status",
   proposal_type: "Proposal type",
   promoter_decisions: "Promoter decisions",
-  record_id: "Support row ID",
-  reflection_proposal_id: "Insight proposal ID",
   reflection_trigger: "Insight trigger",
-  reflection_window_record_id: "Insight window record ID",
-  reinforced_record_ids: "Reinforced support IDs",
+  reflection_window_source_id: "Insight window source ID",
+  reinforced_source_ids: "Reinforced support IDs",
   schema_version: "Schema version",
   semantic_index_entry_id: "Recall index ID",
   sensitivity: "Sensitivity",
   skill_id: "Skill",
   signal_type: "Signal type",
-  source_packet_record_id: "Source packet ID",
-  source_record_id: "Source support ID",
-  source_record_ids: "Source support IDs",
+  source_id: "Source ID",
+  source_ids: "Source IDs",
   stability: "Stability",
   state_id: "Elephant row ID",
   status: "Status",
   summary: "Summary",
-  summary_record_id: "Summary support ID",
+  summary_source_id: "Summary support ID",
   support_count: "Support count",
   target_key: "Target key",
   title: "Title",
@@ -815,7 +811,7 @@ const PERSONAL_VALUE_LABELS: Record<string, string> = {
   unavailable: "Unavailable",
 };
 
-type PersonalSupportKind = "fact" | "canonical" | "summary" | "trace" | "memory" | "reflection" | "semantic" | "support";
+type PersonalSupportKind = "fact" | "summary" | "trace" | "semantic" | "support";
 
 function normalizedDisplayText(value: string): string {
   return value
@@ -902,13 +898,10 @@ function prioritizedPersonalKeys(row: DashboardRow): string[] {
     "episode_id",
     "target_key",
     "owner_scope",
-    "source_record_id",
-    "source_record_ids",
+    "source_id",
+    "source_ids",
     "personal_model_id",
     "state_id",
-    "record_id",
-    "memory_entry_id",
-    "reflection_proposal_id",
     "semantic_index_entry_id",
     "created_at",
     "updated_at",
@@ -934,10 +927,10 @@ function metadataText(row: DashboardRow, keys: readonly string[], fallback = "")
 function normalizeSupportFamily(rawValue: string): string {
   const normalized = rawValue.toLowerCase().replace(/[-./]/g, "_");
   if (normalized.includes("relationship")) {
-    return "relationship_memory";
+    return "relationship";
   }
   if (normalized.includes("procedure") || normalized.includes("skill")) {
-    return "procedural_memory";
+    return "procedural_pattern";
   }
   if (normalized.includes("episode")) {
     return "episodic_index";
@@ -945,11 +938,11 @@ function normalizeSupportFamily(rawValue: string): string {
   if (normalized.includes("personality") || normalized.includes("style")) {
     return "personality_style";
   }
-  if (normalized.includes("knowledge") || normalized.includes("user_card")) {
+  if (normalized.includes("knowledge") || normalized.includes("user_profile")) {
     return "personal_knowledge";
   }
   if (normalized.includes("core") || normalized.includes("identity") || normalized.includes("boundary")) {
-    return "core_memory";
+    return "core_claim";
   }
   return normalized;
 }
@@ -968,8 +961,8 @@ function matchesSupportFamily(row: DashboardRow, families: readonly string[]): b
   return families.includes(supportFamily(row));
 }
 
-function isCoreMemoryEntry(row: DashboardRow, kind: PersonalSupportKind): boolean {
-  return kind === "memory" && supportFamily(row) === "core_memory";
+function isCoreClaimEntry(row: DashboardRow, kind: PersonalSupportKind): boolean {
+  return kind === "fact" && supportFamily(row) === "core_claim";
 }
 
 function personalSupportKind(row: DashboardRow): PersonalSupportKind {
@@ -986,15 +979,6 @@ function personalSupportKind(row: DashboardRow): PersonalSupportKind {
   if (layerType === "personal_model_learning_source_packet") {
     return "support";
   }
-  if (valueOf(row, "record_id", "")) {
-    return "canonical";
-  }
-  if (valueOf(row, "memory_entry_id", "")) {
-    return "memory";
-  }
-  if (valueOf(row, "reflection_proposal_id", "")) {
-    return "reflection";
-  }
   if (valueOf(row, "semantic_index_entry_id", "")) {
     return "semantic";
   }
@@ -1005,16 +989,10 @@ function personalSupportTypeLabel(kind: PersonalSupportKind): string {
   switch (kind) {
     case "fact":
       return "Personal Model fact";
-    case "canonical":
-      return "Canonical support row";
     case "summary":
       return "Learning summary";
     case "trace":
       return "Learning trace";
-    case "memory":
-      return "Understanding entry";
-    case "reflection":
-      return "Reflection proposal";
     case "semantic":
       return "Semantic recall";
     default:
@@ -1025,25 +1003,10 @@ function personalSupportTypeLabel(kind: PersonalSupportKind): string {
 function personalSupportKey(row: DashboardRow, index: number): string {
   return (
     valueOf(row, "fact_id", "")
-    || valueOf(row, "record_id", "")
-    || valueOf(row, "memory_entry_id", "")
-    || valueOf(row, "reflection_proposal_id", "")
     || valueOf(row, "semantic_index_entry_id", "")
-    || valueOf(row, "source_record_id", "")
+    || valueOf(row, "source_id", "")
     || `support-${index}`
   );
-}
-
-function canonicalSupportHighlights(row: DashboardRow): string[] {
-  const payload = jsonObject(row.payload);
-  return uniqueText(
-    [
-      payloadText(row, ["summary", "content"], ""),
-      metadataText(row, ["behavioral_effect"], ""),
-      ...asTextList(payload.behavioral_effects),
-      ...asTextList(payload.communication_preferences),
-    ].filter((item) => item && !textLooksInternal(item)),
-  ).slice(0, 3);
 }
 
 function summarySupportHighlights(row: DashboardRow): string[] {
@@ -1069,16 +1032,10 @@ function personalSupportHighlights(row: DashboardRow, kind: PersonalSupportKind)
   switch (kind) {
     case "fact":
       return uniqueText([valueOf(row, "text", "")].filter((item) => item && !textLooksInternal(item))).slice(0, 2);
-    case "canonical":
-      return canonicalSupportHighlights(row);
     case "summary":
       return summarySupportHighlights(row);
     case "trace":
       return traceSupportHighlights(row);
-    case "memory":
-      return uniqueText([valueOf(row, "content", "")].filter((item) => item && !textLooksInternal(item))).slice(0, 2);
-    case "reflection":
-      return uniqueText([valueOf(row, "content", "")].filter((item) => item && !textLooksInternal(item))).slice(0, 2);
     default:
       return [];
   }
@@ -1100,16 +1057,10 @@ function personalSupportTitle(row: DashboardRow, kind: PersonalSupportKind): str
   if (kind === "trace") {
     return preferred || "Learning promotion trace";
   }
-  if (kind === "memory") {
-    return preferred || valueOf(row, "kind", "Understanding entry");
-  }
-  if (kind === "reflection") {
-    return preferred || valueOf(row, "proposal_type", "Reflection proposal");
-  }
   if (kind === "semantic") {
-    return preferred || valueOf(row, "source_record_id", "Semantic recall anchor");
+    return preferred || valueOf(row, "source_id", "Semantic recall anchor");
   }
-  return preferred || (layerType ? prettifyIdentifier(layerType) : "Personal Model canonical record");
+  return preferred || (layerType ? prettifyIdentifier(layerType) : "Personal Model provenance");
 }
 
 function personalSupportSummary(row: DashboardRow, kind: PersonalSupportKind): string {
@@ -1126,37 +1077,26 @@ function personalSupportSummary(row: DashboardRow, kind: PersonalSupportKind): s
   if (kind === "trace") {
     return humanText(payloadText(row, ["reason", "decision"], highlights[0] || ""), highlights[0] || "Promotion trace recorded.");
   }
-  if (kind === "memory") {
-    return humanText(valueOf(row, "content", ""), "Durable understanding saved for future recall.");
-  }
-  if (kind === "reflection") {
-    return humanText(valueOf(row, "content", ""), "Governed proposal waiting for review.");
-  }
   if (kind === "semantic") {
-    return humanText(readString(row, ["summary", "content", "source_record_id"], ""), "Semantic recall anchor for future retrieval.");
+    return humanText(readString(row, ["summary", "content", "source_id"], ""), "Semantic recall anchor for future retrieval.");
   }
   return humanText(
     payloadText(row, ["summary", "content", "learning_text_excerpt"], rowContent(row)),
-    highlights[0] || "Canonical Personal Model record persisted for future behavior.",
+    highlights[0] || "Personal Model provenance available for inspection.",
   );
 }
 
 function personalSupportChips(row: DashboardRow, kind: PersonalSupportKind): string[] {
   const observer = jsonObject(jsonObject(row.payload).observer);
-  const committedIds = jsonObject(row.payload).committed_record_ids;
+  const committedIds = jsonObject(row.payload).committed_source_ids;
   const chips = [
     kind === "fact" ? `Lens ${humanizeSupportValue(valueOf(row, "lens", ""))}` : "",
     kind === "fact" ? `Source ${humanizeSupportValue(valueOf(row, "source", ""))}` : "",
     kind === "fact" ? `Confidence ${valueOf(row, "confidence", "0")}` : "",
-    kind === "canonical" ? `Maturity ${humanizeSupportValue(payloadText(row, ["maturity_state"], valueOf(row, "maturity_state", "")))}` : "",
-    kind === "canonical" ? `Approval ${humanizeSupportValue(payloadText(row, ["approval_state"], valueOf(row, "approval_state", "")))}` : "",
-    kind === "canonical" ? `Behavior ${humanizeSupportValue(payloadText(row, ["behavioral_state"], valueOf(row, "behavioral_state", "")))}` : "",
     kind === "summary" ? `Observer ${humanizeSupportValue(valueOf(observer, "status", ""))}` : "",
     kind === "summary" ? `Candidates ${valueOf(observer, "signal_count", "0")}` : "",
     kind === "trace" ? `Decision ${humanizeSupportValue(payloadText(row, ["decision"], ""))}` : "",
     kind === "trace" && Array.isArray(committedIds) ? `Committed ${committedIds.length}` : "",
-    kind === "memory" ? `Status ${humanizeSupportValue(valueOf(row, "status", ""))}` : "",
-    kind === "reflection" ? `Status ${humanizeSupportValue(valueOf(row, "status", ""))}` : "",
     kind === "semantic" ? `Backend ${humanizeSupportValue(valueOf(row, "backend", ""))}` : "",
     formatWhen(row.updated_at ?? row.created_at) !== "n/a" ? `Updated ${formatWhen(row.updated_at ?? row.created_at)}` : "",
   ];
@@ -1169,7 +1109,7 @@ function personalSupportDetailItems(row: DashboardRow): DetailListItem[] {
   const summary = personalSupportSummary(row, kind);
   const highlights = personalSupportHighlights(row, kind);
   return [
-    { label: "Record type", value: personalSupportTypeLabel(kind) },
+    { label: "Claim type", value: personalSupportTypeLabel(kind) },
     { label: "Title", value: title },
     { label: "Current summary", value: summary },
     ...(highlights.length
@@ -1201,19 +1141,15 @@ function PersonalSupportRowCard({ row, index }: { row: DashboardRow; index: numb
   const highlights = personalSupportHighlights(row, kind).filter((item) => compactText(item, 220) !== compactText(summary, 220));
   const toneClass = {
     fact: styles.personalSupportCardFact,
-    canonical: styles.personalSupportCardCanonical,
     summary: styles.personalSupportCardSummary,
     trace: styles.personalSupportCardTrace,
-    memory: styles.personalSupportCardMemory,
-    reflection: styles.personalSupportCardReflection,
-    affinity: styles.personalSupportCardAffinity,
     semantic: styles.personalSupportCardSemantic,
     support: styles.personalSupportCardSupport,
   }[kind];
-  const coreMemoryClass = isCoreMemoryEntry(row, kind) ? styles.personalSupportCardCoreMemory : undefined;
+  const coreClaimClass = isCoreClaimEntry(row, kind) ? styles.personalSupportCardCoreClaim : undefined;
 
   return (
-    <article className={cx(styles.personalSupportCard, toneClass, coreMemoryClass)}>
+    <article className={cx(styles.personalSupportCard, toneClass, coreClaimClass)}>
       <div className={styles.personalSupportMain}>
         <div className={styles.personalSupportHeader}>
           <div className={styles.personalSupportTitleGroup}>
@@ -1308,14 +1244,12 @@ export function SystemPage(): React.JSX.Element {
             (row) => valueOf(row, "personal_model_id", "") === (dashboard.overview.current_personal_model_id ?? ""),
           ) ?? dashboard.personal_models[0];
         const components = asRows(currentModel?.understanding_components);
-        const memories = asRows(currentModel?.memory_entries);
         const learningSummaries = asRows(currentModel?.learning_summaries);
         const behaviorEffects = components.flatMap((component) => asTextList(component.behavioral_effects)).filter(Boolean);
         const recentEpisode = dashboard.runtime.episode_traces[0];
         const currentEgg =
           dashboard.herd.find((row) => row.current === true) ?? dashboard.herd[0];
         const learningSummary = (dashboard.learning?.summary ?? {}) as DashboardRow;
-        const memoryCount = dashboard.overview.counts.memory_entries ?? memories.length;
         const learningCount = dashboard.overview.counts.learning_jobs ?? learningSummaries.length;
         const activeLearningJobs = numberOf(learningSummary, "running") + numberOf(learningSummary, "queued");
         const pmFactCount = numberOf(currentModel ?? {}, "personal_model_fact_count");
@@ -1402,7 +1336,7 @@ export function SystemPage(): React.JSX.Element {
                     <span>Care to remember</span>
                     <strong>{overviewBoundary}</strong>
                     <p className={styles.statusDetailSummary}>
-                      {pmFactCount || memoryCount ? `${overviewMemoryLabel} · ${memoryCount} memory trace${memoryCount === 1 ? "" : "s"}.` : "Nothing to overstate yet — let the next thread teach Elephant Agent."}
+                      {pmFactCount ? overviewMemoryLabel : "Nothing to overstate yet — let the next thread teach Elephant Agent."}
                     </p>
                   </article>
                 </div>
@@ -1482,7 +1416,7 @@ export function SystemPage(): React.JSX.Element {
 
 function rowContent(row: DashboardRow): string {
   return humanText(
-    readString(row, ["content", "summary", "description", "skill_id", "source_record_id", "record_id"], ""),
+    readString(row, ["content", "summary", "description", "skill_id", "source_id"], ""),
     "",
   );
 }
@@ -1550,29 +1484,6 @@ function learningBehaviorLines(learningSummaries: readonly DashboardRow[], learn
   return uniqueText([...fromSummaries, ...fromTraces].filter((item) => item && !textLooksInternal(item))).slice(0, 8);
 }
 
-function isDefaultRelationshipMemoryRow(row: DashboardRow | undefined): boolean {
-  if (!row) return false;
-  const text = [
-    rowContent(row),
-    supportDisplayText(row),
-    valueOf(row, "content", ""),
-    JSON.stringify(jsonObject(row.payload)),
-  ].join(" ").toLowerCase();
-  const hasOnlyGovernanceDefaults =
-    text.includes("interaction preference: text-first")
-    && text.includes("preserve-relationship-timeline")
-    && text.includes("preserve-preferences")
-    && text.includes("preserve-corrections")
-    && text.includes("preserve-emotional-context");
-  const hasHumanRelationshipSignal = [
-    "trust marker:",
-    "repair history:",
-    "local correction:",
-    "continuity note:",
-  ].some((needle) => text.includes(needle));
-  return hasOnlyGovernanceDefaults && !hasHumanRelationshipSignal;
-}
-
 const FACT_IDENTITY_FIELDS = new Set(["preferred_name", "occupation", "age", "gender", "mbti", "city"]);
 const FACT_RELATIONSHIP_FIELDS = new Set(["inferred_companion_posture", "safety_boundaries", "communication_preference", "relationship_mode"]);
 
@@ -1603,7 +1514,6 @@ function personalLayers({
 }: {
   displayName: string;
   components: DashboardRow[];
-  memories: DashboardRow[];
   facts: DashboardRow[];
   reflections: DashboardRow[];
   learningSummaries: DashboardRow[];
@@ -1933,7 +1843,7 @@ function textLooksInternal(value: string): boolean {
     "internal identifiers",
     "opening_profile_gap",
     "reengagement_style",
-    "source record",
+    "source item",
     "system identity",
     "preserve-relationship-timeline",
     "preserve-preferences",
@@ -2808,10 +2718,7 @@ function RuntimeTraceEpisodeCard({ episode }: { episode: DashboardRow }): React.
 function learningResultRows(job: DashboardRow): DashboardRow[] {
   const result = jsonObject(job.learning_result) || jsonObject(job.result_json);
   if (Object.keys(result).length > 0) return [result];
-  return [
-    ...asRows(job.result_records),
-    ...asRows(job.result_memory_entries),
-  ];
+  return asRows(job.result_facts);
 }
 
 function learningModeName(job: DashboardRow): string {
@@ -6163,7 +6070,6 @@ export function QuestionsPage(): React.JSX.Element {
       {(dashboard, { refresh }) => {
         const questions = (dashboard as unknown as { questions?: QuestionsSnapshot }).questions;
         const facts = questions?.facts ?? [];
-        const observations = questions?.observations ?? [];
         const waitingQuestions = questions?.waiting_questions ?? [];
         const askedQuestions = questions?.asked_questions ?? [];
         const answeredQuestions = questions?.answered_questions ?? [];
@@ -6177,7 +6083,7 @@ export function QuestionsPage(): React.JSX.Element {
 
             <div className={styles.metricGridCompact} style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "0.75rem" }}>
               <MetricCard metric={{ label: "Facts", value: String(facts.length), note: "Durable, prompt-visible", tone: "healthy" }} compact />
-              <MetricCard metric={{ label: "Observations", value: String(observations.length), note: "Raw signals", tone: "neutral" }} compact />
+              <MetricCard metric={{ label: "Facets", value: String(new Set(facts.map((row) => valueOf(row, "facet", ""))).size), note: "Topic-keyed claims", tone: "neutral" }} compact />
               <MetricCard metric={{ label: "Open questions", value: String(totalOpen), note: `${waitingQuestions.length} waiting · ${askedQuestions.length} asked`, tone: "neutral" }} compact />
               <MetricCard metric={{ label: "Answered", value: String(answeredQuestions.length), note: "Learned through asking", tone: answeredQuestions.length > 0 ? "healthy" : "neutral" }} compact />
             </div>
@@ -6653,7 +6559,6 @@ function AnswerInPlace({
 
 type QuestionsSnapshot = {
   facts: DashboardRow[];
-  observations: DashboardRow[];
   waiting_questions: DashboardRow[];
   asked_questions: DashboardRow[];
   answered_questions: DashboardRow[];

@@ -6,12 +6,10 @@ from dataclasses import dataclass
 
 from packages.contracts import (
     ElephantIdentityRecord,
-    MemoryRecord,
     ProcedureRecord,
-    RelationshipMemoryRecord,
-    UserCardRecord,
 )
-from .procedure_projection import procedure_record_from_personal_model_record
+from packages.contracts.runtime import RecallEvidence
+from packages.state.rendered_views import RenderedRelationshipView, RenderedUserProfileView
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,31 +18,31 @@ class ProfileOperatorSurface:
     profile_id: str
     profile_mode: str
     identity: ElephantIdentityRecord
-    user: UserCardRecord
-    relationship: RelationshipMemoryRecord
+    user: RenderedUserProfileView
+    relationship: RenderedRelationshipView
     provenance: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
-class MemoryOperatorDetail:
-    memory: MemoryRecord
-    state: str | None
-    lineage: str | None
+class RecallEvidenceOperatorDetail:
+    evidence: RecallEvidence
+    state: object | None
+    lineage: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
-class MemorySearchHit:
-    memory: MemoryRecord
+class RecallEvidenceSearchHit:
+    evidence: RecallEvidence
     score: float
     reasons: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
-class MemoryOperatorSurface:
+class RecallEvidenceOperatorSurface:
     session_id: str
-    memories: tuple[MemoryOperatorDetail, ...]
+    evidence_items: tuple[RecallEvidenceOperatorDetail, ...]
     search_query: str | None = None
-    search_hits: tuple[MemorySearchHit, ...] = ()
+    search_hits: tuple[RecallEvidenceSearchHit, ...] = ()
     scope_reason: str = ""
     index_policy: EmbeddingIndexPolicy | None = None
 
@@ -52,7 +50,7 @@ class MemoryOperatorSurface:
 @dataclass(frozen=True, slots=True)
 class ProcedureOperatorDetail:
     procedure: ProcedureRecord
-    source_record_id: str | None = None
+    source_id: str | None = None
     maturity_state: str = ""
     approval_state: str = ""
     behavioral_state: str = ""
@@ -153,20 +151,6 @@ class DashboardDetailItem:
 
 
 @dataclass(frozen=True, slots=True)
-class DashboardMemoryLayer:
-    layer: str
-    owner: str
-    freshness: str
-    last_mutation: str
-    volume: str
-    provenance: str
-    index_status: str
-    note: str
-    tone: str
-    stats: tuple[DashboardDetailItem, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
 class DashboardStateLaneRecord:
     lane: str
     projection: str
@@ -255,7 +239,6 @@ class DashboardSurface:
     meta: DashboardMeta
     overview: DashboardOverviewSurface
     herd: tuple[DashboardEggRecord, ...] = ()
-    memory_layers: tuple[DashboardMemoryLayer, ...] = ()
     state_lanes: tuple[DashboardStateLaneRecord, ...] = ()
     sessions: tuple[DashboardSessionRecord, ...] = ()
     ops: tuple[DashboardOpsRecord, ...] = ()
@@ -277,8 +260,8 @@ def build_profile_operator_surface(
     profile_id: str,
     profile_mode: str,
     identity: ElephantIdentityRecord,
-    user: UserCardRecord,
-    relationship: RelationshipMemoryRecord,
+    user: RenderedUserProfileView,
+    relationship: RenderedRelationshipView,
     provenance: tuple[str, ...] = (),
 ) -> ProfileOperatorSurface:
     return ProfileOperatorSurface(
@@ -288,22 +271,22 @@ def build_profile_operator_surface(
         identity=identity,
         user=user,
         relationship=relationship,
-        provenance=provenance or ("PersonalModelRecordBundle.identity", "PersonalModelRecordBundle.user", "PersonalModelRecordBundle.relationship"),
+        provenance=provenance or ("state.identity", "pm_facts.user_profile_view", "pm_facts.relationship_view"),
     )
 
 
-def build_memory_operator_surface(
+def build_recall_evidence_operator_surface(
     *,
     session_id: str,
-    memories: tuple[MemoryOperatorDetail, ...],
+    evidence_items: tuple[RecallEvidenceOperatorDetail, ...],
     search_query: str | None = None,
-    search_hits: tuple[MemorySearchHit, ...] = (),
+    search_hits: tuple[RecallEvidenceSearchHit, ...] = (),
     scope_reason: str = "",
     index_policy: EmbeddingIndexPolicy | None = None,
-) -> MemoryOperatorSurface:
-    return MemoryOperatorSurface(
+) -> RecallEvidenceOperatorSurface:
+    return RecallEvidenceOperatorSurface(
         session_id=session_id,
-        memories=memories,
+        evidence_items=evidence_items,
         search_query=search_query,
         search_hits=search_hits,
         scope_reason=scope_reason,
@@ -327,14 +310,14 @@ def build_procedure_operator_surface(
 def build_canonical_procedure_detail(
     *,
     procedure: ProcedureRecord,
-    source_record_id: str,
+    source_id: str,
     maturity_state: str = "",
     approval_state: str = "",
     behavioral_state: str = "",
 ) -> ProcedureOperatorDetail:
     return ProcedureOperatorDetail(
         procedure=procedure,
-        source_record_id=source_record_id,
+        source_id=source_id,
         maturity_state=maturity_state,
         approval_state=approval_state,
         behavioral_state=behavioral_state,
@@ -352,7 +335,6 @@ def build_dashboard_surface(
     alerts: tuple[DashboardAlert, ...],
     timeline: tuple[DashboardTimelineEvent, ...],
     herd: tuple[DashboardEggRecord, ...],
-    memory_layers: tuple[DashboardMemoryLayer, ...] = (),
     state_lanes: tuple[DashboardStateLaneRecord, ...] = (),
     sessions: tuple[DashboardSessionRecord, ...] = (),
     ops: tuple[DashboardOpsRecord, ...] = (),
@@ -382,7 +364,6 @@ def build_dashboard_surface(
             progression=progression,
         ),
         herd=herd,
-        memory_layers=memory_layers,
         state_lanes=state_lanes,
         sessions=sessions,
         ops=ops,
@@ -494,27 +475,6 @@ def dashboard_surface_record(surface: DashboardSurface) -> dict[str, object]:
                 ],
             }
             for elephant in surface.herd
-        ],
-        "memoryLayers": [
-            {
-                "layer": layer.layer,
-                "owner": layer.owner,
-                "freshness": layer.freshness,
-                "lastMutation": layer.last_mutation,
-                "volume": layer.volume,
-                "provenance": layer.provenance,
-                "indexStatus": layer.index_status,
-                "note": layer.note,
-                "tone": layer.tone,
-                "stats": [
-                    {
-                        "label": item.label,
-                        "value": item.value,
-                    }
-                    for item in layer.stats
-                ],
-            }
-            for layer in surface.memory_layers
         ],
         "stateLanes": [
             {
@@ -646,12 +606,12 @@ def render_profile_lines(surface: ProfileOperatorSurface) -> tuple[str, ...]:
     )
 
 
-def render_memory_lines(surface: MemoryOperatorSurface) -> tuple[str, ...]:
+def render_recall_evidence_lines(surface: RecallEvidenceOperatorSurface) -> tuple[str, ...]:
     lines: list[str] = []
-    for item in surface.memories:
+    for item in surface.evidence_items:
         lines.append(
-            f"{item.memory.memory_id} | state={item.state or 'active'} | lineage={item.lineage or 'none'} | "
-            f"tags={', '.join(item.memory.tags) or 'none'} | {item.memory.kind} | {item.memory.content}"
+            f"{item.evidence.evidence_id} | state={item.state or 'active'} | lineage={', '.join(item.lineage) or 'none'} | "
+            f"tags={', '.join(item.evidence.tags) or 'none'} | {item.evidence.kind} | {item.evidence.content}"
         )
     if not lines:
         lines.append("<empty>")
@@ -659,7 +619,7 @@ def render_memory_lines(surface: MemoryOperatorSurface) -> tuple[str, ...]:
         lines.extend(("", f"search_query: {surface.search_query}", f"scope_reason: {surface.scope_reason or '<none>'}"))
         for hit in surface.search_hits:
             lines.append(
-                f"- {hit.memory.memory_id} | score={hit.score:.2f} | reasons={'; '.join(hit.reasons) or '<none>'} | {hit.memory.content}"
+                f"- {hit.evidence.evidence_id} | score={hit.score:.2f} | reasons={'; '.join(hit.reasons) or '<none>'} | {hit.evidence.content}"
             )
     return tuple(lines)
 
@@ -689,7 +649,6 @@ __all__ = [
     "DashboardDetailItem",
     "DashboardHeartbeat",
     "DashboardStateLaneRecord",
-    "DashboardMemoryLayer",
     "DashboardMeta",
     "DashboardMetric",
     "DashboardOpsRecord",
@@ -699,18 +658,18 @@ __all__ = [
     "DashboardSessionRecord",
     "DashboardSurface",
     "DashboardTimelineEvent",
-    "MemoryOperatorDetail",
-    "MemoryOperatorSurface",
-    "MemorySearchHit",
+    "RecallEvidenceOperatorDetail",
+    "RecallEvidenceOperatorSurface",
+    "RecallEvidenceSearchHit",
     "ProcedureOperatorDetail",
     "ProcedureOperatorSurface",
     "ProfileOperatorSurface",
     "build_dashboard_surface",
-    "build_memory_operator_surface",
+    "build_recall_evidence_operator_surface",
     "build_procedure_operator_surface",
     "build_profile_operator_surface",
     "dashboard_surface_record",
-    "render_memory_lines",
+    "render_recall_evidence_lines",
     "render_procedure_lines",
     "render_profile_lines",
 ]

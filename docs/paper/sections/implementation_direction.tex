@@ -36,12 +36,15 @@ identity and Episode opening resume snapshot.
 
 The implementation treats Personal Model search as claim-aware retrieval. The
 search tool supports \texttt{topic}, \texttt{query\_variants}, and
-\texttt{mode=auto|exact|semantic|verify}. It merges fielded topic/fact/support
+\texttt{mode=auto|inventory}. It merges fielded topic/fact/support
 matches, Unicode lexical and CJK n-gram signals, weak fuzzy matches, semantic
 candidates, and lightweight polarity agreement or conflict. Results are
 thresholded into \texttt{strong\_match}, \texttt{weak\_match}, or
 \texttt{no\_match}; diagnostics can expose per-fact signals for evaluation but
 are not prompt truth.
+
+Topics are represented as facets: stable keys under the four lenses that attach
+each claim to one slice of understanding without adding a second profile schema.
 
 \texttt{tool.conversation.search} provides the complementary evidence path. A
 small deterministic query planner strips recall operators from the topic core

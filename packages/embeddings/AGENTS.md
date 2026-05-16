@@ -14,5 +14,5 @@ This package owns the shared local embedding substrate for Elephant Agent.
 
 - runtime control policy
 - semantic retrieval policy
-- durable Record, Grounding, or State truth
+- durable Step, Fact, Episode, or State truth
 - app-specific bootstrap UX or operator wording

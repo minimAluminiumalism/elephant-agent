@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-import hashlib
 from typing import Any
 
 from packages.contracts.layers import Episode
@@ -224,8 +223,9 @@ def next_session_context_epoch(
     elif is_user_turn:
         epoch = replace(epoch, latest_skill_disclosures=skill_disclosures)
     now_value = now or _utc_now()
+    raw_history_messages = tuple(message for message in turn_messages if message.content.strip() or message.tool_calls)
     history_messages = _annotate_history_messages(
-        tuple(message for message in turn_messages if message.content.strip() or message.tool_calls)
+        _with_fallback_user_anchor(raw_history_messages, fallback_history_messages)
         or fallback_history_messages,
         event=event,
         now=now_value,
@@ -388,12 +388,25 @@ def reference_summary_messages(summary: str) -> tuple[PromptMessage, ...]:
     return (PromptMessage(role="system", content=f"## SessionHistorySummary\n{normalized}"),)
 
 
-
-
-def session_context_epoch_record_id(session_id: str) -> str:
-    digest = hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:24]
-    return f"record:session-context-epoch:{digest}"
-
+def _with_fallback_user_anchor(
+    messages: tuple[PromptMessage, ...],
+    fallback_messages: tuple[PromptMessage, ...],
+) -> tuple[PromptMessage, ...]:
+    if not messages:
+        return ()
+    if any(message.role == "user" and message.content.strip() for message in messages):
+        return messages
+    user_anchor = next(
+        (
+            message
+            for message in fallback_messages
+            if message.role == "user" and message.content.strip()
+        ),
+        None,
+    )
+    if user_anchor is None:
+        return messages
+    return (user_anchor, *messages)
 
 def _event_is_user_turn(event: EventEnvelope) -> bool:
     event_type = str(event.event_type or "").strip().lower()
@@ -604,5 +617,4 @@ __all__ = [
     "render_prompt_messages",
     "restore_session_context_epoch",
     "session_context_epoch_payload",
-    "session_context_epoch_record_id",
 ]

@@ -46,7 +46,7 @@ from apps.gateway import (
     load_telegram_gateway_accounts,
 )
 from apps.gateway.discord import DiscordPyDeliveryTransport
-from apps.gateway.runtime_capabilities import GatewayMemoryCapability
+from apps.gateway.runtime_capabilities import GatewayRecallCapability
 from apps.gateway.weixin_service import MessageDeduplicator
 import apps.gateway.__main__ as gateway_main
 from apps.gateway.__main__ import command_main
@@ -63,7 +63,7 @@ from packages.gateway_core import (
 )
 from packages.contracts.layers import Episode
 from packages.contracts.runtime import EvidenceRetrievalRequest
-from packages.evidence import parse_structured_turn_memory
+from packages.evidence import parse_step_replay_record
 from packages.models import SurfaceModelProviderCapability
 from packages.security.runtime import PolicyDecision
 from packages.storage import RuntimeStorageRepository
@@ -146,33 +146,15 @@ class GatewayAdapterE2ETests(unittest.TestCase):
         self.ensure_parser_feishu_sdk_patcher.stop()
         self.tempdir.cleanup()
 
-    def test_gateway_memory_capability_accepts_episode_scope(self) -> None:
+    def test_gateway_recall_capability_accepts_episode_scope(self) -> None:
         calls: list[dict[str, object]] = []
 
-        class FakeMemoryRuntime:
-            def retrieve(self, episode_id: str, query: str, **kwargs):
-                calls.append({"episode_id": episode_id, "query": query, **kwargs})
-                return SimpleNamespace(candidates=(SimpleNamespace(record="memory-hit"),))
-
+        class FakeRecallRuntime:
             def retrieve_evidence(self, request):
                 calls.append({"evidence_request": request})
-                return SimpleNamespace(candidates=(SimpleNamespace(memory="personal-memory"),), scope_episode_ids=request.lineage_episode_ids, scope_reason=request.scope_reason)
+                return SimpleNamespace(candidates=(SimpleNamespace(recall="personal-recall"),), scope_episode_ids=request.lineage_episode_ids, scope_reason=request.scope_reason)
 
-        capability = GatewayMemoryCapability(FakeMemoryRuntime())
-
-        result = capability.search(
-            "session-active",
-            "resume context",
-            work_item_ids=("work.release",),
-            scope_episode_ids=("session-parent", "session-active"),
-            scope_reason="gateway route recall",
-        )
-
-        self.assertEqual(result, ("memory-hit",))
-        self.assertEqual(calls[0]["scope_episode_ids"], ("session-parent", "session-active"))
-        self.assertEqual(calls[0]["work_item_ids"], ("work.release",))
-        self.assertEqual(calls[0]["scope_reason"], "gateway route recall")
-        self.assertNotIn("scope_session_ids", calls[0])
+        capability = GatewayRecallCapability(FakeRecallRuntime())
 
         evidence_request = EvidenceRetrievalRequest(
             episode_id="session-active",
@@ -184,9 +166,9 @@ class GatewayAdapterE2ETests(unittest.TestCase):
             scope_reason="gateway personal recall",
         )
         retrieval = capability.retrieve_evidence(evidence_request)
-        self.assertEqual(retrieval.candidates[0].memory, "personal-memory")
-        self.assertEqual(calls[1]["evidence_request"].scopes, ("episode", "elephant", "personal_model"))
-        self.assertEqual(calls[1]["evidence_request"].personal_model_id, "personal-model:zoey")
+        self.assertEqual(retrieval.candidates[0].recall, "personal-recall")
+        self.assertEqual(calls[0]["evidence_request"].scopes, ("episode", "elephant", "personal_model"))
+        self.assertEqual(calls[0]["evidence_request"].personal_model_id, "personal-model:zoey")
 
     def test_gateway_cli_app_reuses_cli_provider_when_im_profile_has_none(self) -> None:
         gateway_profile_dir = Path(self.tempdir.name) / "gateway-profile"
@@ -3162,13 +3144,13 @@ class GatewayAdapterE2ETests(unittest.TestCase):
         )
         self.assertTrue(first.delivery.outbound.metadata["context_bundle_id"].startswith("bundle:"))
         self.assertNotEqual(first.delivery.outbound.body, "ack: hello")
-        first_records = app.memory_records(first.route.session.session_id)
+        first_records = app.recall_evidence_records(first.route.session.session_id)
         self.assertEqual(
             tuple(record.content for record in first_records if record.kind == "episodic"),
             ("hello",),
         )
         self.assertEqual(len(tuple(record for record in first_records if record.kind == "decision")), 1)
-        structured_turns = tuple(parse_structured_turn_memory(record) for record in first_records if record.kind == "structured_turn")
+        structured_turns = tuple(parse_step_replay_record(record) for record in first_records if record.kind == "structured_turn")
         self.assertEqual(len(structured_turns), 1)
         self.assertEqual(structured_turns[0].observation.summary, "hello")
 
@@ -3194,14 +3176,14 @@ class GatewayAdapterE2ETests(unittest.TestCase):
         self.assertEqual(second.route.session.profile_id, "you")
         self.assertIsNotNone(second.delivery.outbound)
         assert second.delivery.outbound is not None
-        second_records = restarted_app.memory_records(second.route.session.session_id)
+        second_records = restarted_app.recall_evidence_records(second.route.session.session_id)
         self.assertEqual(
             tuple(record.content for record in second_records if record.kind == "episodic"),
             ("hello", "follow-up"),
         )
         self.assertEqual(len(tuple(record for record in second_records if record.kind == "decision")), 2)
         structured_turns = tuple(
-            parse_structured_turn_memory(record)
+            parse_step_replay_record(record)
             for record in second_records
             if record.kind == "structured_turn"
         )

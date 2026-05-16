@@ -259,7 +259,7 @@ def run_learning_job(runtime: CliRuntime, job: LearningJob, *, worker_id: str) -
     repository.complete_learning_job(
         job.job_id,
         worker_id=worker_id,
-        progress_detail=f"{result.status}: {result.summary} (result={result.result_record_id})",
+        progress_detail=f"{result.status}: {result.summary} (result={result.result_source_id})",
     )
 
 

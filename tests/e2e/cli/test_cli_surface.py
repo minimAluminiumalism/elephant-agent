@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from apps.provider_runtime import runtime_local_secret_env_path
@@ -19,6 +20,7 @@ import unittest
 from unittest import mock
 
 from apps.cli.runtime import CliRuntime
+from packages.contracts import Fact
 from packages.runtime_config import global_config_path_for_state_dir, load_global_config
 from packages.storage import RuntimeStorageRepository
 from packages.skills import FetchedSkillBundle
@@ -582,7 +584,7 @@ class CliSurfaceE2ETest(unittest.TestCase):
         self.assertIn("### Episode Continuity", system_prompt)
         self.assertIn("Stay truthful and bounded", system_prompt)
         self.assertIn("### Loop Execution Board", system_prompt)
-        self.assertIn("### Memory And Tool Policy", system_prompt)
+        self.assertIn("### Understanding tools", system_prompt)
         self.assertNotIn("### State Write Policy", system_prompt)
         self.assertIn("When write tools are available, use them for concrete durable deltas", system_prompt)
         self.assertNotIn("OpenAI-compatible provider adapter", system_prompt)
@@ -1361,13 +1363,13 @@ class CliSurfaceE2ETest(unittest.TestCase):
 
         retired = self._run("herd", "delete", "atlas")
         self.assertIn("Elephant retired", retired.stdout)
-        self.assertIn("personal_model_memory · preserved", retired.stdout)
+        self.assertIn("personal_model_facts · preserved", retired.stdout)
 
         refreshed = CliRuntime.create(state_dir=self.state_dir)
         self.assertIsNone(refreshed.repository.load_state("state:atlas"))
         self.assertIsNotNone(refreshed.repository.load_personal_model("you"))
 
-    def test_memory_cli_lists_and_deletes_personal_model_memory_entries(self) -> None:
+    def test_memory_cli_lists_and_deletes_personal_model_facts(self) -> None:
         self._run(
             "init",
             "--non-interactive",
@@ -1389,18 +1391,39 @@ class CliSurfaceE2ETest(unittest.TestCase):
         assert session is not None
         listed = self._run("memory")
         self.assertIn("Elephant Agent understanding", listed.stdout)
-        self.assertIn("memory_entries · 0", listed.stdout)
+        self.assertIn("facts · 0", listed.stdout)
         self.assertIn("<no Personal Model entries>", listed.stdout)
+
+        fact_id = "fact:stale-preference"
+        runtime.repository.upsert_personal_model_fact(
+            Fact(
+                fact_id=fact_id,
+                personal_model_id=session.personal_model_id,
+                lens="identity",
+                text="cleanup stale preference",
+                confidence=0.7,
+                committed_at=datetime.now(timezone.utc),
+                source="user_explicit",
+                source_episode_ids=(session.episode_id,),
+                metadata={"topic": "identity.style.preference.cleanup"},
+            )
+        )
+        populated = self._run("memory")
+        self.assertIn(fact_id, populated.stdout)
+        self.assertIn("cleanup stale preference", populated.stdout)
+
+        deleted = self._run("memory", "delete", fact_id, "--reason", "cleanup stale preference")
         self.assertIn("cleanup stale preference", deleted.stdout)
 
         refreshed = CliRuntime.create(state_dir=self.state_dir)
-        entry = refreshed.repository.load_memory_entry(memory_id)
+        facts = refreshed.repository.list_personal_model_facts(personal_model_id=session.personal_model_id, status=("deleted",))
+        entry = next((fact for fact in facts if fact.fact_id == fact_id), None)
         self.assertIsNotNone(entry)
         assert entry is not None
         self.assertEqual(entry.status, "deleted")
 
         visible = self._run("memory")
-        self.assertNotIn(memory_id, visible.stdout)
+        self.assertNotIn(fact_id, visible.stdout)
         self.assertNotIn("status=deleted", visible.stdout)
 
     def test_runtime_skill_install_persists_provenance_and_distinguishes_refresh_from_migration(self) -> None:

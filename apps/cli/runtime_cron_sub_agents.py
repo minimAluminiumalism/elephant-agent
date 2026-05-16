@@ -376,7 +376,7 @@ def _run_prepared_sub_agent_child(
                     "system_prompt": system_prompt,
                 },
                 record_input_event=False,
-                record_outcome_memory=False,
+                record_outcome_event=False,
                 capture_experience=False,
                 apply_growth=True,
             )

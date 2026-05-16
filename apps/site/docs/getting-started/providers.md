@@ -34,7 +34,7 @@ Elephant Agent can also discover reusable credentials from local operator state:
 | Reasoning effort | Yes, when supported | So model behavior stays intentional instead of accidental. |
 | Context-window choice | Yes | So long-context posture can be inspected and changed. |
 | Secret value | In encrypted local vault or discovered credential source | So secrets do not appear in docs, repo files, or support bundles. |
-| Embedding provider posture | Yes | So memory search and recall use the configured local or remote path consistently. |
+| Embedding provider posture | Yes | So recall search uses the configured local or remote path consistently. |
 
 ```mermaid
 flowchart LR

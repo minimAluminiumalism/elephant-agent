@@ -18,7 +18,7 @@ state without requiring the user to restate the whole context.
 1. restore the active elephant and most recent Episode continuity from durable
    records
 2. inspect the latest current-work fields and recent Step facts
-3. assemble a minimal context bundle from State, Record, Grounding, and Memory
+3. assemble a minimal context bundle from State, Steps, Episodes, and Personal Model facts
    sources
 4. produce the next-step recommendation
 

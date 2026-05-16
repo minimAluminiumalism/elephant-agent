@@ -13,12 +13,12 @@ import time
 
 from packages.contracts import ExperienceRecord
 from packages.kernel.runtime import KernelOutcome
-from packages.operator import (
-    MemoryOperatorDetail,
-    MemorySearchHit,
-    build_memory_operator_surface,
+from packages.operator.runtime import (
+    RecallEvidenceOperatorDetail,
+    RecallEvidenceSearchHit,
+    build_recall_evidence_operator_surface,
     build_profile_operator_surface,
-    render_memory_lines,
+    render_recall_evidence_lines,
     render_profile_lines,
 )
 from packages.tools.handler_support import resolve_allowed_path
@@ -199,7 +199,7 @@ def _user_lines(self, profile_id: str) -> list[str]:
     user = self.runtime.inspect_user(profile_id=profile_id)
     return [
         f"profile_id: {user.profile_id}",
-        f"user_card_id: {user.user_card_id}",
+        f"user_profile_id: {user.user_profile_id}",
         f"preferred_name: {user.preferred_name or '<empty>'}",
         f"locale: {user.locale or '<empty>'}",
         f"timezone: {user.timezone or '<empty>'}",
@@ -215,7 +215,7 @@ def _relationship_lines(self, profile_id: str) -> list[str]:
         f"profile_id: {relationship.profile_id}",
         f"relationship_id: {relationship.relationship_id}",
         f"elephant_id: {relationship.elephant_id}",
-        f"user_card_id: {relationship.user_card_id or '<empty>'}",
+        f"user_profile_id: {relationship.user_profile_id or '<empty>'}",
         f"interaction_preferences: {', '.join(relationship.interaction_preferences) or '<empty>'}",
         f"expectations: {', '.join(relationship.expectations) or '<empty>'}",
         f"continuity_notes: {', '.join(relationship.continuity_notes) or '<empty>'}",

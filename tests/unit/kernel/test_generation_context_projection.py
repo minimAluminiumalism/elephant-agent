@@ -1,10 +1,8 @@
-"""Unit tests for kernel.generation_context memory + behavior projection.
+"""Unit tests for kernel.generation_context Personal Model projection.
 
 The prompt-contract rewrite (May 2026) replaced the old framework-speak
-labels (``State: id=...``, ``RetrievedMemory:``, ``PersonalModelBehavior:``)
-with prose bullets and added content-hash dedup to the memory list so
-a single fact never appears twice just because two ``memory_entries``
-rows committed it.
+labels (``State: id=...`` and ``PersonalModelBehavior:``) with prose bullets
+and routes durable prompt truth through committed Personal Model facts.
 
 These tests pin that contract directly without the full CliRuntime
 harness so regressions fail fast.
@@ -12,12 +10,10 @@ harness so regressions fail fast.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 import unittest
 
 from packages.contracts.runtime import ContextBundle, PromptEnvelope
-from packages.contracts.support import MemoryEntry
 from packages.kernel.generation_context import build_context_for_generation
 from packages.kernel.runtime_support import _apply_execution_guidance
 from packages.kernel.runtime_support import KernelSourceRequest
@@ -29,7 +25,6 @@ class _FakeStorage:
     def __init__(
         self,
         *,
-        memory_entries: tuple[MemoryEntry, ...] = (),
         personal_model: Any = None,
         state: Any = None,
         records: tuple[Any, ...] = (),
@@ -38,7 +33,6 @@ class _FakeStorage:
         questions: tuple[Any, ...] = (),
         episode: Any = None,
     ) -> None:
-        self._memory_entries = memory_entries
         self._personal_model = personal_model
         self._state = state
         self._records = records
@@ -46,11 +40,6 @@ class _FakeStorage:
         self._profile = profile
         self._questions = questions
         self._episode = episode
-
-    def list_memory_entries(self, *, owner_scope: str, **kwargs: Any) -> tuple[MemoryEntry, ...]:
-        return tuple(
-            entry for entry in self._memory_entries if entry.owner_scope == owner_scope
-        )
 
     def load_personal_model(self, _pm_id: str) -> Any:
         return self._personal_model
@@ -170,27 +159,6 @@ def _question(*, text: str = "When things get messy, what helps?", sub_lens: str
     )()
 
 
-def _entry(
-    *,
-    entry_id: str,
-    content: str,
-    owner_scope: str = "personal_model",
-    kind: str = "style",
-) -> MemoryEntry:
-    return MemoryEntry(
-        memory_entry_id=entry_id,
-        owner_scope=owner_scope,
-        kind=kind,
-        content=content,
-        grounding_ids=(f"ground:{entry_id}",),
-        personal_model_id="pm:1" if owner_scope == "personal_model" else None,
-        state_id="state:1" if owner_scope == "state" else None,
-        status="active",
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
-    )
-
-
 class GenerationContextProjectionTest(unittest.TestCase):
     def test_learning_agent_context_mode_gets_minimal_generation_context(self) -> None:
         context = ContextBundle(
@@ -204,7 +172,7 @@ class GenerationContextProjectionTest(unittest.TestCase):
                 messages=("old message",),
             ),
             instruction_refs=("instruction:1",),
-            memory_ids=("memory:1",),
+            evidence_refs=("evidence:1",),
             artifact_ids=("artifact:1",),
             work_item_ids=("work:1",),
         )
@@ -216,7 +184,7 @@ class GenerationContextProjectionTest(unittest.TestCase):
             session=None,
             state_focus=None,
             work_items=(),
-            memories=(),
+            recall_items=(),
             context=context,
             decision=None,
             plan=None,
@@ -227,7 +195,7 @@ class GenerationContextProjectionTest(unittest.TestCase):
         self.assertEqual(result.prompt_envelope, PromptEnvelope())
         self.assertEqual(result.instruction_refs, ())
         self.assertEqual(result.work_item_ids, ())
-        self.assertEqual(result.memory_ids, ())
+        self.assertEqual(result.evidence_refs, ())
         self.assertEqual(result.artifact_ids, ())
 
     def test_learning_agent_minimal_context_can_carry_dedicated_system_prompt(self) -> None:
@@ -238,7 +206,7 @@ class GenerationContextProjectionTest(unittest.TestCase):
             session=None,
             state_focus=None,
             work_items=(),
-            memories=(),
+            recall_items=(),
             context=_bundle(),
             decision=None,
             plan=None,
@@ -293,7 +261,7 @@ class GenerationContextProjectionTest(unittest.TestCase):
             session=None,
             state_focus=None,
             work_items=(),
-            memories=(),
+            recall_items=(),
             context=_bundle(),
             decision=None,
             plan=None,
@@ -305,90 +273,6 @@ class GenerationContextProjectionTest(unittest.TestCase):
         self.assertNotIn("Question-bank signal", prompt)
         self.assertNotIn("User explicitly shared autonomy_boundary", prompt)
         self.assertNotIn("Synthetic live acceptance marker", prompt)
-
-    def test_memory_projection_dedupes_duplicate_content_across_entry_ids(self) -> None:
-        """Two memory_entries rows with the same content must collapse to one bullet."""
-        storage = _FakeStorage(
-            memory_entries=(
-                _entry(entry_id="m:1", content="Prefers direct updates over filler."),
-                # A revise-then-commit often creates a second row with
-                # near-identical content. Content-key dedup should collapse.
-                _entry(entry_id="m:2", content="Prefers direct updates over filler"),
-                _entry(entry_id="m:3", content="Wants long-horizon context carried across sessions."),
-            ),
-        )
-        dependencies = _FakeDependencies(storage)
-        result = build_context_for_generation(
-            dependencies=dependencies,
-            request=_FakeRequest(),
-            profile=None,
-            session=None,
-            state_focus=None,
-            work_items=(),
-            memories=(),
-            context=_bundle(),
-            decision=None,
-            plan=None,
-            continuity=None,
-        )
-
-        rendered = result.rendered_prompt or ""
-        self.assertNotIn("Prefers direct updates over filler", rendered)
-        self.assertNotIn("Wants long-horizon context carried across sessions.", rendered)
-
-    def test_memory_projection_uses_prose_prefix_not_framework_label(self) -> None:
-        storage = _FakeStorage(
-            memory_entries=(
-                _entry(entry_id="m:1", content="Prefers direct updates over filler."),
-            ),
-        )
-        dependencies = _FakeDependencies(storage)
-        result = build_context_for_generation(
-            dependencies=dependencies,
-            request=_FakeRequest(),
-            profile=None,
-            session=None,
-            state_focus=None,
-            work_items=(),
-            memories=(),
-            context=_bundle(),
-            decision=None,
-            plan=None,
-            continuity=None,
-        )
-
-        rendered = result.rendered_prompt or ""
-        self.assertNotIn("RetrievedMemory:", rendered)
-        self.assertNotIn("CanonicalStateProjection", rendered)
-        self.assertNotIn("LoopContextProjection", rendered)
-        self.assertNotIn("Remembered (about the user): Prefers direct updates over filler.", rendered)
-
-    def test_profile_snapshot_memories_do_not_repeat_user_card_facts(self) -> None:
-        storage = _FakeStorage(
-            memory_entries=(
-                _entry(entry_id="m:profile", content="Preferred name: xunzhuo Current work: 正站在一个岔路口 Current city: 成都 MBTI: INFJ"),
-                _entry(entry_id="m:single", content="Preferred name: xunzhuo"),
-                _entry(entry_id="m:real", content="Prefers direct updates over filler."),
-            ),
-        )
-        result = build_context_for_generation(
-            dependencies=_FakeDependencies(storage),
-            request=_FakeRequest(),
-            profile=None,
-            session=None,
-            state_focus=None,
-            work_items=(),
-            memories=(),
-            context=_bundle(),
-            decision=None,
-            plan=None,
-            continuity=None,
-        )
-
-        rendered = result.rendered_prompt or ""
-        self.assertNotIn("Current work: 正站在一个岔路口", rendered)
-        self.assertNotIn("Remembered (about the user): Preferred name", rendered)
-        self.assertNotIn("Remembered (about the user): Prefers direct updates over filler.", rendered)
 
     def test_gateway_state_projection_does_not_inject_previous_assistant_reply_as_ongoing_thread(self) -> None:
         state = type(
@@ -411,7 +295,7 @@ class GenerationContextProjectionTest(unittest.TestCase):
             session=None,
             state_focus=None,
             work_items=(),
-            memories=(),
+            recall_items=(),
             context=_bundle(),
             decision=None,
             plan=None,
@@ -439,7 +323,7 @@ class GenerationContextProjectionTest(unittest.TestCase):
             session=type("_Session", (), {"episode_id": "episode:test"})(),
             state_focus=None,
             work_items=(),
-            memories=(),
+            recall_items=(),
             context=_bundle(),
             decision=None,
             plan=None,
@@ -471,7 +355,7 @@ class GenerationContextProjectionTest(unittest.TestCase):
             session=None,
             state_focus=None,
             work_items=(),
-            memories=(),
+            recall_items=(),
             context=context,
             decision=None,
             plan=None,
@@ -484,39 +368,6 @@ class GenerationContextProjectionTest(unittest.TestCase):
         self.assertNotIn("204800", prompt)
         self.assertNotIn("Prompt budget", rendered)
         self.assertNotIn("204800", rendered)
-
-    def test_state_scope_memory_projection_labels_entry_as_about_you(self) -> None:
-        """State-scope memories should render as "about you" so the model knows
-        this is an identity fact, not a user fact.
-        """
-        storage = _FakeStorage(
-            memory_entries=(
-                _entry(
-                    entry_id="m:1",
-                    content="Call me Mei when we're working together.",
-                    owner_scope="state",
-                    kind="core",
-                ),
-            ),
-        )
-        dependencies = _FakeDependencies(storage)
-        result = build_context_for_generation(
-            dependencies=dependencies,
-            request=_FakeRequest(),
-            profile=None,
-            session=None,
-            state_focus=None,
-            work_items=(),
-            memories=(),
-            context=_bundle(),
-            decision=None,
-            plan=None,
-            continuity=None,
-        )
-
-        rendered = result.rendered_prompt or ""
-        self.assertNotIn("Remembered (about you):", rendered)
-        self.assertNotIn("Call me Mei", rendered)
 
     def test_pm_facts_replace_raw_user_snapshot_and_skill_index_moves_late(self) -> None:
         skill_block = "\n".join(
@@ -560,7 +411,7 @@ class GenerationContextProjectionTest(unittest.TestCase):
             session=None,
             state_focus=None,
             work_items=(),
-            memories=(),
+            recall_items=(),
             context=context,
             decision=None,
             plan=None,
@@ -603,7 +454,7 @@ class GenerationContextProjectionTest(unittest.TestCase):
             session=None,
             state_focus=None,
             work_items=(),
-            memories=(),
+            recall_items=(),
             context=context,
             decision=None,
             plan=None,
@@ -633,7 +484,7 @@ class GenerationContextProjectionTest(unittest.TestCase):
             session=None,
             state_focus=None,
             work_items=(),
-            memories=(),
+            recall_items=(),
             context=_bundle(),
             decision=None,
             plan=None,
@@ -666,7 +517,7 @@ class GenerationContextProjectionTest(unittest.TestCase):
             session=None,
             state_focus=None,
             work_items=(),
-            memories=(),
+            recall_items=(),
             context=_bundle(),
             decision=None,
             plan=None,
@@ -718,7 +569,7 @@ class GenerationContextProjectionTest(unittest.TestCase):
             session=None,
             state_focus=None,
             work_items=(),
-            memories=(),
+            recall_items=(),
             context=_bundle(),
             decision=None,
             plan=None,
@@ -752,7 +603,7 @@ class GenerationContextProjectionTest(unittest.TestCase):
             session=None,
             state_focus=None,
             work_items=(),
-            memories=(),
+            recall_items=(),
             context=_bundle(),
             decision=None,
             plan=None,

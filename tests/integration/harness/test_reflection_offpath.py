@@ -2,7 +2,7 @@
 
 After a Loop completes, the kernel must enqueue exactly one
 ``episode_boundary_learning`` job for the Episode and must not call
-``memory.run_reflection_window`` or ``memory.run_skill_crystallization``
+legacy in-turn reflection or skill-crystallization hooks
 synchronously. The learning-worker process picks the job up separately
 (``apps/learning_worker_runtime.py``).
 
@@ -37,7 +37,7 @@ from packages.storage import RuntimeStorageRepository
 
 
 @dataclass
-class _TrackingMemoryCapability:
+class _TrackingRecallCapability:
     reflection_calls: int = 0
     crystallization_calls: int = 0
 
@@ -62,7 +62,7 @@ class _TrackingMemoryCapability:
 
 
 class _ContextCapability:
-    def assemble(self, session, work_items, memories, *, state_focus=None):
+    def assemble(self, session, work_items, recall_items, *, state_focus=None):
         envelope = PromptEnvelope(
             frozen_prefix="",
             session_snapshot="",
@@ -84,7 +84,7 @@ class _ContextCapability:
     def force_projection_compaction(self, *, reason: str = ""):
         return None
 
-    def flush_projection_memory(self):
+    def flush_projection_cache(self):
         pass
 
 
@@ -108,12 +108,12 @@ class ReflectionOffHotPathTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             repository = RuntimeStorageRepository(Path(tmpdir) / "elephant.sqlite3")
             repository.bootstrap()
-            memory = _TrackingMemoryCapability()
+            recall = _TrackingRecallCapability()
             service = KernelService(
                 KernelDependencies(
                     storage=repository,
                     context=_ContextCapability(),
-                    memory=memory,
+                    recall=recall,
                     model_provider=_ModelProvider(),
                     telemetry=_Telemetry(),
                 )
@@ -132,8 +132,8 @@ class ReflectionOffHotPathTest(unittest.TestCase):
             )
 
             # Reflection must not have been called during run().
-            self.assertEqual(memory.reflection_calls, 0)
-            self.assertEqual(memory.crystallization_calls, 0)
+            self.assertEqual(recall.reflection_calls, 0)
+            self.assertEqual(recall.crystallization_calls, 0)
 
             jobs = repository.list_learning_jobs(episode_id=outcome.episode.episode_id)
             self.assertEqual(len(jobs), 1, "exactly one learning job should be queued")
@@ -150,7 +150,7 @@ class ReflectionOffHotPathTest(unittest.TestCase):
                 KernelDependencies(
                     storage=repository,
                     context=_ContextCapability(),
-                    memory=_TrackingMemoryCapability(),
+                    recall=_TrackingRecallCapability(),
                     model_provider=_ModelProvider(),
                     telemetry=_Telemetry(),
                 )
@@ -181,7 +181,7 @@ class ReflectionOffHotPathTest(unittest.TestCase):
                 KernelDependencies(
                     storage=repository,
                     context=_ContextCapability(),
-                    memory=_TrackingMemoryCapability(),
+                    recall=_TrackingRecallCapability(),
                     model_provider=_ModelProvider(),
                     telemetry=_Telemetry(),
                 )

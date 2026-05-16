@@ -10,29 +10,36 @@ from apps.episode_runtime import install_app_episode_runtime
 from packages.capabilities import CapabilityDescriptor
 from packages.contracts import ContextBundle, ExecutionResult
 from packages.contracts.layers import Episode
-from packages.contracts.runtime import MemoryRecord, PersonalModelRuntimeState, RuntimeModelChoice
+from packages.contracts.runtime import (
+    EvidenceRetrievalRequest,
+    EvidenceRetrievalResult,
+    RecallEvidence,
+    PersonalModelRuntimeState,
+    RecallReasons,
+    RuntimeModelChoice,
+    EmbeddingIndexPolicy,
+)
 from packages.kernel import KernelDependencies, KernelService, KernelSourceRequest
 from packages.kernel.loop_checkpoint_support import LoopCheckpointService
 from packages.storage import RuntimeStorageRepository
 
 
-class _MemoryCapability:
-    descriptor = CapabilityDescriptor("memory.test", "memory", "1")
+class _RecallCapability:
+    descriptor = CapabilityDescriptor("recall.test", "recall", "1")
 
-    def record(self, memory: MemoryRecord) -> None:
-        self.recorded = memory
-
-    def search(
-        self,
-        episode_id: str,
-        query: str,
-        *,
-        work_item_ids: tuple[str, ...] = (),
-        scope_episode_ids: tuple[str, ...] = (),
-        scope_reason: str = "",
-    ) -> tuple[MemoryRecord, ...]:
-        del episode_id, query, work_item_ids, scope_episode_ids, scope_reason
-        return ()
+    def retrieve_evidence(self, request: EvidenceRetrievalRequest) -> EvidenceRetrievalResult:
+        return EvidenceRetrievalResult(
+            request=request,
+            scope_episode_ids=(request.episode_id,),
+            scope_reason="test",
+            candidates=(),
+            recall_reasons=RecallReasons(scope_reason="test"),
+            index_policy=EmbeddingIndexPolicy(
+                model_id="test",
+                lexical_index_version="test",
+                embedding_index_version="test",
+            ),
+        )
 
 
 class _ContextCapability:
@@ -42,11 +49,11 @@ class _ContextCapability:
         self,
         episode: Episode,
         work_items: tuple[object, ...],
-        memories: tuple[MemoryRecord, ...],
+        recall_items: tuple[RecallEvidence, ...],
         *,
         state_focus=None,
     ) -> ContextBundle:
-        del work_items, memories, state_focus
+        del work_items, recall_items, state_focus
         return ContextBundle(
             bundle_id=f"context:{episode.episode_id}",
             episode_id=episode.episode_id,
@@ -148,7 +155,7 @@ class KernelTurnLifecycleResetTest(unittest.TestCase):
                 KernelDependencies(
                     storage=repository,
                     context=_ContextCapability(),
-                    memory=_MemoryCapability(),
+                    recall=_RecallCapability(),
                     model_provider=_ModelProvider(),
                     telemetry=telemetry,
                 )
@@ -166,8 +173,8 @@ class KernelTurnLifecycleResetTest(unittest.TestCase):
                 )
             )
 
-        self.assertEqual(outcome.state.active_task, "Continue the reset implementation")
-        self.assertEqual(outcome.execution.summary, "handled:What should we do next?")
+        self.assertIn("handled:What should we do next?", outcome.state.summary)
+        self.assertIn("handled:What should we do next?", outcome.execution.summary)
         self.assertGreaterEqual(outcome.model_turn_count, 1)
         self.assertTrue(telemetry.events)
 

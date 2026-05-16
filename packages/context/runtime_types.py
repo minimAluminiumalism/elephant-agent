@@ -9,8 +9,7 @@ import re
 from typing import Any, Mapping, Protocol, runtime_checkable
 
 from packages.capabilities.runtime import CapabilityDescriptor, ContextCapability
-from packages.contracts.runtime import ContextBundle, MemoryRecord, StructuredTurnSlot
-from packages.evidence import parse_structured_turn_memory
+from packages.contracts.runtime import ContextBundle, RecallEvidence, StructuredTurnSlot
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,7 +62,7 @@ class ContextRetrievalRequest:
     layer_name: str
     session_id: str
     query: str
-    memory_ids: tuple[str, ...] = ()
+    evidence_refs: tuple[str, ...] = ()
     work_item_ids: tuple[str, ...] = ()
     token_budget: int = 0
     priority: int = 0
@@ -205,6 +204,6 @@ class ContextAssemblyResult:
     plan: ContextAssemblyPlan
     rendered_prompt: str
     summary_by_layer: Mapping[str, str] = field(default_factory=dict)
-    retrieved_memory_ids: tuple[str, ...] = ()
+    retrieved_evidence_refs: tuple[str, ...] = ()
     source_trace: tuple[ContextSourceTrace, ...] = ()
     frame: EpisodeFrame | None = None

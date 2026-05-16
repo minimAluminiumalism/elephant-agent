@@ -9,11 +9,11 @@ import re
 from typing import Any
 from urllib.parse import quote
 
-from packages.continuity import RelationshipMemoryPolicy
+from packages.continuity import RelationshipPolicy
 from packages.contracts import Episode
 from packages.contracts.runtime import (
     EvidenceRetrievalResult,
-    MemoryRecord,
+    RecallEvidence,
     PlanDraft,
     PersonalModelRuntimeState,
     ResumePacket,
@@ -310,7 +310,7 @@ class CliVoiceTurnResult:
 class ContinuityStatus:
     profile: LoadedProfile
     session: Episode
-    relationship_policy: RelationshipMemoryPolicy
+    relationship_policy: RelationshipPolicy
     governance_summary: str
     proactive_summary: str
     initiative: str
@@ -334,8 +334,8 @@ class EggSummary:
 
 
 @dataclass(frozen=True, slots=True)
-class _PlanningMemoryRecovery:
-    memories: tuple[MemoryRecord, ...]
+class _PlanningRecallRecovery:
+    recall_items: tuple[RecallEvidence, ...]
     query: str
     work_item_ids: tuple[str, ...]
     scope_episode_ids: tuple[str, ...]

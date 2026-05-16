@@ -7,13 +7,13 @@ from dataclasses import dataclass
 from packages.contracts import Episode
 from packages.contracts.runtime import (
     ElephantIdentityRecord,
-    RelationshipMemoryRecord,
     EpisodeContinuityState,
 )
+from packages.state.rendered_views import RenderedRelationshipView
 from packages.state import CompanionGovernanceState, LoadedProfile, build_companion_governance_state
 from .runtime import (
-    RelationshipMemoryPolicy,
-    build_relationship_memory_policy,
+    RelationshipPolicy,
+    build_relationship_policy,
     build_episode_continuity_state,
 )
 
@@ -22,7 +22,7 @@ from .runtime import (
 class ContinuityProjection:
     governance: CompanionGovernanceState
     continuity: EpisodeContinuityState
-    relationship_policy: RelationshipMemoryPolicy
+    relationship_policy: RelationshipPolicy
     initiative: str
     reengagement_style: str
     reengagement_prompt: str
@@ -41,7 +41,7 @@ class ContinuityProjectionService:
         lineage: tuple[Episode, ...] = (),
         active_state_focus: str | None = None,
         identity_record: ElephantIdentityRecord | None = None,
-        relationship_record: RelationshipMemoryRecord | None = None,
+        relationship_record: RenderedRelationshipView | None = None,
     ) -> ContinuityProjection:
         governance = build_companion_governance_state(profile)
         continuity = build_episode_continuity_state(
@@ -49,7 +49,7 @@ class ContinuityProjectionService:
             lineage=lineage,
         )
         companion = profile.companion
-        relationship_policy = build_relationship_memory_policy(
+        relationship_policy = build_relationship_policy(
             profile.state.mode,
             text_first=companion.text_first if companion is not None else True,
             preserve_relationship_timeline=(
@@ -133,7 +133,7 @@ def _continuity_summary(
     *,
     continuity: EpisodeContinuityState,
     initiative: str,
-    relationship_policy: RelationshipMemoryPolicy,
+    relationship_policy: RelationshipPolicy,
     onboarding_ready: bool,
     reengagement_style: str,
 ) -> str:

@@ -10,17 +10,17 @@ from packages.contracts.runtime import EpisodeContinuityState
 
 
 @dataclass(frozen=True, slots=True)
-class RelationshipMemoryPolicy:
+class RelationshipPolicy:
     profile_mode: str
     text_first: bool = True
     preserve_relationship_timeline: bool = True
     preserve_preferences: bool = True
     preserve_corrections: bool = True
     preserve_emotional_context: bool = True
-    allowed_memory_kinds: tuple[str, ...] = ("relationship", "preference", "continuity")
+    allowed_signal_kinds: tuple[str, ...] = ("relationship", "preference", "continuity")
 
-    def allows(self, memory_kind: str) -> bool:
-        return memory_kind in self.allowed_memory_kinds
+    def allows(self, signal_kind: str) -> bool:
+        return signal_kind in self.allowed_signal_kinds
 
     def summary(self) -> str:
         posture = "text-first" if self.text_first else "multi-modal"
@@ -104,7 +104,7 @@ def apply_episode_continuity_state(
     return replace(episode, interruption_state=continuity.inherited_interruption_state)
 
 
-def build_relationship_memory_policy(
+def build_relationship_policy(
     profile_mode: str,
     *,
     text_first: bool = True,
@@ -112,16 +112,16 @@ def build_relationship_memory_policy(
     preserve_preferences: bool = True,
     preserve_corrections: bool = True,
     preserve_emotional_context: bool = True,
-    allowed_memory_kinds: tuple[str, ...] = ("relationship", "preference", "continuity"),
-) -> RelationshipMemoryPolicy:
-    return RelationshipMemoryPolicy(
+    allowed_signal_kinds: tuple[str, ...] = ("relationship", "preference", "continuity"),
+) -> RelationshipPolicy:
+    return RelationshipPolicy(
         profile_mode=profile_mode,
         text_first=text_first,
         preserve_relationship_timeline=preserve_relationship_timeline,
         preserve_preferences=preserve_preferences,
         preserve_corrections=preserve_corrections,
         preserve_emotional_context=preserve_emotional_context,
-        allowed_memory_kinds=allowed_memory_kinds,
+        allowed_signal_kinds=allowed_signal_kinds,
     )
 
 

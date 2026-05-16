@@ -13,11 +13,10 @@ from packages.contracts import Episode
 from packages.contracts.runtime import (
     ContextBundle,
     StateFocusDecision,
-    MemoryRecord,
+    RecallEvidence,
     PromptEnvelope,
     StructuredTurnSlot,
 )
-from packages.evidence import parse_structured_turn_memory
 
 
 
@@ -42,13 +41,13 @@ from .runtime_support import (
     _budget_for,
     _build_retrieval_query,
     _build_retrieval_reason,
-    _context_memory_score,
+    _context_evidence_score,
     _derived_source_refs,
     _estimate_tokens,
     _replay_lines,
     _retrieval_priority_bucket,
     _schedule_replay_requests,
-    _select_steady_memories,
+    _select_steady_recall_items,
     _snapshot_work_items,
     _session_snapshot_lines,
     _split_retrieval_requests,
@@ -169,7 +168,7 @@ class RetrievalScheduler(Protocol):
         *,
         session: Episode,
         work_items: tuple[...],
-        memories: tuple[MemoryRecord, ...],
+        recall_items: tuple[RecallEvidence, ...],
         recent_loop_context: tuple[str, ...] = (),
         token_budget: int,
         budget_plan: ContextBudgetPlan,
@@ -194,7 +193,7 @@ class ContextPlanner(Protocol):
         *,
         session: Episode,
         work_items: tuple[...],
-        memories: tuple[MemoryRecord, ...],
+        recall_items: tuple[RecallEvidence, ...],
         total_tokens: int,
         instruction_refs: tuple[str, ...],
         recent_loop_context: tuple[str, ...],
@@ -262,23 +261,23 @@ class DeterministicBudgetManager:
         )
 
 class DeterministicRetrievalScheduler:
-    """Score memories deterministically against session work_items."""
+    """Score recall_items deterministically against session work_items."""
 
     def schedule(
         self,
         *,
         session: Episode,
         work_items: tuple[...],
-        memories: tuple[MemoryRecord, ...],
+        recall_items: tuple[RecallEvidence, ...],
         recent_loop_context: tuple[str, ...] = (),
         token_budget: int,
         budget_plan: ContextBudgetPlan,
         state_focus: StateFocusDecision | None = None,
     ) -> tuple[ContextRetrievalRequest, ...]:
-        scored: list[tuple[int, float, float, MemoryRecord, tuple[str, ...]]] = []
-        for memory in memories:
-            score, reasons = _context_memory_score(
-                memory,
+        scored: list[tuple[int, float, float, RecallEvidence, tuple[str, ...]]] = []
+        for evidence in recall_items:
+            score, reasons = _context_evidence_score(
+                evidence,
                 session=session,
                 work_items=work_items,
                 state_focus=state_focus,
@@ -287,20 +286,20 @@ class DeterministicRetrievalScheduler:
                 return_reasons=True,
             )
             bucket = _retrieval_priority_bucket(
-                memory,
+                evidence,
                 session=session,
                 work_items=work_items,
                 recent_loop_context=recent_loop_context,
                 state_focus=state_focus,
             )
-            recency = memory.created_at.timestamp() if memory.created_at is not None else 0.0
-            scored.append((bucket, score, recency, memory, reasons))
+            recency = evidence.created_at.timestamp() if evidence.created_at is not None else 0.0
+            scored.append((bucket, score, recency, evidence, reasons))
 
-        scored.sort(key=lambda item: (-item[0], -item[1], -item[2], item[3].memory_id))
+        scored.sort(key=lambda item: (-item[0], -item[1], -item[2], item[3].evidence_id))
         remaining = max(token_budget, 0)
         requests: list[ContextRetrievalRequest] = []
-        for index, (_, _, _, memory, reasons) in enumerate(scored):
-            estimated_tokens = _estimate_tokens(memory.content)
+        for index, (_, _, _, evidence, reasons) in enumerate(scored):
+            estimated_tokens = _estimate_tokens(evidence.content)
             if remaining <= 0:
                 break
             selected_tokens = min(estimated_tokens, remaining)
@@ -312,12 +311,12 @@ class DeterministicRetrievalScheduler:
                     request_id=f"{session.episode_id}:retrieval:{index}",
                     layer_name="session_snapshot",
                     session_id=session.episode_id,
-                    query=_build_retrieval_query(memory, work_items, state_focus=state_focus),
-                    memory_ids=(memory.memory_id,),
-                    work_item_ids=memory.work_item_refs,
+                    query=_build_retrieval_query(evidence, work_items, state_focus=state_focus),
+                    evidence_refs=(evidence.evidence_id,),
+                    work_item_ids=evidence.work_item_ids,
                     token_budget=selected_tokens,
                     priority=max(0, 100 - index * 10),
-                    reason=_build_retrieval_reason(memory, work_items, reasons, state_focus=state_focus),
+                    reason=_build_retrieval_reason(evidence, work_items, reasons, state_focus=state_focus),
                 )
             )
 
@@ -329,7 +328,7 @@ class DeterministicRetrievalScheduler:
         ) + _schedule_replay_requests(
             session=session,
             work_items=work_items,
-            memories=memories,
+            recall_items=recall_items,
             recent_loop_context=recent_loop_context,
             token_budget=replay_budget,
             state_focus=state_focus,
@@ -365,7 +364,7 @@ class MarkdownPromptRenderer:
     """Render the assembled plan as stable markdown-like text.
 
     This renderer MUST NOT emit any runtime-owned identifier (record id,
-    memory id, grounding id, loop id, step id, work item id, session id
+    evidence id, grounding id, loop id, step id, work item id, session id
     other than the episode label header). Such identifiers have no
     corresponding tool by which the model can dereference them, so they
     would only pollute the prompt and prefix cache. Identifiers stay on
@@ -412,7 +411,7 @@ class EpisodeFrameBuilder:
         instruction_refs: tuple[str, ...],
         profile_snapshot_refs: tuple[str, ...],
         work_items: tuple[...],
-        memories: tuple[MemoryRecord, ...],
+        recall_items: tuple[RecallEvidence, ...],
         recent_loop_context: tuple[str, ...],
         request_attachments: tuple[str, ...],
         budgets: ContextBudgetPlan,
@@ -423,8 +422,8 @@ class EpisodeFrameBuilder:
         state_focus: StateFocusDecision | None = None,
     ) -> EpisodeFrame:
         snapshot_work_items = _snapshot_work_items(work_items, state_focus=state_focus)
-        steady_memories = _select_steady_memories(memories, session=session, work_items=work_items, state_focus=state_focus)
-        memory_index = {memory.memory_id: memory for memory in memories}
+        steady_recall_items = _select_steady_recall_items(recall_items, session=session, work_items=work_items, state_focus=state_focus)
+        evidence_index = {evidence.evidence_id: evidence for evidence in recall_items}
         summary_by_layer = {
             request.layer_name: request
             for request in summary_requests
@@ -440,10 +439,10 @@ class EpisodeFrameBuilder:
                     "session_snapshot",
                     session,
                     work_items,
-                    memories,
+                    recall_items,
                     recent_loop_context,
                     profile_snapshot_refs=profile_snapshot_refs,
-                    steady_memories=steady_memories,
+                    steady_recall_items=steady_recall_items,
                     retrieval_requests=snapshot_retrieval_requests,
                     replay_requests=replay_retrieval_requests,
                     request_attachments=request_attachments,
@@ -452,8 +451,8 @@ class EpisodeFrameBuilder:
                 token_budget=snapshot_request.token_budget,
                 reason=snapshot_request.reason,
             )
-        retrieved_memory_ids = tuple(
-            dict.fromkeys(memory_id for request in snapshot_retrieval_requests for memory_id in request.memory_ids)
+        retrieved_evidence_refs = tuple(
+            dict.fromkeys(evidence_ref for request in snapshot_retrieval_requests for evidence_ref in request.evidence_refs)
         )
         replay_summary = None
         replay_request = summary_by_layer.get("replay_packet")
@@ -465,10 +464,10 @@ class EpisodeFrameBuilder:
                     "replay_packet",
                     session,
                     work_items,
-                    memories,
+                    recall_items,
                     recent_loop_context,
                     profile_snapshot_refs=profile_snapshot_refs,
-                    steady_memories=steady_memories,
+                    steady_recall_items=steady_recall_items,
                     retrieval_requests=snapshot_retrieval_requests,
                     replay_requests=replay_retrieval_requests,
                     request_attachments=request_attachments,
@@ -477,15 +476,15 @@ class EpisodeFrameBuilder:
                 token_budget=replay_request.token_budget,
                 reason=replay_request.reason,
             )
-        replay_memory_ids = tuple(
-            dict.fromkeys(memory_id for request in replay_retrieval_requests for memory_id in request.memory_ids)
+        replay_evidence_refs = tuple(
+            dict.fromkeys(evidence_ref for request in replay_retrieval_requests for evidence_ref in request.evidence_refs)
         )
         replay_packet = None
         if replay_retrieval_requests:
             replay_packet = EpisodeReplay(
-                source_refs=replay_memory_ids,
-                evidence_refs=replay_memory_ids,
-                content=_replay_lines(replay_retrieval_requests, memory_index),
+                source_refs=replay_evidence_refs,
+                evidence_refs=replay_evidence_refs,
+                content=_replay_lines(replay_retrieval_requests, evidence_index),
                 token_budget=_budget_for(budgets, "replay_packet"),
                 summary=replay_summary,
             )
@@ -495,21 +494,21 @@ class EpisodeFrameBuilder:
                     (
                         *profile_snapshot_refs,
                         *(work_item.work_item_id for work_item in snapshot_work_items),
-                        *(memory.memory_id for memory in steady_memories),
-                        *retrieved_memory_ids,
+                        *(evidence.evidence_id for evidence in steady_recall_items),
+                        *retrieved_evidence_refs,
                     )
                 )
             ),
             profile_refs=profile_snapshot_refs or (f"profile:{session.personal_model_id}:user-snapshot",),
             work_refs=tuple(work_item.work_item_id for work_item in snapshot_work_items),
-            evidence_refs=retrieved_memory_ids,
+            evidence_refs=retrieved_evidence_refs,
             content=_session_snapshot_lines(
                 session=session,
                 profile_snapshot_refs=profile_snapshot_refs,
                 work_items=work_items,
-                steady_memories=steady_memories,
+                steady_recall_items=steady_recall_items,
                 retrieval_requests=snapshot_retrieval_requests,
-                memory_index=memory_index,
+                evidence_index=evidence_index,
                 request_attachments=request_attachments,
                 state_focus=state_focus,
             ),

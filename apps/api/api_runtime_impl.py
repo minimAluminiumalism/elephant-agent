@@ -20,16 +20,15 @@ from packages.contracts import (
     ContextBundle,
     EventEnvelope,
     ExecutionResult,
-    MemoryRecord,
 )
-from packages.contracts.runtime import PersonalModelRuntimeState
-from packages.kernel import KernelDependencies, KernelOutcome, KernelService, KernelSourceRequest, ObservationPipeline, StateReconciler
-from packages.evidence import MemoryRuntime, SemanticSummaryIndexer, build_semantic_index_bundle
-from packages.operator import (
-    MemoryOperatorDetail,
-    MemorySearchHit,
+from packages.contracts.runtime import PersonalModelRuntimeState, RecallEvidence
+from packages.kernel import KernelDependencies, KernelOutcome, KernelService, KernelSourceRequest, ReconciliationPipeline, StateReconciler
+from packages.evidence import RecallRuntime, SemanticSummaryIndexer, build_semantic_index_bundle
+from packages.operator.runtime import (
+    RecallEvidenceOperatorDetail,
+    RecallEvidenceSearchHit,
     ProcedureOperatorDetail,
-    build_memory_operator_surface,
+    build_recall_evidence_operator_surface,
     build_procedure_operator_surface,
     build_profile_operator_surface,
 )
@@ -62,7 +61,7 @@ from packages.tools.browser_backend import create_playwright_browser_backend
 from .capabilities import (
     APIContextCapability,
     APIDeliveryCapability,
-    APIMemoryCapability,
+    APIRecallCapability,
     APIModelProvider,
     APITelemetrySink,
     APIToolExecution,
@@ -81,7 +80,7 @@ from .api_runtime_support import (
 )
 from . import api_runtime_provider_methods as _provider_methods
 from . import api_runtime_surface_methods as _surface_methods
-from . import api_runtime_memory_methods as _memory_methods
+from . import api_runtime_recall_methods as _recall_methods
 from . import api_runtime_http_methods as _http_methods
 from . import api_runtime_console as _console_methods
 from . import api_runtime_cron_ops as _cron_methods
@@ -131,9 +130,9 @@ class ElephantAPIApp:
             repository=self.repository,
             state_dir=runtime_state_dir,
         )
-        self.memory_runtime = MemoryRuntime.from_repository(
+        self.recall_runtime = RecallRuntime.from_repository(
             self.repository,
-            semantic_bundle=self.semantic_index_bundle,
+            semantic_index_bundle=self.semantic_index_bundle,
         )
         cron_dir = default_cron_dir(install_root=install_root)
         self.cron_runtime = CronRuntime(
@@ -147,12 +146,12 @@ class ElephantAPIApp:
         self.context_runtime = ContextRuntime(instruction_refs=context_instruction_refs, total_tokens=config.total_tokens)
         self.personal_state = APIStateService(
             repository=self.repository,
-            memory_runtime=self.memory_runtime,
+            recall_runtime=self.recall_runtime,
         )
         self.telemetry = APITelemetrySink()
         self.preview_model_provider = APIModelProvider()
         self.delivery = APIDeliveryCapability()
-        self.memory = APIMemoryCapability(self.memory_runtime)
+        self.recall = APIRecallCapability(self.recall_runtime)
         browser_backend, _ = create_playwright_browser_backend()
         runtime_global_config_path = global_config_path_for_state_dir(runtime_state_dir)
         runtime_global_config = load_global_config(
@@ -163,7 +162,7 @@ class ElephantAPIApp:
             self.profile_loader.load().manifest,
             profile_dir=install_root,
         )
-        _api_embedding_service = self.memory_runtime.retriever.evidence_retriever.embedding_service
+        _api_embedding_service = self.recall_runtime.evidence_retriever.embedding_service
         self.semantic_summary_indexer = (
             SemanticSummaryIndexer(
                 semantic_index=self.semantic_index_bundle.service,
@@ -282,12 +281,12 @@ class ElephantAPIApp:
             dependencies=KernelDependencies(
                 storage=self.repository,
                 context=self.context,
-                memory=self.memory,
+                recall=self.recall,
                 model_provider=self.model_provider,
                 telemetry=self.telemetry,
                 tools=RequesterScopedToolCapability(self.tool_runtime, "model"),
                 delivery=self.delivery,
-                embedding_service=self.memory_runtime.retriever.evidence_retriever.embedding_service,
+                embedding_service=self.recall_runtime.evidence_retriever.embedding_service,
                 skill_runtime=self.skill_runtime,
                 semantic_summary_indexer=self.semantic_summary_indexer,
             )
@@ -316,7 +315,7 @@ ElephantAPIApp.delete_provider_key = _provider_methods.delete_provider_key
 ElephantAPIApp.create_episode = _surface_methods.create_episode
 ElephantAPIApp.interrupt_episode = _surface_methods.interrupt_episode
 ElephantAPIApp.resume_episode = _surface_methods.resume_episode
-ElephantAPIApp.list_memories = _surface_methods.list_memories
+ElephantAPIApp.list_recall_evidence = _surface_methods.list_recall_evidence
 ElephantAPIApp.inspect_identity = _surface_methods.inspect_identity
 ElephantAPIApp.update_identity_state = _surface_methods.update_identity_state
 ElephantAPIApp.inspect_user = _surface_methods.inspect_user
@@ -325,8 +324,8 @@ ElephantAPIApp.inspect_relationship = _surface_methods.inspect_relationship
 ElephantAPIApp.update_relationship_state = _surface_methods.update_relationship_state
 ElephantAPIApp.inspect_continuity = _surface_methods.inspect_continuity
 ElephantAPIApp.inspect_context_frame = _surface_methods.inspect_context_frame
-ElephantAPIApp.inspect_memory_surface = _surface_methods.inspect_memory_surface
-ElephantAPIApp.search_memory_surface = _surface_methods.search_memory_surface
+ElephantAPIApp.inspect_recall_evidence_surface = _surface_methods.inspect_recall_evidence_surface
+ElephantAPIApp.search_recall_evidence_surface = _surface_methods.search_recall_evidence_surface
 ElephantAPIApp.inspect_episode = _surface_methods.inspect_episode
 ElephantAPIApp.inspect_internal_dashboard = _internal_methods.inspect_internal_dashboard
 ElephantAPIApp.delete_diary_entry = _internal_methods.delete_diary_entry
@@ -343,10 +342,7 @@ ElephantAPIApp.set_operator_mcp_tool_enabled = _console_methods.set_operator_mcp
 ElephantAPIApp.discover_operator_mcp_server = _console_methods.discover_operator_mcp_server
 ElephantAPIApp.set_console_item_enabled = _console_methods.set_console_item_enabled
 ElephantAPIApp.gateway_action = _console_methods.gateway_action
-ElephantAPIApp.inspect_memory = _memory_methods.inspect_memory
-ElephantAPIApp.correct_memory = _memory_methods.correct_memory
-ElephantAPIApp.delete_memory = _memory_methods.delete_memory
-ElephantAPIApp.pin_memory = _memory_methods.pin_memory
+ElephantAPIApp.inspect_recall_evidence = _recall_methods.inspect_recall_evidence
 ElephantAPIApp.run_loop = _http_methods.run_loop
 ElephantAPIApp.dispatch = _http_methods.dispatch
 ElephantAPIApp._dispatch_providers = _http_methods._dispatch_providers

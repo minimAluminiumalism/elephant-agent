@@ -79,8 +79,8 @@ def latest_compacted_projection(context_capability: object) -> object | None:
 
 
 
-def flush_projection_memory(context_capability: object) -> None:
-    flush = getattr(context_capability, "flush_projection_memory", None)
+def flush_projection_cache(context_capability: object) -> None:
+    flush = getattr(context_capability, "flush_projection_cache", None)
     if callable(flush):
         flush()
 
@@ -151,7 +151,7 @@ def episode_continuity_packet(
     source_refs = tuple(
         ref
         for ref in (
-            getattr(request, "source_record_id", ""),
+            getattr(request, "source_id", ""),
             getattr(request, "episode_id", ""),
             getattr(request, "loop_id", ""),
             *source_step_ids,
@@ -233,7 +233,7 @@ def retry_context_after_provider_overflow(
     session: Any,
     state_focus: Any,
     work_items: tuple[Any, ...],
-    memories: tuple[Any, ...],
+    recall_items: tuple[Any, ...],
     decision: Any,
     plan: Any,
     continuity: Any,
@@ -251,8 +251,8 @@ def retry_context_after_provider_overflow(
     if result is None or not bool(getattr(result, "compacted", False)):
         return None
     stage("context-compact", projection_compaction_detail(result))
-    flush_projection_memory(dependencies.context)
-    rebuilt = dependencies.context.assemble(session, work_items, memories, state_focus=state_focus)
+    flush_projection_cache(dependencies.context)
+    rebuilt = dependencies.context.assemble(session, work_items, recall_items, state_focus=state_focus)
     stage(
         "context",
         f"bundle={rebuilt.bundle_id} budget={rebuilt.token_budget} recovery_scope_reason={recovery_scope_reason}",
@@ -263,7 +263,7 @@ def retry_context_after_provider_overflow(
         session=session,
         state_focus=state_focus,
         work_items=work_items,
-        memories=memories,
+        recall_items=recall_items,
         context=rebuilt,
         decision=decision,
         plan=plan,
@@ -287,7 +287,7 @@ __all__ = [
     "append_episode_continuity_packet",
     "compact_context_after_usage",
     "compaction_step_metadata",
-    "flush_projection_memory",
+    "flush_projection_cache",
     "latest_compacted_projection",
     "looks_like_context_overflow",
     "projection_compaction_detail",

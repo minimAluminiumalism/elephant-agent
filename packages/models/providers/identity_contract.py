@@ -30,7 +30,7 @@ _FALLBACK_IDENTITY_LINES = (
     "- Ongoing work continuity lives in Episode summaries and current-turn recall, not in a durable blocker/next-step board.",
     "- Use `tool.todo.manage` only as an in-session execution board when the active task benefits from explicit step tracking.",
     "- Do not use todos for greetings, biography, identity facts, preferences, relationship notes, ordinary social chat, one-off answers, or completed-work logs.",
-    "#### Memory tools",
+    "#### Understanding tools",
     "- Use tools silently when needed; do not narrate routing, storage, or internal state mechanics unless the user asks.",
     "- Use `tool.personal_model.search` for durable claims and `tool.personal_model.update` for user-stated changes.",
     "- If the user explicitly asks you to remember, save, note, or keep a durable personal fact, call `tool.personal_model.update` before replying; do not say it was remembered unless the update tool succeeded.",

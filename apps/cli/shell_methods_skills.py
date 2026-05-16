@@ -13,12 +13,12 @@ import time
 
 from packages.contracts import ExperienceRecord
 from packages.kernel.runtime import KernelOutcome
-from packages.operator import (
-    MemoryOperatorDetail,
-    MemorySearchHit,
-    build_memory_operator_surface,
+from packages.operator.runtime import (
+    RecallEvidenceOperatorDetail,
+    RecallEvidenceSearchHit,
+    build_recall_evidence_operator_surface,
     build_profile_operator_surface,
-    render_memory_lines,
+    render_recall_evidence_lines,
     render_profile_lines,
 )
 from packages.skills import skill_provenance_fields

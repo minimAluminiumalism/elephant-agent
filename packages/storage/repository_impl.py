@@ -30,10 +30,6 @@ RuntimeStorageRepository.list_personal_models = _system_methods.list_personal_mo
 RuntimeStorageRepository.ensure_default_personal_model = _system_methods.ensure_default_personal_model
 RuntimeStorageRepository.upsert_elephant_identity = _canonical_methods.upsert_elephant_identity
 RuntimeStorageRepository.load_elephant_identity_for_profile = _canonical_methods.load_elephant_identity_for_profile
-RuntimeStorageRepository.upsert_user_card = _canonical_methods.upsert_user_card
-RuntimeStorageRepository.load_user_card_for_profile = _canonical_methods.load_user_card_for_profile
-RuntimeStorageRepository.upsert_relationship_memory = _canonical_methods.upsert_relationship_memory
-RuntimeStorageRepository.load_relationship_memory_for_profile = _canonical_methods.load_relationship_memory_for_profile
 RuntimeStorageRepository.create_state = _system_methods.create_state
 RuntimeStorageRepository.upsert_state = _system_methods.upsert_state
 RuntimeStorageRepository.load_state = _system_methods.load_state
@@ -50,12 +46,6 @@ RuntimeStorageRepository.list_loops = _system_methods.list_loops
 RuntimeStorageRepository.upsert_step = _system_methods.upsert_step
 RuntimeStorageRepository.load_step = _system_methods.load_step
 RuntimeStorageRepository.list_steps = _system_methods.list_steps
-RuntimeStorageRepository.upsert_record = _system_methods.upsert_record
-RuntimeStorageRepository.load_record = _system_methods.load_record
-RuntimeStorageRepository.list_records = _system_methods.list_records
-RuntimeStorageRepository.upsert_grounding = _system_methods.upsert_grounding
-RuntimeStorageRepository.load_grounding = _system_methods.load_grounding
-RuntimeStorageRepository.list_groundings = _system_methods.list_groundings
 RuntimeStorageRepository.upsert_episode_state = _system_methods.upsert_episode_state
 RuntimeStorageRepository.load_episode_state = _system_methods.load_episode_state
 RuntimeStorageRepository.refresh_episode_state = _system_methods.refresh_episode_state
@@ -80,9 +70,6 @@ RuntimeStorageRepository.append_loop_checkpoint_step = _system_methods.append_lo
 RuntimeStorageRepository.list_loop_checkpoint_steps = _system_methods.list_loop_checkpoint_steps
 RuntimeStorageRepository.list_loop_checkpoints = _system_methods.list_loop_checkpoints
 
-RuntimeStorageRepository.upsert_memory_entry = _scope_methods.upsert_memory_entry
-RuntimeStorageRepository.load_memory_entry = _scope_methods.load_memory_entry
-RuntimeStorageRepository.list_memory_entries = _scope_methods.list_memory_entries
 RuntimeStorageRepository.upsert_auth_profile = _scope_methods.upsert_auth_profile
 RuntimeStorageRepository.load_auth_profile = _scope_methods.load_auth_profile
 RuntimeStorageRepository.list_auth_profiles = _scope_methods.list_auth_profiles
@@ -91,9 +78,6 @@ RuntimeStorageRepository.upsert_auth_secret_value = _scope_methods.upsert_auth_s
 RuntimeStorageRepository.load_auth_secret_value = _scope_methods.load_auth_secret_value
 RuntimeStorageRepository.has_auth_secret_value = _scope_methods.has_auth_secret_value
 RuntimeStorageRepository.delete_auth_secret_value = _scope_methods.delete_auth_secret_value
-RuntimeStorageRepository.upsert_reflection_proposal = _scope_methods.upsert_reflection_proposal
-RuntimeStorageRepository.load_reflection_proposal = _scope_methods.load_reflection_proposal
-RuntimeStorageRepository.list_reflection_proposals = _scope_methods.list_reflection_proposals
 RuntimeStorageRepository.upsert_semantic_index_entry = _scope_methods.upsert_semantic_index_entry
 RuntimeStorageRepository.load_semantic_index_entry = _scope_methods.load_semantic_index_entry
 RuntimeStorageRepository.list_semantic_index_entries = _scope_methods.list_semantic_index_entries
@@ -102,16 +86,7 @@ RuntimeStorageRepository.upsert_provider_auth_state = _provider_auth_methods.ups
 RuntimeStorageRepository.load_provider_auth_state = _provider_auth_methods.load_provider_auth_state
 RuntimeStorageRepository.list_provider_auth_states = _provider_auth_methods.list_provider_auth_states
 
-# Curiosity (v5): Observation / Fact / OpenQuestion tables.
-RuntimeStorageRepository.upsert_personal_model_observation = (
-    _curiosity_methods.upsert_personal_model_observation
-)
-RuntimeStorageRepository.list_personal_model_observations = (
-    _curiosity_methods.list_personal_model_observations
-)
-RuntimeStorageRepository.list_observations_by_generating_question = (
-    _curiosity_methods.list_observations_by_generating_question
-)
+# Curiosity (v5): Fact / OpenQuestion / Diary tables.
 RuntimeStorageRepository.upsert_personal_model_fact = (
     _curiosity_methods.upsert_personal_model_fact
 )

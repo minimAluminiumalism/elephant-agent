@@ -7,7 +7,7 @@ import json
 from typing import Mapping, Sequence
 from uuid import uuid4
 
-from packages.contracts import Episode, Grounding, Loop, PersonalModel, Record, State, Step
+from packages.contracts import Episode, Loop, PersonalModel, State, Step
 from packages.contracts.runtime import (
     LearningJob,
     LoopState,
@@ -555,58 +555,6 @@ def list_steps(self, *, loop_id: str | None = None) -> tuple[Step, ...]:
             parameters,
         ).fetchall()
     return tuple(_step_from_row(row) for row in rows)
-
-
-def upsert_record(self, record: Record) -> None:
-    # Legacy no-op: records is not part of the clean storage schema.
-    # Session context epochs now use FileEpochStore (packages/context/epoch_store.py).
-    pass
-
-
-def load_record(self, record_id: str) -> Record | None:
-    # Legacy no-op: records is not part of the clean storage schema.
-    return None
-
-
-def list_records(
-    self,
-    *,
-    owner_scope: str | None = None,
-    state_id: str | None = None,
-    personal_model_id: str | None = None,
-) -> tuple[Record, ...]:
-    # Legacy no-op: records is not part of the clean storage schema.
-    return ()
-
-
-
-
-def upsert_grounding(
-    self,
-    grounding: Grounding,
-    *,
-    owner_scope: str | None = None,
-    personal_model_id: str | None = None,
-    state_id: str | None = None,
-) -> None:
-    # Legacy no-op: groundings is not part of the clean storage schema.
-    pass
-
-
-def load_grounding(self, grounding_id: str) -> Grounding | None:
-    # Legacy no-op: groundings is not part of the clean storage schema.
-    return None
-
-
-def list_groundings(
-    self,
-    *,
-    owner_scope: str | None = None,
-    state_id: str | None = None,
-    personal_model_id: str | None = None,
-) -> tuple[Grounding, ...]:
-    # Legacy no-op: groundings is not part of the clean storage schema.
-    return ()
 
 
 def _parse_datetime(value: object) -> datetime:
@@ -1447,7 +1395,7 @@ def _maybe_json_mapping(value: object) -> Mapping[str, object] | None:
     return None
 
 
-def _active_memory_ids_from_value(value: object) -> tuple[str, ...]:
+def _active_evidence_refs_from_value(value: object) -> tuple[str, ...]:
     if value is None:
         return ()
     if isinstance(value, (tuple, list)):
@@ -1471,7 +1419,7 @@ def migrate_loop_state_metadata(metadata: Mapping[str, object]) -> dict[str, obj
     v1 rows (pre-harness) only carried the legacy budget reason in
     ``waiting_reason``. v2 writers always emit ``schema_version=2`` and the
     new keys (``wait_condition``, ``pending_tool_calls``, ``retry_state``,
-    ``partial_assistant``, ``context_bundle_id``, ``active_memory_ids``,
+    ``partial_assistant``, ``context_bundle_id``, ``active_evidence_refs``,
     ``heartbeat_at``, ``crash_marker``). The return value is a plain
     dictionary suitable for ``LoopState`` construction (not for
     re-serialization).
@@ -1490,7 +1438,7 @@ def migrate_loop_state_metadata(metadata: Mapping[str, object]) -> dict[str, obj
     data.setdefault("pending_tool_calls", [])
     data.setdefault("partial_assistant", None)
     data.setdefault("context_bundle_id", None)
-    data.setdefault("active_memory_ids", [])
+    data.setdefault("active_evidence_refs", [])
     data.setdefault("retry_state", None)
     data.setdefault("heartbeat_at", None)
     data.setdefault("crash_marker", None)
@@ -1518,7 +1466,7 @@ def _loop_metadata(run: LoopState) -> dict[str, str]:
             "pending_tool_calls": _pending_tool_calls_to_list(run.pending_tool_calls),
             "partial_assistant": run.partial_assistant,
             "context_bundle_id": run.context_bundle_id,
-            "active_memory_ids": list(run.active_memory_ids),
+            "active_evidence_refs": list(run.active_evidence_refs),
             "retry_state": _retry_state_to_mapping(run.retry_state),
             "heartbeat_at": _iso_optional_datetime(run.heartbeat_at),
             "crash_marker": run.crash_marker,
@@ -1556,7 +1504,7 @@ def _loop_state_from_loop(loop: Loop) -> LoopState:
         context_bundle_id=(
             str(metadata.get("context_bundle_id")) if metadata.get("context_bundle_id") else None
         ),
-        active_memory_ids=_active_memory_ids_from_value(metadata.get("active_memory_ids")),
+        active_evidence_refs=_active_evidence_refs_from_value(metadata.get("active_evidence_refs")),
         retry_state=_retry_state_from_mapping(metadata.get("retry_state")),
         heartbeat_at=_parse_optional_datetime(metadata.get("heartbeat_at")),
         crash_marker=(str(metadata.get("crash_marker")) if metadata.get("crash_marker") else None),

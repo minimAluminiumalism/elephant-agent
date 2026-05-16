@@ -58,7 +58,6 @@ class PersonalModelUnderstandingSurface(Protocol):
         *,
         ref: str = "",
         topic: str = "",
-        record_id: str = "",
         query: str = "",
         personal_model_id: str = "",
         limit: int = 5,

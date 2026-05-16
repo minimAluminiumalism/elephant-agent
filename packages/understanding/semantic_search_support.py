@@ -23,8 +23,7 @@ def claim_ref_from_match(match: Any) -> str:
     metadata = dict(getattr(entry, "metadata", {}) or {})
     return str(
         metadata.get("claim_ref")
-        or getattr(entry, "source_record_id", "")
-        or getattr(getattr(match, "record", None), "record_id", "")
+        or getattr(entry, "source_id", "")
         or ""
     ).strip()
 

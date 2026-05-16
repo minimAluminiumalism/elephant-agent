@@ -3,8 +3,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
+from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
+from urllib.parse import quote
 from uuid import uuid4
 
 from .snapshot_io import load_snapshot_payload, write_snapshot_payload
@@ -27,7 +29,7 @@ from packages.contracts.runtime import (
     StateFocusCandidateScore,
     StateFocusDecision,
     StateFocusReason,
-    MemoryRecord,
+    RecallEvidence,
     PlanDraft,
     PromptMessage,
     PersonalModelGrowthState,
@@ -38,7 +40,7 @@ from packages.experience import capture_turn_experience
 from packages.growth import GrowthTurnSignals, apply_turn_growth
 from packages.kernel import KernelOutcome
 from packages.kernel.generation_context import build_context_for_generation
-from packages.state import build_prompt_contract
+from packages.state import build_prompt_contract, load_runtime_profile
 
 if TYPE_CHECKING:
     from apps.cli.runtime import CliRuntime
@@ -122,7 +124,7 @@ def write_snapshot_session_context_epoch(runtime: CliRuntime, epoch: SessionCont
     write_snapshot_payload(runtime.snapshot_path, payload)
 
 
-def append_outcome_memory(runtime: CliRuntime, outcome: KernelOutcome) -> None:
+def append_outcome_recall_event(runtime: CliRuntime, outcome: KernelOutcome) -> None:
     session = runtime._load_session(outcome.route_session_id)
     tags = ("continuity", "assistant", *_step_action_tags(outcome))
     content = "\n".join(
@@ -143,13 +145,13 @@ def append_outcome_memory(runtime: CliRuntime, outcome: KernelOutcome) -> None:
         payload={
             "content": content,
             "summary": content.splitlines()[0],
-            "memory_kind": "continuity",
+            "signal_kind": "continuity",
             "work_item_ids": "",
             "tags": ",".join(tags),
             "source_event_id": outcome.event.event_id,
         },
     )
-    runtime.memory_runtime.append_event(event)
+    runtime.recall_runtime.append_event(event)
 
 
 def append_outcome_experience(runtime: CliRuntime, outcome: KernelOutcome) -> ExperienceRecord | None:
@@ -193,7 +195,7 @@ def append_outcome_growth(
     current = runtime.repository.load_personal_model_growth(profile_id)
     if _growth_state_predates_profile_sessions(runtime, profile_id=profile_id, state=current):
         current = None
-    procedures = ()  # Procedural memory removed; growth tracks without procedures.
+    procedures = ()  # Procedural evidence removed; growth tracks without procedures.
     update = apply_turn_growth(
         current,
         _build_growth_turn_signals(
@@ -270,7 +272,7 @@ def _build_growth_turn_signals(
         active_work_item_present=bool(outcome.state.summary.strip()),
         plan_step_count=0,
         work_item_dependency_count=0,
-        memory_count=len(outcome.memories),
+        recall_count=len(outcome.recall_items),
         context_work_item_count=len(outcome.context.work_item_ids),
         tool_call_count=outcome.tool_call_count,
         model_turn_count=outcome.model_turn_count,
@@ -342,7 +344,7 @@ def write_snapshot(
     profile: PersonalModelRuntimeState,
     session: Episode,
     work_items: tuple[object, ...],
-    memories: tuple[MemoryRecord, ...],
+    recall_items: tuple[RecallEvidence, ...],
     plan: PlanDraft | None,
     execution: ExecutionResult | None,
     delivery: ExecutionResult | None,
@@ -371,7 +373,7 @@ def write_snapshot(
         "profile": _profile_payload(profile, elephant_identity_text=elephant_identity_text),
         "session": _session_payload(session),
         "work_items": [_work_item_payload(work_item) for work_item in work_items],
-        "memories": [_memory_payload(memory) for memory in memories],
+        "recall_items": [_recall_item_payload(evidence) for evidence in recall_items],
         "plan": _plan_payload(plan),
         "execution": _execution_payload(execution),
         "delivery": _execution_payload(delivery),
@@ -435,12 +437,18 @@ def _episode_open_frozen_context(
     frozen_skill_index: tuple[FrozenSkillIndexEntry, ...],
 ) -> ContextBundle | None:
     try:
-        loaded = runtime._load_profile(profile.profile_id)
+        loaded = load_runtime_profile(
+            runtime.repository,
+            personal_model_id=profile.profile_id,
+            elephant_id=session.elephant_id,
+            profile_loader=runtime.profile_loader,
+        )
         prompt_contract = build_prompt_contract(loaded, prompt_mode="full")
         stable_prefix_lines = tuple(prompt_contract.stable_prefix_refs or prompt_contract.instruction_refs)
         skill_lines = _frozen_skill_shelf_prompt_lines(frozen_skill_index)
+        runtime_path_lines = _episode_open_runtime_path_lines(runtime, session=session)
         runtime_context = ContextRuntime(
-            instruction_refs=stable_prefix_lines + skill_lines,
+            instruction_refs=stable_prefix_lines + skill_lines + runtime_path_lines,
             total_tokens=max(1024, int(getattr(runtime, "active_provider_context_window", lambda: 0)() or 0)),
         )
         assembled = runtime_context.assemble_detailed(
@@ -455,7 +463,7 @@ def _episode_open_frozen_context(
         base = replace(
             assembled.bundle,
             bundle_id=f"bundle:{session.episode_id}:episode-open",
-            instruction_refs=prompt_contract.instruction_refs + skill_lines,
+            instruction_refs=prompt_contract.instruction_refs + skill_lines + runtime_path_lines,
         )
         request = SimpleNamespace(
             tool_name=None,
@@ -470,13 +478,11 @@ def _episode_open_frozen_context(
             session=session,
             state_focus=None,
             work_items=(),
-            memories=(),
+            recall_items=(),
             context=base,
             decision=None,
             plan=None,
             continuity=None,
-            clock=None,
-            augment_clock=lambda context, *, clock: context,
         )
     except Exception:
         return None
@@ -496,6 +502,26 @@ def _frozen_skill_shelf_prompt_lines(frozen_skill_index: tuple[FrozenSkillIndexE
         command = f" /{entry.slash_command}" if entry.slash_command else ""
         lines.append(f"- {label} (`{entry.skill_id}`{command}): {reason}")
     return tuple(lines)
+
+
+def _episode_open_runtime_path_lines(runtime: CliRuntime, *, session: Episode) -> tuple[str, ...]:
+    lines = ["### Runtime paths"]
+    try:
+        lines.append(
+            f"startup_cwd={Path.cwd().resolve()} "
+            "(the directory where this session launched; use as working directory when the user asks to explore 'here' or 'current project')"
+        )
+    except Exception:
+        pass
+    workspaces_dir = getattr(getattr(runtime, "paths", None), "workspaces_dir", None)
+    elephant_id = str(getattr(session, "elephant_id", "") or "").strip()
+    if workspaces_dir is not None and elephant_id:
+        elephant_ws = workspaces_dir.expanduser().resolve() / quote(elephant_id, safe="")
+        lines.append(
+            f"elephant_workspace={elephant_ws} "
+            "(default scratch directory for file output when the user does not specify a path)"
+        )
+    return tuple(lines) if len(lines) > 1 else ()
 
 
 def _snapshot_event_is_user_turn(event_type: str | None, source: str | None) -> bool:
@@ -729,16 +755,17 @@ def _work_item_payload(work_item: object) -> dict[str, Any]:
     }
 
 
-def _memory_payload(memory: MemoryRecord) -> dict[str, Any]:
+def _recall_item_payload(evidence: RecallEvidence) -> dict[str, Any]:
     return {
-        "memory_id": memory.memory_id,
-        "episode_id": memory.episode_id,
-        "kind": memory.kind,
-        "content": memory.content,
-        "source_event_id": memory.source_event_id,
-        "work_item_refs": list(memory.work_item_refs),
-        "tags": list(memory.tags),
-        "created_at": _iso(memory.created_at) if memory.created_at is not None else None,
+        "evidence_ref": evidence.evidence_id,
+        "episode_id": evidence.episode_id,
+        "kind": evidence.kind,
+        "content": evidence.content,
+        "source_id": evidence.source_id,
+        "source_kind": evidence.source_kind,
+        "work_item_ids": list(evidence.work_item_ids),
+        "tags": list(evidence.tags),
+        "created_at": _iso(evidence.created_at) if evidence.created_at is not None else None,
     }
 
 

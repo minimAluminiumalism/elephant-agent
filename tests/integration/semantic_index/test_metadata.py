@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from datetime import datetime, timezone
 import sys
 import tempfile
 import unittest
@@ -10,7 +9,6 @@ ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from packages.contracts import Record
 from packages.semantic_index import (
     SQLiteVecSemanticIndex,
     SemanticIndexDocument,
@@ -24,29 +22,17 @@ from packages.storage import RuntimeStorageRepository
 
 class SemanticIndexMetadataTest(unittest.TestCase):
     def test_service_persists_vector_metadata_and_indexes_vector(self) -> None:
-        now = datetime(2026, 4, 23, tzinfo=timezone.utc)
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             repository = RuntimeStorageRepository(root / "state" / "elephant.sqlite3")
             repository.bootstrap()
             state = repository.create_state(elephant_id="elephant-alpha", elephant_name="Alpha")
-            record = Record(
-                record_id="record-alpha",
-                kind="derived",
-                schema_version="1",
-                owner_scope="state",
-                personal_model_id=state.personal_model_id,
-                state_id=state.state_id,
-                payload={"text": "release checklist and package verification"},
-                created_at=now,
-            )
-            repository.upsert_record(record)
             backend = SQLiteVecSemanticIndex(root / "semantic.sqlite3")
             service = SemanticIndexService(repository=repository, backend=backend)
 
             entry = service.index_document(
                 SemanticIndexDocument(
-                    source_record_id=record.record_id,
+                    source_id="step:alpha",
                     owner_scope="state",
                     text="release checklist and package verification",
                     vector=(1.0, 0.0, 0.0, 0.0),
@@ -62,7 +48,7 @@ class SemanticIndexMetadataTest(unittest.TestCase):
 
         self.assertIsNotNone(loaded)
         assert loaded is not None
-        self.assertEqual(loaded.source_record_id, record.record_id)
+        self.assertEqual(loaded.source_id, "step:alpha")
         self.assertEqual(loaded.provider_id, "provider-local")
         self.assertEqual(loaded.model_id, "elephant-embed")
         self.assertEqual(loaded.dimensions, 4)
@@ -78,21 +64,11 @@ class SemanticIndexMetadataTest(unittest.TestCase):
             repository = RuntimeStorageRepository(Path(tmpdir) / "state" / "elephant.sqlite3")
             repository.bootstrap()
             state = repository.create_state(elephant_id="elephant-alpha", elephant_name="Alpha")
-            record = Record(
-                record_id="record-alpha",
-                kind="derived",
-                schema_version="1",
-                owner_scope="state",
-                personal_model_id=state.personal_model_id,
-                state_id=state.state_id,
-                payload={"text": "degraded vector write"},
-            )
-            repository.upsert_record(record)
             service = SemanticIndexService(repository=repository, backend=_DegradedBackend())
 
             entry = service.index_document(
                 SemanticIndexDocument(
-                    source_record_id=record.record_id,
+                    source_id="step:alpha",
                     owner_scope="state",
                     text="degraded vector write",
                     vector=(0.0, 1.0, 0.0, 0.0),
@@ -118,21 +94,11 @@ class SemanticIndexMetadataTest(unittest.TestCase):
             repository = RuntimeStorageRepository(root / "state" / "elephant.sqlite3")
             repository.bootstrap()
             state = repository.create_state(elephant_id="elephant-alpha", elephant_name="Alpha")
-            record = Record(
-                record_id="record-alpha",
-                kind="derived",
-                schema_version="1",
-                owner_scope="state",
-                personal_model_id=state.personal_model_id,
-                state_id=state.state_id,
-                payload={"text": "delete scoped semantic vector"},
-            )
-            repository.upsert_record(record)
             backend = SQLiteVecSemanticIndex(root / "semantic.sqlite3")
             service = SemanticIndexService(repository=repository, backend=backend)
             entry = service.index_document(
                 SemanticIndexDocument(
-                    source_record_id=record.record_id,
+                    source_id="step:alpha",
                     owner_scope="state",
                     text="delete scoped semantic vector",
                     vector=(0.0, 0.0, 1.0, 0.0),
@@ -159,22 +125,12 @@ class SemanticIndexMetadataTest(unittest.TestCase):
             repository = RuntimeStorageRepository(root / "state" / "elephant.sqlite3")
             repository.bootstrap()
             state = repository.create_state(elephant_id="elephant-alpha", elephant_name="Alpha")
-            record = Record(
-                record_id="record-alpha",
-                kind="derived",
-                schema_version="1",
-                owner_scope="state",
-                personal_model_id=state.personal_model_id,
-                state_id=state.state_id,
-                payload={"text": "stable semantic document"},
-            )
-            repository.upsert_record(record)
             service = SemanticIndexService(
                 repository=repository,
                 backend=SQLiteVecSemanticIndex(root / "semantic.sqlite3"),
             )
             original = SemanticIndexDocument(
-                source_record_id=record.record_id,
+                source_id="step:alpha",
                 owner_scope="state",
                 text="stable semantic document",
                 vector=(1.0, 0.0, 0.0, 0.0),
@@ -192,7 +148,7 @@ class SemanticIndexMetadataTest(unittest.TestCase):
                 state_id=state.state_id,
             )
             changed_dimensions = SemanticIndexDocument(
-                source_record_id=record.record_id,
+                source_id="step:alpha",
                 owner_scope="state",
                 text="stable semantic document",
                 vector=(1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),

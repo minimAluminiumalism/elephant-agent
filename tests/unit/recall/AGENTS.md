@@ -1,6 +1,6 @@
-# Memory Unit Tests
+# Recall Unit Tests
 
-Use this directory for fast package-local tests for `packages/evidence` durable memory surfaces.
+Use this directory for fast package-local tests for `packages/evidence` recall surfaces.
 
 ## Own Here
 
@@ -13,4 +13,4 @@ Use this directory for fast package-local tests for `packages/evidence` durable 
 
 - keep tests deterministic and standard-library only
 - do not depend on app processes or external storage backends
-- prefer narrow fixtures that prove one memory rule at a time
+- prefer narrow fixtures that prove one recall rule at a time

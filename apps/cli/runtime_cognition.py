@@ -1,4 +1,4 @@
-"""Context assembly, memory retrieval, and preview capabilities for the CLI runtime."""
+"""Context assembly, recall retrieval, and preview capabilities for the CLI runtime."""
 
 from __future__ import annotations
 
@@ -25,16 +25,16 @@ from packages.contracts.runtime import (
     EvidenceRetrievalRequest,
     ExecutionResult,
     StateFocusDecision,
-    MemoryRecord,
+    RecallEvidence,
     RuntimeModelChoice,
     PlanDraft,
     PersonalModelRuntimeState,
-    RelationshipMemoryRecord,
     EpisodeContinuityState,
     GenerationModelProfile,
     SupportModelProfile,
 )
-from packages.evidence import MemoryRuntime, SQLiteMemoryStore
+from packages.evidence import RecallRuntime
+from packages.state.rendered_views import RenderedRelationshipView
 from packages.skills import SkillHub, SkillRuntime
 from packages.state import (
     LoadedProfile,
@@ -55,7 +55,7 @@ from packages.skills import SkillPromptContextBuilder
 from .runtime_support import _restore_datetime, _utc_now
 
 
-def _memory_query_seed(repository: RuntimeStorageRepository) -> str:
+def _recall_query_seed(repository: RuntimeStorageRepository) -> str:
     state = repository.current_state()
     parts = tuple(
         part.strip()
@@ -70,12 +70,12 @@ def _memory_query_seed(repository: RuntimeStorageRepository) -> str:
     return "resume continuity next step " + " | ".join(parts[:3])
 
 
-def _memory_query_with_relationship(
+def _recall_query_with_relationship(
     repository: RuntimeStorageRepository,
     *,
-    relationship: RelationshipMemoryRecord | None,
+    relationship: RenderedRelationshipView | None,
 ) -> str:
-    base = _memory_query_seed(repository)
+    base = _recall_query_seed(repository)
     if relationship is None or not relationship.continuity_notes:
         return base
     note_seed = " | ".join(note for note in relationship.continuity_notes[:2] if note)
@@ -84,7 +84,7 @@ def _memory_query_with_relationship(
     return f"{base} | relationship continuity {note_seed}"
 
 
-def _memory_scope_session_ids(
+def _recall_scope_session_ids(
     repository: RuntimeStorageRepository,
     session: Episode,
 ) -> tuple[str, ...]:
@@ -94,10 +94,10 @@ def _memory_scope_session_ids(
     return tuple(dict.fromkeys(state.episode_id for state in lineage))
 
 
-def _memory_scope_reason(
+def _recall_scope_reason(
     *,
     session: Episode,
-    relationship: RelationshipMemoryRecord | None,
+    relationship: RenderedRelationshipView | None,
     scope_session_ids: tuple[str, ...],
 ) -> str:
     reasons: list[str] = []
@@ -115,23 +115,37 @@ def _memory_scope_reason(
     return "; ".join(reasons)
 
 
-def _list_scope_memories(
+def _list_scope_recall_evidence(
     repository: RuntimeStorageRepository,
     *,
     scope_session_ids: tuple[str, ...],
-) -> tuple[MemoryRecord, ...]:
+) -> tuple[RecallEvidence, ...]:
     scope_set = set(scope_session_ids)
     if not scope_set:
         return ()
-    records = [
-        record
-        for record in SQLiteMemoryStore(repository).list(episode_id=None)
-        if record.episode_id in scope_set
-    ]
+    records: list[RecallEvidence] = []
+    for step in repository.list_steps():
+        if step.episode_id not in scope_set:
+            continue
+        content = "\n".join(part for part in (step.summary.strip(), step.outcome.strip()) if part) or step.action
+        records.append(
+            RecallEvidence(
+                evidence_id=f"step:{step.step_id}",
+                episode_id=step.episode_id,
+                kind=step.action,
+                content=content,
+                source_id=step.step_id,
+                source_kind="step",
+                step_id=step.step_id,
+                loop_id=step.loop_id,
+                created_at=step.created_at,
+                metadata=dict(step.metadata),
+            )
+        )
     records.sort(
         key=lambda record: (
             record.created_at if record.created_at is not None else datetime.min.replace(tzinfo=timezone.utc),
-            record.memory_id,
+            record.evidence_id,
         )
     )
     return tuple(records)
@@ -194,53 +208,22 @@ def _snapshot_event_is_user_turn(event: object) -> bool:
 
 
 @dataclass(frozen=True, slots=True)
-class _DurableMemoryCapability:
-    memory_runtime: MemoryRuntime
+class _DurableRecallCapability:
+    recall_runtime: RecallRuntime
     repository: RuntimeStorageRepository
     descriptor: CapabilityDescriptor = CapabilityDescriptor(
-        capability_id="cli.memory.runtime",
-        kind="memory",
+        capability_id="cli.recall.runtime",
+        kind="recall",
         version="1.0.0",
-        metadata={"description": "Repo-backed memory adapter for CLI kernel flows."},
+        metadata={"description": "Repo-backed evidence recall adapter for CLI kernel flows."},
     )
 
-    def record(self, memory: MemoryRecord) -> None:
-        self.memory_runtime.store.upsert(memory)
-
-    def search(
-        self,
-        session_id: str,
-        query: str,
-        *,
-        work_item_ids: tuple[str, ...] = (),
-        scope_episode_ids: tuple[str, ...] = (),
-        scope_reason: str = "",
-    ) -> tuple[MemoryRecord, ...]:
-        session = self.repository.load_episode_state(session_id)
-        resolved_query = query.strip() or _memory_query_seed(self.repository)
-        requested_scopes = ["episode", "lineage"]
-        if session is not None and session.elephant_id:
-            requested_scopes.append("elephant")
-        if session is not None and session.personal_model_id:
-            requested_scopes.append("personal_model")
-        request = EvidenceRetrievalRequest(
-            episode_id=session_id,
-            personal_model_id=session.personal_model_id if session is not None else "personal-model:unknown",
-            elephant_id=session.elephant_id if session is not None else None,
-            lineage_episode_ids=scope_episode_ids or ((session_id,) if session is None else _memory_scope_session_ids(self.repository, session)),
-            work_item_ids=work_item_ids,
-            query=resolved_query,
-            scopes=tuple(requested_scopes),
-            latency_mode="fast",
-            limit=5,
-            scope_reason=scope_reason,
-        )
-        result = self.memory_runtime.retrieve_evidence(request)
-        return tuple(candidate.memory for candidate in result.candidates)
+    def retrieve_evidence(self, request: EvidenceRetrievalRequest):
+        return self.recall_runtime.retrieve_evidence(request)
 
 
 @dataclass(frozen=True, slots=True)
-class _PreviewMemoryCapability:
+class _PreviewRecallCapability:
     session: Episode
     snapshot_path: Path
     descriptor: Any = None
@@ -253,30 +236,31 @@ class _PreviewMemoryCapability:
         work_item_ids: tuple[str, ...] = (),
         scope_episode_ids: tuple[str, ...] = (),
         scope_reason: str = "",
-    ) -> tuple[MemoryRecord, ...]:
+    ) -> tuple[RecallEvidence, ...]:
         snapshot = self._load_snapshot()
         if snapshot is not None:
-            memories = snapshot.get("memories", ())
-            if memories:
-                return tuple(MemoryRecord(**self._restore_memory(memory)) for memory in memories)
+            recall_items = snapshot.get("recall_items", ())
+            if recall_items:
+                return tuple(RecallEvidence(**self._restore_recall_item(item)) for item in recall_items)
         now = _utc_now()
         return (
-            MemoryRecord(
-                memory_id=f"memory:{session_id}:profile",
+            RecallEvidence(
+                evidence_id=f"recall:{session_id}:profile",
                 episode_id=session_id,
                 kind="semantic",
                 content=f"Profile continuity is bound to {self.session.personal_model_id}.",
-                work_item_refs=work_item_ids,
+                source_kind="preview",
+                work_item_ids=work_item_ids,
                 tags=("profile", "continuity"),
                 created_at=now,
             ),
-            MemoryRecord(
-                memory_id=f"memory:{session_id}:query",
+            RecallEvidence(
+                evidence_id=f"recall:{session_id}:query",
                 episode_id=session_id,
                 kind="episodic",
                 content=f"Most recent query: {query}",
-                source_event_id=None,
-                work_item_refs=work_item_ids,
+                source_kind="preview",
+                work_item_ids=work_item_ids,
                 tags=("query", "scope-aware") if scope_episode_ids or scope_reason else ("query",),
                 created_at=now,
             ),
@@ -285,12 +269,12 @@ class _PreviewMemoryCapability:
     def _load_snapshot(self) -> dict[str, Any] | None:
         return load_snapshot_payload(self.snapshot_path)
 
-    def _restore_memory(self, memory: Mapping[str, Any]) -> dict[str, Any]:
-        payload = dict(memory)
+    def _restore_recall_item(self, item: Mapping[str, Any]) -> dict[str, Any]:
+        payload = dict(item)
         created_at = payload.get("created_at")
         if created_at is not None:
             payload["created_at"] = _restore_datetime(str(created_at))
-        for field_name in ("work_item_refs", "tags"):
+        for field_name in ("work_item_ids", "tags"):
             value = payload.get(field_name)
             if value is not None:
                 payload[field_name] = tuple(value)
@@ -341,17 +325,17 @@ class _CliContextCapability:
         self,
         session: Episode,
         work_items: tuple[object, ...],
-        memories: tuple[MemoryRecord, ...],
+        recall_items: tuple[RecallEvidence, ...],
         *,
         state_focus: StateFocusDecision | None = None,
     ) -> ContextBundle:
-        return self.assemble_detailed(session, work_items, memories, state_focus=state_focus).bundle
+        return self.assemble_detailed(session, work_items, recall_items, state_focus=state_focus).bundle
 
     def assemble_detailed(
         self,
         session: Episode,
         work_items: tuple[object, ...],
-        memories: tuple[MemoryRecord, ...],
+        recall_items: tuple[RecallEvidence, ...],
         *,
         state_focus: StateFocusDecision | None = None,
         decision: object | None = None,
@@ -363,14 +347,14 @@ class _CliContextCapability:
         return self._assemble_result(
             session=session,
             work_items=work_items,
-            memories=memories,
+            recall_items=recall_items,
             loaded=loaded,
             state_focus=state_focus,
             artifacts=self._capability_artifacts(
                 session,
                 loaded,
                 work_items=work_items,
-                memories=memories,
+                recall_items=recall_items,
                 decision=decision,
                 plan=plan,
                 continuity=continuity,
@@ -383,7 +367,7 @@ class _CliContextCapability:
         *,
         session: Episode,
         work_items: tuple[object, ...],
-        memories: tuple[MemoryRecord, ...],
+        recall_items: tuple[RecallEvidence, ...],
         context: ContextBundle,
         state_focus: StateFocusDecision | None,
         decision: object | None,
@@ -393,7 +377,7 @@ class _CliContextCapability:
         return self.assemble_detailed(
             session,
             work_items,
-            memories,
+            recall_items,
             state_focus=state_focus,
             decision=decision,
             plan=plan,
@@ -406,7 +390,7 @@ class _CliContextCapability:
         *,
         session: Episode,
         work_items: tuple[object, ...],
-        memories: tuple[MemoryRecord, ...],
+        recall_items: tuple[RecallEvidence, ...],
         loaded: LoadedProfile,
         state_focus: StateFocusDecision | None,
         artifacts: tuple[str, ...],
@@ -422,7 +406,7 @@ class _CliContextCapability:
         assembled = runtime.assemble_detailed(
             session,
             work_items,
-            memories,
+            recall_items,
             recent_loop_context=(),
             state_focus=state_focus,
             profile_snapshot_refs=prompt_contract.profile_snapshot_refs,
@@ -431,7 +415,7 @@ class _CliContextCapability:
         bundle_envelope = assembled.bundle.prompt_envelope
         bundle = replace(
             assembled.bundle,
-            bundle_id=bundle_id or f"bundle:{session.episode_id}:{len(work_items)}:{len(memories)}",
+            bundle_id=bundle_id or f"bundle:{session.episode_id}:{len(work_items)}:{len(recall_items)}",
             instruction_refs=prompt_contract.instruction_refs + capability_prefix_lines,
             prompt_envelope=bundle_envelope,
         )
@@ -469,7 +453,7 @@ class _CliContextCapability:
     ) -> ContextProjectionCompactionResult | None:
         return self.compact_session_projection(session_id=session_id, reason=reason, force=True)
 
-    def flush_projection_memory(self) -> None:
+    def flush_projection_cache(self) -> None:
         object.__setattr__(self, "last_projection_compaction", None)
 
     def _compact_frozen_epoch_if_needed(
@@ -503,7 +487,7 @@ class _CliContextCapability:
         loaded: LoadedProfile,
     ) -> tuple[str, ...]:
         lines: list[str] = []
-        _pm_state, pm_records = self._resolve_pm_state_and_records(session)
+        _pm_state, pm_facts = self._resolve_pm_state_and_facts(session)
         skill_prompt_context = self.skill_prompt_context
         if skill_prompt_context is None and self.skill_runtime is not None:
             skill_prompt_context = SkillPromptContextBuilder(
@@ -515,7 +499,7 @@ class _CliContextCapability:
             )
         if skill_prompt_context is not None:
             lines.extend(skill_prompt_context.stable_prefix_lines(session))
-        pending_count = self._pending_proposal_count_from_records(pm_records)
+        pending_count = self._pending_proposal_count_from_facts(pm_facts)
         if pending_count > 0:
             lines.append("")
             lines.append(f"### Pending Personal Model proposals ({pending_count})")
@@ -532,7 +516,7 @@ class _CliContextCapability:
         loaded: LoadedProfile,
         *,
         work_items: tuple[object, ...] = (),
-        memories: tuple[MemoryRecord, ...] = (),
+        recall_items: tuple[RecallEvidence, ...] = (),
         decision: object | None = None,
         plan: PlanDraft | None = None,
         continuity: EpisodeContinuityState | None = None,
@@ -540,7 +524,7 @@ class _CliContextCapability:
         artifacts = list(
             self._generation_artifacts(
                 work_items=work_items,
-                memories=memories,
+                recall_items=recall_items,
                 decision=decision,
                 plan=plan,
                 continuity=continuity,
@@ -574,8 +558,8 @@ class _CliContextCapability:
             return ""
         return "runtime-paths: " + "; ".join(lines)
 
-    def _resolve_pm_state_and_records(self, session: Episode) -> tuple[Any, tuple[Any, ...]]:
-        """Resolve PM state and records once for all PM-related prompt sections."""
+    def _resolve_pm_state_and_facts(self, session: Episode) -> tuple[Any, tuple[Any, ...]]:
+        """Resolve PM state and facts once for PM-related prompt sections."""
         state = None
         elephant_id = str(session.elephant_id or "").strip()
         if elephant_id:
@@ -592,44 +576,49 @@ class _CliContextCapability:
             elif len(active_states) == 1: state = active_states[0]
         if state is None:
             return (None, ())
-        records = tuple(self.repository.list_records(owner_scope="personal_model", personal_model_id=state.personal_model_id))
-        return (state, records)
+        list_facts = getattr(self.repository, "list_personal_model_facts", None)
+        if not callable(list_facts):
+            return (state, ())
+        try:
+            facts = tuple(list_facts(personal_model_id=state.personal_model_id, status="active"))
+        except Exception:
+            facts = ()
+        return (state, facts)
 
-    def _recently_learned_from_records(self, records: tuple[Any, ...]) -> tuple[str, ...]:
-        """Find PM components committed in last 24h for UX visibility."""
+    def _recently_learned_from_facts(self, facts: tuple[Any, ...]) -> tuple[str, ...]:
+        """Find PM facts committed in last 24h for UX visibility."""
         try:
             from datetime import timedelta, datetime, timezone
             cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
             recent: list[str] = []
-            for record in records:
-                payload = record.payload if isinstance(record.payload, dict) else {}
-                metadata = record.metadata if isinstance(record.metadata, dict) else {}
-                if str(payload.get("behavioral_state") or metadata.get("behavioral_state") or "") != "active": continue
-                promoted_at = str(payload.get("promoted_at") or payload.get("last_reinforced_at") or "")
-                if not promoted_at: continue
+            for fact in facts:
+                metadata = dict(getattr(fact, "metadata", {}) or {})
+                committed_at = getattr(fact, "committed_at", None)
+                promoted_at = committed_at.isoformat() if committed_at is not None else ""
+                if not promoted_at:
+                    continue
                 try:
                     if datetime.fromisoformat(promoted_at.replace("Z", "+00:00")) < cutoff: continue
                 except (ValueError, TypeError): continue
-                effect = str(metadata.get("behavioral_effect") or payload.get("behavioral_effect") or "").strip()
+                effect = str(metadata.get("behavioral_effect") or getattr(fact, "text", "") or "").strip()
                 if effect and effect not in recent: recent.append(_compact_runtime_text(effect, limit=120))
             return tuple(recent[:4])
         except Exception:
             return ()
 
-    def _pending_proposal_count_from_records(self, records: tuple[Any, ...]) -> int:
-        """Count pending proposals from pre-fetched records."""
-        count = sum(1 for r in records if r.layer_type == "procedural_memory" and str((r.payload if isinstance(r.payload, dict) else {}).get("approval_state") or "").strip() == "pending")
-        return count
+    def _pending_proposal_count_from_facts(self, facts: tuple[Any, ...]) -> int:
+        """Facts are durable claims; pending proposals live in the question ledger."""
+        return 0
 
-    def _personal_model_behavior_contract_from_records(self, records: tuple[Any, ...], *, limit: int = 8) -> str:
+    def _personal_model_behavior_contract_from_facts(self, facts: tuple[Any, ...], *, limit: int = 8) -> str:
         grouped: dict[str, list[str]] = {}
-        for record in records:
-            payload = record.payload if isinstance(record.payload, dict) else {}
-            metadata = record.metadata if isinstance(record.metadata, dict) else {}
-            if str(payload.get("behavioral_state") or metadata.get("behavioral_state") or "active") not in {"active", "candidate"}: continue
-            effect = str(metadata.get("behavioral_effect") or payload.get("behavioral_effect") or "").strip()
+        for fact in facts:
+            metadata = dict(getattr(fact, "metadata", {}) or {})
+            if str(getattr(fact, "status", "") or "active") != "active":
+                continue
+            effect = str(metadata.get("behavioral_effect") or getattr(fact, "text", "") or "").strip()
             if not effect: continue
-            family = str(metadata.get("component_family") or payload.get("kind") or "general").strip()
+            family = str(metadata.get("facet") or getattr(fact, "lens", "") or "general").strip()
             grouped.setdefault(family, [])
             compact = _compact_runtime_text(effect, limit=160)
             if compact not in grouped[family]: grouped[family].append(compact)
@@ -658,7 +647,7 @@ class _CliContextCapability:
         self,
         *,
         work_items: tuple[object, ...],
-        memories: tuple[MemoryRecord, ...],
+        recall_items: tuple[RecallEvidence, ...],
         decision: object | None,
         plan: PlanDraft | None,
         continuity: EpisodeContinuityState | None,
@@ -684,7 +673,7 @@ def _continuity_artifact(continuity: EpisodeContinuityState | None) -> str:
     return f"runtime-continuity: {_compact_runtime_text(continuity.summary, limit=160)}"
 
 
-def _looks_like_profile_dump_memory(text: str) -> bool:
+def _looks_like_profile_dump_evidence(text: str) -> bool:
     normalized = " ".join(str(text or "").casefold().replace("_", " ").split())
     if not normalized:
         return False
@@ -707,23 +696,23 @@ def _looks_like_profile_dump_memory(text: str) -> bool:
     return any(normalized.startswith(marker) for marker in markers)
 
 
-def _memory_summary_artifact(memories: tuple[MemoryRecord, ...], *, limit: int = 3) -> str:
-    """Short human-shaped summary of which memories were surfaced this turn.
+def _recall_summary_artifact(recall_items: tuple[RecallEvidence, ...], *, limit: int = 3) -> str:
+    """Short human-shaped summary of which recall evidence was surfaced this turn.
 
-    The old rendering leaked ``memory_id[kind; work_items=a,b; tags=c,d]``
-    into the attachments slice. memory_id and work_item refs have no
+    The old rendering leaked ``evidence_ref[kind; work_items=a,b; tags=c,d]``
+    into the attachments slice. evidence_ref and work_item refs have no
     tool for the model to dereference; they were pure prompt
-    pollution. We now emit one line per preview using the memory
+    pollution. We now emit one line per preview using the evidence
     content directly — no fallback literal like "no previews available"
     which is worse than silence.
     """
-    if not memories:
+    if not recall_items:
         return ""
     preview_texts: list[str] = []
-    preview_count = min(len(memories), max(1, limit))
-    for memory in memories[:preview_count]:
-        content = str(getattr(memory, "content", "") or "")
-        if _looks_like_profile_dump_memory(content):
+    preview_count = min(len(recall_items), max(1, limit))
+    for evidence in recall_items[:preview_count]:
+        content = str(getattr(evidence, "content", "") or "")
+        if _looks_like_profile_dump_evidence(content):
             continue
         snippet = _compact_runtime_text(content, limit=80)
         if snippet:
@@ -732,7 +721,7 @@ def _memory_summary_artifact(memories: tuple[MemoryRecord, ...], *, limit: int =
         # Nothing worth showing — omit the whole line instead of echoing
         # "0 surfaced" / "no previews".
         return ""
-    remainder = len(memories) - len(preview_texts)
+    remainder = len(recall_items) - len(preview_texts)
     suffix = f" (+{remainder} more)" if remainder > 0 else ""
     previews = " · ".join(preview_texts)
     return f"Recently surfaced notes: {previews}{suffix}"
@@ -775,7 +764,7 @@ class _PreviewModelProviderCapability:
     ) -> ExecutionResult:
         summary = (
             f"Next step for {profile.display_name} in {session.episode_id}: "
-            f"continue from elephant continuity and {len(context.memory_ids)} memory item(s) "
+            f"continue from elephant continuity and {len(context.evidence_refs)} recall evidence item(s) "
             f"with the {model_role} model path."
         )
         return ExecutionResult(

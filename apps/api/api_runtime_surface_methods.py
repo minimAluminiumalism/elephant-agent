@@ -1,4 +1,4 @@
-"""Canonical episode, state, and memory methods for the API runtime app."""
+"""Canonical episode, state, and evidence methods for the API runtime app."""
 
 from __future__ import annotations
 
@@ -7,18 +7,18 @@ from typing import Any, Mapping
 from uuid import uuid4
 
 from apps.provider_runtime import provider_profile_from_payload
-from packages.contracts import Episode, MemoryRecord, State
-from packages.contracts.runtime import PersonalModelRuntimeState
-from packages.evidence import MemoryRuntime
+from packages.contracts import Episode, State
+from packages.contracts.runtime import RecallEvidence, PersonalModelRuntimeState
+from packages.evidence.recall_runtime import RecallRuntime
 from packages.growth import ProgressionProjectionBuilder
-from packages.state import resolve_runtime_state
+from packages.state.persistence import resolve_runtime_state
 from packages.storage.repository_support import canonical_personal_model_id
-from packages.operator import (
-    MemoryOperatorDetail,
-    MemorySearchHit,
+from packages.operator.runtime import (
+    RecallEvidenceOperatorDetail,
+    RecallEvidenceSearchHit,
     ProcedureOperatorDetail,
     build_canonical_procedure_detail,
-    build_memory_operator_surface,
+    build_recall_evidence_operator_surface,
 )
 
 from .api_runtime_support import (
@@ -42,7 +42,7 @@ def _latest_loop_record(self, episode_id: str):
 
 
 def _canonical_procedure_details(self, episode: Episode) -> tuple[ProcedureOperatorDetail, ...]:
-    return ()  # Procedural memory removed.
+    return ()  # Procedural evidence removed.
 
 
 def _ensure_episode_state(
@@ -191,8 +191,8 @@ def resume_episode(self, episode_id: str, *, child_episode_id: str | None = None
     )
 
 
-def list_memories(self, episode_id: str) -> tuple[MemoryRecord, ...]:
-    return tuple(self.memory_runtime.store.list(episode_id=episode_id))
+def list_recall_evidence(self, episode_id: str) -> tuple[RecallEvidence, ...]:
+    return tuple(self.recall_runtime.store.list(episode_id=episode_id))
 
 
 def inspect_identity(
@@ -311,7 +311,7 @@ def inspect_context_frame(self, episode_id: str):
     episode = self.repository.load_episode_state(episode_id)
     if episode is None:
         raise KeyError(episode_id)
-    memories = self.list_memories(episode_id)
+    recall_items = self.list_recall_evidence(episode_id)
     latest_loop = _latest_loop_record(self, episode_id)
     recent_loop_context = tuple(
         part
@@ -324,7 +324,7 @@ def inspect_context_frame(self, episode_id: str):
     return self.context_runtime.assemble_detailed(
         episode,
         (),
-        memories,
+        recall_items,
         recent_loop_context=recent_loop_context,
         profile_snapshot_refs=(
             f"personal_model:{episode.personal_model_id}:identity",
@@ -335,44 +335,44 @@ def inspect_context_frame(self, episode_id: str):
     )
 
 
-def inspect_memory_surface(self, episode_id: str):
-    memories = tuple(
-        MemoryOperatorDetail(
-            memory=memory,
-            state=self.memory_runtime.store.state(memory.memory_id),
-            lineage=self.memory_runtime.store.lineage(memory.memory_id),
+def inspect_recall_evidence_surface(self, episode_id: str):
+    evidence_items = tuple(
+        RecallEvidenceOperatorDetail(
+            evidence=evidence,
+            state=self.recall_runtime.store.state(evidence.evidence_id),
+            lineage=self.recall_runtime.store.lineage(evidence.evidence_id),
         )
-        for memory in self.list_memories(episode_id)
+        for evidence in self.list_recall_evidence(episode_id)
     )
-    return build_memory_operator_surface(session_id=episode_id, memories=memories)
+    return build_recall_evidence_operator_surface(session_id=episode_id, evidence_items=evidence_items)
 
 
-def search_memory_surface(self, episode_id: str, *, query: str, limit: int = 5):
-    retrieval = self.memory_runtime.retrieve(
+def search_recall_evidence_surface(self, episode_id: str, *, query: str, limit: int = 5):
+    retrieval = self.recall_runtime.retrieve(
         episode_id,
         query,
         work_item_ids=(),
         limit=limit,
     )
-    memories = tuple(
-        MemoryOperatorDetail(
-            memory=memory,
-            state=self.memory_runtime.store.state(memory.memory_id),
-            lineage=self.memory_runtime.store.lineage(memory.memory_id),
+    evidence_items = tuple(
+        RecallEvidenceOperatorDetail(
+            evidence=evidence,
+            state=self.recall_runtime.store.state(evidence.evidence_id),
+            lineage=self.recall_runtime.store.lineage(evidence.evidence_id),
         )
-        for memory in self.list_memories(episode_id)
+        for evidence in self.list_recall_evidence(episode_id)
     )
     hits = tuple(
-        MemorySearchHit(memory=candidate.record, score=candidate.score, reasons=candidate.reasons)
+        RecallEvidenceSearchHit(evidence=candidate.evidence, score=candidate.score, reasons=candidate.reasons)
         for candidate in retrieval.candidates
     )
-    return build_memory_operator_surface(
+    return build_recall_evidence_operator_surface(
         session_id=episode_id,
-        memories=memories,
+        evidence_items=evidence_items,
         search_query=query,
         search_hits=hits,
         scope_reason=retrieval.scope_reason,
-        index_policy=self.memory_runtime.index_policy(),
+        index_policy=self.recall_runtime.index_policy(),
     )
 
 
@@ -391,7 +391,7 @@ def inspect_episode(self, episode_id: str) -> APIEpisodeInspection:
         raise KeyError(stored_episode.state_id)
     lineage = self.repository.episode_lineage(episode_id)
     latest_loop = _latest_loop_record(self, episode_id)
-    memories = tuple(self.memory_runtime.store.list(episode_id=episode_id))
+    recall_items = tuple(self.recall_runtime.store.list(episode_id=episode_id))
     provider_profile = self.model_provider.active_profile()
     procedures = tuple(detail.procedure for detail in _canonical_procedure_details(self, episode))
     progression = _PROGRESSION_BUILDER.build(
@@ -408,9 +408,9 @@ def inspect_episode(self, episode_id: str) -> APIEpisodeInspection:
         state=state,
         episode=episode,
         lineage=lineage,
-        memories=memories,
+        recall_items=recall_items,
         latest_loop=latest_loop,
-        memory_count=len(memories),
+        recall_count=len(recall_items),
         telemetry_count=len(self.telemetry.events),
         provider_profile=provider_profile,
         progression=progression,

@@ -313,13 +313,6 @@ def _latest_time(items: tuple[Any, ...]) -> str | None:
     return max(candidates) if candidates else None
 
 
-def _is_elephant_identity_memory_entry(entry: Any) -> bool:
-    return (
-        _metadata_value(entry, "canonical_component") == "state-identity"
-        or _metadata_value(entry, "component_kind") == "elephant_identity"
-    )
-
-
 def _learning_snapshot(
     self,
     *,
@@ -358,9 +351,8 @@ def _learning_snapshot(
                 "result_summary": str(result_json.get("summary") or ""),
                 "learning_result": result_json,
                 "result_record_count": 0,
-                "result_memory_entry_count": 0,
-                "result_records": (),
-                "result_memory_entries": (),
+                "result_fact_count": 0,
+                "result_facts": (),
             }
         )
     latest_completed = next((row for row in rows if row.get("status") == "completed"), None)
@@ -467,15 +459,6 @@ def _personal_model_lens_summaries(
     return tuple(rows)
 
 
-def _record_payload_by_id(records: tuple[Any, ...]) -> dict[str, Mapping[str, Any]]:
-    payloads: dict[str, Mapping[str, Any]] = {}
-    for record in records:
-        payload = getattr(record, "payload", None)
-        if isinstance(payload, Mapping):
-            payloads[str(getattr(record, "record_id", ""))] = payload
-    return payloads
-
-
 def _step_metadata(step: Any) -> Mapping[str, str]:
     metadata = getattr(step, "metadata", None)
     return metadata if isinstance(metadata, Mapping) else {}
@@ -492,9 +475,9 @@ def _metadata_int(metadata: Mapping[str, str], key: str) -> int:
         return 0
 
 
-def _source_record_prompt(step: Any, record_payloads: Mapping[str, Mapping[str, Any]]) -> str:
+def _payload_ref_prompt(step: Any, source_payloads: Mapping[str, Mapping[str, Any]]) -> str:
     for ref in getattr(step, "payload_refs", ()) or ():
-        payload = record_payloads.get(str(ref))
+        payload = source_payloads.get(str(ref))
         if payload is None:
             continue
         prompt = str(payload.get("prompt") or payload.get("message") or payload.get("content") or "").strip()
@@ -522,7 +505,7 @@ def _step_event_type(step: Any) -> str:
         return "tool_call"
     if action == "call_tool":
         return "tool_execute"
-    if action == "write_memory":
+    if action == "write_state":
         return "state_write"
     if action in {"reflect", "run_reflection_window"}:
         return "personal_model_update"
@@ -533,13 +516,13 @@ def _step_event_type(step: Any) -> str:
     return action or "step"
 
 
-def _step_event_content(step: Any, record_payloads: Mapping[str, Mapping[str, Any]]) -> str:
+def _step_event_content(step: Any, source_payloads: Mapping[str, Mapping[str, Any]]) -> str:
     metadata = _step_metadata(step)
     event_type = _step_event_type(step)
     if event_type == "user_query":
-        return _metadata_text(metadata, "effective_user_query") or _metadata_text(metadata, "user_query") or _source_record_prompt(step, record_payloads)
+        return _metadata_text(metadata, "effective_user_query") or _metadata_text(metadata, "user_query") or _payload_ref_prompt(step, source_payloads)
     if event_type == "source_input":
-        return _metadata_text(metadata, "user_query") or _metadata_text(metadata, "raw_user_query") or _source_record_prompt(step, record_payloads)
+        return _metadata_text(metadata, "user_query") or _metadata_text(metadata, "raw_user_query") or _payload_ref_prompt(step, source_payloads)
     if event_type == "system_prompt":
         return _metadata_text(metadata, "system_prompt") or _metadata_text(metadata, "model_prompt")
     if event_type == "tool_call":
@@ -554,13 +537,13 @@ def _step_event_content(step: Any, record_payloads: Mapping[str, Mapping[str, An
     return str(getattr(step, "summary", "") or "")
 
 
-def _dashboard_step_row(step: Any, record_payloads: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
+def _dashboard_step_row(step: Any, source_payloads: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
     metadata = _step_metadata(step)
     event_type = _step_event_type(step)
     return {
         **_serialize(step),
         "event_type": event_type,
-        "content": _step_event_content(step, record_payloads),
+        "content": _step_event_content(step, source_payloads),
         "detail": {
             "tool_name": _metadata_text(metadata, "tool_name"),
             "tool_arguments": _metadata_text(metadata, "tool_arguments"),
@@ -589,7 +572,7 @@ def _runtime_traces(
     episodes: tuple[Any, ...],
     loops_by_episode: Mapping[str, tuple[Any, ...]],
     steps_by_loop: Mapping[str, tuple[Any, ...]],
-    record_payloads: Mapping[str, Mapping[str, Any]],
+    source_payloads: Mapping[str, Mapping[str, Any]],
 ) -> tuple[dict[str, Any], ...]:
     traces = []
     for episode in episodes:
@@ -608,7 +591,7 @@ def _runtime_traces(
                     key=lambda item: (int(getattr(item, "sequence", 0) or 0), str(getattr(item, "created_at", "") or "")),
                 )
             )
-            step_rows = tuple(_dashboard_step_row(step, record_payloads) for step in loop_steps)
+            step_rows = tuple(_dashboard_step_row(step, source_payloads) for step in loop_steps)
             timeline.extend(step_rows)
             loop_rows.append({**_serialize(loop), "step_count": len(step_rows), "steps": step_rows})
         traces.append(

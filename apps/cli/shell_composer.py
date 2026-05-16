@@ -1050,7 +1050,7 @@ def build_key_bindings(shell: ProductizedShell | None = None, *, submit=None, al
             "Quick commands",
             "  /help        list every command",
             "  /status      where Elephant Agent stands right now",
-            "  /memory      inspect what Elephant Agent understands and why",
+            "  /recall      inspect Step/Episode recall evidence",
             "  /models      pick the model Elephant Agent reaches for",
             "  /exit        close this thread",
         )

@@ -42,7 +42,7 @@ class PersonalModelLifecycleTest(unittest.TestCase):
         self.assertEqual(payload["end_at"], "2026-05-14T00:00+08:00")
         self.assertEqual(payload["label"], "2026-05-13")
 
-    def test_init_user_card_topics_are_system_protected_prompt_facts(self) -> None:
+    def test_init_user_profile_topics_are_system_protected_prompt_facts(self) -> None:
         for topic in (
             "identity.anchor.name.preferred",
             "identity.style.language.first",
@@ -78,20 +78,11 @@ class PersonalModelLifecycleTest(unittest.TestCase):
             def current_state(self):
                 return type("_State", (), {"state_id": "state-1"})()
 
-            def list_memory_entries(self, **kwargs):
-                return ()
-
             def list_episodes(self, **kwargs):
-                return ()
-
-            def list_records(self, **kwargs):
                 return ()
 
             def list_semantic_index_entries(self, **kwargs):
                 return ()
-
-            def load_record(self, _record_id):
-                return None
 
             def list_steps(self, *, loop_id=None):
                 return (
@@ -149,20 +140,11 @@ class PersonalModelLifecycleTest(unittest.TestCase):
             def current_state(self):
                 return type("_State", (), {"state_id": "state-1"})()
 
-            def list_memory_entries(self, **kwargs):
-                return ()
-
             def list_episodes(self, **kwargs):
-                return ()
-
-            def list_records(self, **kwargs):
                 return ()
 
             def list_semantic_index_entries(self, **kwargs):
                 return ()
-
-            def load_record(self, _record_id):
-                return None
 
             def list_steps(self, *, loop_id=None):
                 return ()
@@ -189,20 +171,11 @@ class PersonalModelLifecycleTest(unittest.TestCase):
             def current_state(self):
                 return type("_State", (), {"state_id": "state-1"})()
 
-            def list_memory_entries(self, **kwargs):
-                return ()
-
             def list_episodes(self, **kwargs):
-                return ()
-
-            def list_records(self, **kwargs):
                 return ()
 
             def list_semantic_index_entries(self, **kwargs):
                 return ()
-
-            def load_record(self, _record_id):
-                return None
 
             def list_steps(self, *, loop_id=None):
                 return ()
@@ -230,20 +203,11 @@ class PersonalModelLifecycleTest(unittest.TestCase):
             def current_state(self):
                 return type("_State", (), {"state_id": "state-1"})()
 
-            def list_memory_entries(self, **kwargs):
-                return ()
-
             def list_episodes(self, **kwargs):
-                return ()
-
-            def list_records(self, **kwargs):
                 return ()
 
             def list_semantic_index_entries(self, **kwargs):
                 return ()
-
-            def load_record(self, _record_id):
-                return None
 
             def list_steps(self, *, loop_id=None):
                 return (
@@ -258,7 +222,7 @@ class PersonalModelLifecycleTest(unittest.TestCase):
                         status="completed",
                         sequence=1,
                         created_at=now,
-                        summary="source record ingested",
+                        summary="source item ingested",
                         metadata={"event_type": "turn.received", "user_query": "当前这轮也提到了家庭。"},
                     ),
                     Step(
@@ -272,7 +236,7 @@ class PersonalModelLifecycleTest(unittest.TestCase):
                         status="completed",
                         sequence=2,
                         created_at=now,
-                        summary="source record ingested",
+                        summary="source item ingested",
                         metadata={"event_type": "turn.received", "user_query": "昨晚我们聊了家庭边界。"},
                     ),
                 )
@@ -301,20 +265,11 @@ class PersonalModelLifecycleTest(unittest.TestCase):
             def current_state(self):
                 return type("_State", (), {"state_id": "state-1"})()
 
-            def list_memory_entries(self, **kwargs):
-                return ()
-
             def list_episodes(self, **kwargs):
-                return ()
-
-            def list_records(self, **kwargs):
                 return ()
 
             def list_semantic_index_entries(self, **kwargs):
                 return ()
-
-            def load_record(self, _record_id):
-                return None
 
             def list_steps(self, *, loop_id=None):
                 return (
@@ -343,7 +298,7 @@ class PersonalModelLifecycleTest(unittest.TestCase):
                         status="completed",
                         sequence=2,
                         created_at=now,
-                        summary="source record ingested",
+                        summary="source item ingested",
                         metadata={"event_type": "turn.received", "user_query": "我说了一个家庭边界的具体场景。"},
                     ),
                 )
@@ -375,20 +330,11 @@ class PersonalModelLifecycleTest(unittest.TestCase):
             def current_state(self):
                 return type("_State", (), {"state_id": "state-1"})()
 
-            def list_memory_entries(self, **kwargs):
-                return ()
-
             def list_episodes(self, **kwargs):
-                return ()
-
-            def list_records(self, **kwargs):
                 return ()
 
             def list_semantic_index_entries(self, **kwargs):
                 return ()
-
-            def load_record(self, _record_id):
-                return None
 
             def list_steps(self, *, loop_id=None):
                 return (
@@ -417,7 +363,7 @@ class PersonalModelLifecycleTest(unittest.TestCase):
                         status="completed",
                         sequence=2,
                         created_at=now,
-                        summary="source record ingested",
+                        summary="source item ingested",
                         metadata={"event_type": "turn.internal", "user_query": "Write Iris's first message about family."},
                     ),
                     Step(
@@ -431,7 +377,7 @@ class PersonalModelLifecycleTest(unittest.TestCase):
                         status="completed",
                         sequence=3,
                         created_at=now,
-                        summary="source record ingested",
+                        summary="source item ingested",
                         metadata={"event_type": "turn.received", "user_query": "我们昨晚聊了家庭权力结构。"},
                     ),
                 )
@@ -472,9 +418,9 @@ class PersonalModelLifecycleTest(unittest.TestCase):
             )[0]
 
         self.assertEqual(claim["recall_policy"], "review")
-        self.assertEqual(claim["memory_lifecycle"], "review")
+        self.assertEqual(claim["retention_lifecycle"], "review")
         self.assertEqual(claim["review_after_days"], "14")
-        self.assertEqual(fact.metadata["memory_lifecycle"], "review")
+        self.assertEqual(fact.metadata["retention_lifecycle"], "review")
         self.assertIn("last_verified_at", fact.metadata)
 
     def test_topics_mode_lists_existing_topic_keys(self) -> None:
@@ -619,7 +565,7 @@ class PersonalModelLifecycleTest(unittest.TestCase):
                     context=ToolRuntimeContext(cwd=Path(tmpdir), personal_model_id=state.personal_model_id),
                     arguments={
                         "action": "delete",
-                        "lens": "knowledge",
+                        "lens": "world",
                         "topic": "xiaohongshu.account.metrics",
                         "ref": created["ref"],
                         "reason": "duplicate invalid claim",
@@ -763,85 +709,6 @@ class PersonalModelLifecycleTest(unittest.TestCase):
         self.assertIn("active", statuses)
         self.assertIn("retired", statuses)
 
-    def test_verify_surface_reports_supported_and_contradicted(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            repository = RuntimeStorageRepository(Path(tmpdir) / "elephant.sqlite3")
-            repository.bootstrap()
-            state = repository.create_state(elephant_id="elephant-life", elephant_name="Life")
-            surface = PersonalModelUnderstandingSurface(repository=repository)
-            surface.update_personal_model(
-                "session-life",
-                action="remember",
-                lens="world",
-                topic="xiaohongshu.account.metrics",
-                text="小红书账号约20条笔记，438赞藏，26粉丝。",
-                reason="seed current account data",
-                source="user_said",
-                recall_policy="review",
-                personal_model_id=state.personal_model_id,
-            )
-
-            supported = surface.verify_personal_model(
-                "session-life",
-                claim="我的小红书账号有26粉丝",
-                topic="xiaohongshu.account.metrics",
-                personal_model_id=state.personal_model_id,
-            )
-            contradicted = surface.verify_personal_model(
-                "session-life",
-                claim="我的小红书账号有999粉丝",
-                topic="xiaohongshu.account.metrics",
-                personal_model_id=state.personal_model_id,
-            )
-
-        self.assertEqual(supported["verdict"], "supported")
-        self.assertEqual(contradicted["verdict"], "contradicted")
-        self.assertTrue(tuple(contradicted.get("conflicting_claims") or ()))
-
-    def test_verify_does_not_support_topic_only_or_unrelated_numeric_matches(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            repository = RuntimeStorageRepository(Path(tmpdir) / "elephant.sqlite3")
-            repository.bootstrap()
-            state = repository.create_state(elephant_id="elephant-life", elephant_name="Life")
-            surface = PersonalModelUnderstandingSurface(repository=repository)
-            surface.update_personal_model(
-                "session-life",
-                action="remember",
-                lens="world",
-                topic="identity.mbti.type",
-                text="Zoey 是 ENFP 类型。",
-                reason="seed personality fact",
-                source="user_said",
-                recall_policy="stable",
-                personal_model_id=state.personal_model_id,
-            )
-            surface.update_personal_model(
-                "session-life",
-                action="remember",
-                lens="world",
-                topic="xiaohongshu.account.metrics",
-                text="小红书账号有26粉丝。",
-                reason="seed unrelated numeric fact",
-                source="user_said",
-                recall_policy="review",
-                personal_model_id=state.personal_model_id,
-            )
-
-            unknown = surface.verify_personal_model(
-                "session-life",
-                claim="Zoey 喜欢喝咖啡",
-                topic="identity.mbti.type",
-                personal_model_id=state.personal_model_id,
-            )
-            unrelated_number = surface.verify_personal_model(
-                "session-life",
-                claim="Zoey 有999只狗",
-                personal_model_id=state.personal_model_id,
-            )
-
-        self.assertEqual(unknown["verdict"], "unknown")
-        self.assertEqual(unrelated_number["verdict"], "unknown")
-
     def test_question_answer_writes_dot_path_topic(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             repository = RuntimeStorageRepository(Path(tmpdir) / "elephant.sqlite3")
@@ -971,38 +838,6 @@ class PersonalModelLifecycleTest(unittest.TestCase):
         self.assertEqual(len(active), 1)
         self.assertEqual(active[0].metadata.get("restored_by"), "tool.personal_model.update")
 
-    def test_verify_mode_rejects_numeric_mismatch(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            repository = RuntimeStorageRepository(Path(tmpdir) / "elephant.sqlite3")
-            repository.bootstrap()
-            state = repository.create_state(elephant_id="elephant-life", elephant_name="Life")
-            surface = PersonalModelUnderstandingSurface(repository=repository)
-            surface.update_personal_model(
-                "session-life",
-                action="remember",
-                lens="world",
-                topic="xiaohongshu.account.metrics",
-                text="小红书账号约20条笔记，438赞藏，24粉丝。",
-                reason="seed current account data",
-                source="user_said",
-                recall_policy="review",
-                personal_model_id=state.personal_model_id,
-            )
-
-            found = surface.verify_personal_model(
-                "session-life",
-                claim="小红书账号有24粉丝",
-                personal_model_id=state.personal_model_id,
-            )
-            missing = surface.verify_personal_model(
-                "session-life",
-                claim="小红书账号有999粉丝",
-                personal_model_id=state.personal_model_id,
-            )
-
-        self.assertEqual(found["verdict"], "supported")
-        self.assertEqual(missing["verdict"], "contradicted")
-
     def test_health_and_related_reasons_with_clean_topics(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             repository = RuntimeStorageRepository(Path(tmpdir) / "elephant.sqlite3")
@@ -1122,7 +957,7 @@ class PersonalModelLifecycleTest(unittest.TestCase):
                 status="active",
             )[0]
 
-        self.assertEqual(fact.metadata["memory_lifecycle"], "preference")
+        self.assertEqual(fact.metadata["retention_lifecycle"], "preference")
         self.assertNotIn("last_verified_at", fact.metadata)
 
 

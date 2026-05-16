@@ -8,10 +8,10 @@ from uuid import uuid4
 
 from packages.contracts.layers import Episode
 from packages.continuity import (
-    RelationshipMemoryPolicy,
+    RelationshipPolicy,
     apply_episode_continuity_state,
     build_episode_continuity_state,
-    build_relationship_memory_policy,
+    build_relationship_policy,
 )
 from packages.contracts.runtime import (
     EpisodeContinuityState,
@@ -166,7 +166,7 @@ class EpisodeLifecycleService:
     ) -> Episode:
         return apply_episode_continuity_state(episode, continuity)
 
-    def relationship_memory_policy(
+    def relationship_projection_policy(
         self,
         profile_mode: str,
         *,
@@ -175,16 +175,16 @@ class EpisodeLifecycleService:
         preserve_preferences: bool = True,
         preserve_corrections: bool = True,
         preserve_emotional_context: bool = True,
-        allowed_memory_kinds: tuple[str, ...] = ("relationship", "preference", "continuity"),
-    ) -> RelationshipMemoryPolicy:
-        return build_relationship_memory_policy(
+        allowed_signal_kinds: tuple[str, ...] = ("relationship", "preference", "continuity"),
+    ) -> RelationshipPolicy:
+        return build_relationship_policy(
             profile_mode=profile_mode,
             text_first=text_first,
             preserve_relationship_timeline=preserve_relationship_timeline,
             preserve_preferences=preserve_preferences,
             preserve_corrections=preserve_corrections,
             preserve_emotional_context=preserve_emotional_context,
-            allowed_memory_kinds=allowed_memory_kinds,
+            allowed_signal_kinds=allowed_signal_kinds,
         )
 
 

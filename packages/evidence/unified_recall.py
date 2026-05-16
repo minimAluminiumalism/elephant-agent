@@ -1,11 +1,8 @@
 """Unified recall entry point shared by CLI / API / Gateway / prefetch.
 
-Before: four call sites duplicated the "load entries → wrap as
-RecallCandidate → rank_recall_candidates()" pattern with slightly
-different filters. The hybrid semantic index was implemented but never
-consulted — `memory.recall` always took the simple lexical path, even
-when an embedding backend was available. This was the core "memory tool
-long like hermes but doesn't work" gap.
+Before: call sites duplicated the "load sources → wrap as RecallCandidate
+→ rank_recall_candidates()" pattern with slightly different filters. The
+hybrid semantic index was implemented but not consistently consulted.
 
 Now: every surface calls `unified_recall(...)` which:
 
@@ -30,13 +27,13 @@ from zoneinfo import ZoneInfo
 import re
 from typing import Any, Mapping, Protocol
 
-from packages.contracts import Record, SemanticIndexEntry
+from packages.contracts import SemanticIndexEntry
 from packages.semantic_index import (
     HybridSemanticSearcher,
     SemanticSearchQuery,
 )
 
-from .memory_recall_support import (
+from .recall_support import (
     RecallCandidate,
     RecallHit,
     rank_recall_candidates,
@@ -57,7 +54,6 @@ __all__ = [
     "recall_timeline",
     "unified_recall",
     "recall_time_range_from_payload",
-    "candidates_from_memory_entries",
     "candidates_from_episodes",
     "candidates_from_steps",
     "summarize_recall_hits",
@@ -66,7 +62,7 @@ __all__ = [
 
 # Debug/raw recall may inspect all historical material. The public conversation
 # search tool defaults to `CONVERSATION_SEARCH_SCOPES` so internal source/tool
-# records do not compete with user-visible turns and episode summaries.
+# material does not compete with user-visible turns and episode summaries.
 CONVERSATION_RECALL_SCOPES = ("steps", "episodes")
 CONVERSATION_SEARCH_SCOPES = ("steps", "episodes")
 _SCOPE_TO_OWNER_SCOPE: Mapping[str, str] = {
@@ -89,7 +85,7 @@ _NOISY_STEP_ACTIONS = frozenset(
         "effective_user_query",
         "model",
         "reflect",
-        "write_memory",
+        "write_state",
     }
 )
 _USER_TURN_ACTIONS = frozenset({"record_input"})
@@ -115,7 +111,7 @@ class RecallDocument:
     episode_id: str | None = None
     loop_id: str | None = None
     step_id: str | None = None
-    source_record_id: str | None = None
+    source_id: str | None = None
     metadata: Mapping[str, str] | None = None
     importance: float = 0.5
 
@@ -127,7 +123,7 @@ class RecallDocument:
             "episode_id": self.episode_id or "",
             "loop_id": self.loop_id or "",
             "step_id": self.step_id or "",
-            "source_record_id": self.source_record_id or "",
+            "source_id": self.source_id or "",
         }
         return RecallCandidate(
             title=self.text[:72].strip() or self.kind,
@@ -159,15 +155,6 @@ class UnifiedRecallRepository(Protocol):
     protocol already via the storage package.
     """
 
-    def list_memory_entries(
-        self,
-        *,
-        owner_scope: str | None = None,
-        state_id: str | None = None,
-        personal_model_id: str | None = None,
-    ) -> tuple[Any, ...]:
-        ...
-
     def list_episodes(
         self,
         *,
@@ -179,15 +166,6 @@ class UnifiedRecallRepository(Protocol):
     def list_steps(self, *, loop_id: str | None = None) -> tuple[Any, ...]:
         ...
 
-    def list_records(
-        self,
-        *,
-        owner_scope: str | None = None,
-        state_id: str | None = None,
-        personal_model_id: str | None = None,
-    ) -> tuple[Record, ...]:
-        ...
-
     def list_semantic_index_entries(
         self,
         *,
@@ -197,9 +175,6 @@ class UnifiedRecallRepository(Protocol):
         provider_id: str | None = None,
         model_id: str | None = None,
     ) -> tuple[SemanticIndexEntry, ...]:
-        ...
-
-    def load_record(self, record_id: str) -> Record | None:
         ...
 
 
@@ -257,91 +232,28 @@ def _step_importance(action: str) -> float:
     return 0.45
 
 
-def _record_metadata(record: Record) -> tuple[Mapping[str, object], Mapping[str, object]]:
-    return dict(record.payload or {}), dict(record.metadata or {})
-
-
-def _record_is_internal_source(payload: Mapping[str, object]) -> bool:
-    return str(payload.get("event_type") or "").strip().lower() == "turn.internal" or _is_startup_surface(payload.get("surface"))
-
-
-def _record_is_tool_material(record: Record, payload: Mapping[str, object], metadata: Mapping[str, object]) -> bool:
-    layer = str(record.layer_type or "").strip().lower()
-    schema = str(record.schema_version or "").strip().lower()
-    kind = str(record.kind or "").strip().lower()
-    if any("tool" in part for part in (layer, schema, kind)):
-        return True
-    if schema == "learning.job.source/v1" or str(metadata.get("source") or "").strip().lower() == "background_learning":
-        return True
-    return bool(str(payload.get("tool_name") or metadata.get("tool_name") or "").strip())
-
-
-def _is_step_record(record: Record | None) -> bool:
-    if record is None:
+def _is_step_document(document: Any | None) -> bool:
+    if document is None:
         return False
-    metadata = dict(getattr(record, "metadata", {}) or {})
+    metadata = dict(getattr(document, "metadata", {}) or {})
+    source_id = str(getattr(document, "source_id", "") or getattr(document, "document_id", "") or "")
     return (
-        str(getattr(record, "schema_version", "") or "") == "step/v1"
-        or str(getattr(record, "layer_type", "") or "") == "step"
+        str(getattr(document, "schema_version", "") or "") == "step/v1"
+        or str(getattr(document, "layer_type", "") or "") == "step"
         or str(metadata.get("kind") or "") == "step"
-        or str(getattr(record, "record_id", "") or "").startswith("record:step:")
+        or source_id.startswith("step:")
     )
 
 
-def _is_episode_record(record: Record | None) -> bool:
-    if record is None:
+def _is_episode_document(document: Any | None) -> bool:
+    if document is None:
         return False
+    source_id = str(getattr(document, "source_id", "") or getattr(document, "document_id", "") or "")
     return (
-        str(getattr(record, "schema_version", "") or "") == "episode_summary/v1"
-        or str(getattr(record, "layer_type", "") or "") == "episode_summary"
-        or str(getattr(record, "record_id", "") or "").startswith("episode:")
+        str(getattr(document, "schema_version", "") or "") == "episode_summary/v1"
+        or str(getattr(document, "layer_type", "") or "") == "episode_summary"
+        or source_id.startswith("episode:")
     )
-
-
-def _record_is_recall_noise(record: Record) -> bool:
-    payload, metadata = _record_metadata(record)
-    if _is_step_record(record) or _is_episode_record(record):
-        return True
-    if _record_is_tool_material(record, payload, metadata):
-        return True
-    if _record_is_internal_source(payload):
-        return True
-    return False
-
-
-def documents_from_memory_entries(entries: Iterable[Any], *, scope_label: str) -> list[RecallDocument]:
-    out: list[RecallDocument] = []
-    for entry in entries:
-        if getattr(entry, "status", "") not in {"active", "committed"}:
-            continue
-        content = str(getattr(entry, "content", "") or "").strip()
-        if not content:
-            continue
-        kind = str(getattr(entry, "kind", "") or "").strip() or "note"
-        raw_importance = getattr(entry, "importance", 0.5)
-        try:
-            importance = float(raw_importance)
-        except (TypeError, ValueError):
-            importance = 0.5
-        metadata = dict(getattr(entry, "metadata", {}) or {})
-        out.append(
-            RecallDocument(
-                document_id=str(getattr(entry, "memory_entry_id", "") or content[:32]),
-                kind=f"{scope_label}:{kind}" if scope_label else kind,
-                text=content,
-                scope=scope_label,
-                when=getattr(entry, "updated_at", None) or getattr(entry, "created_at", None),
-                personal_model_id=getattr(entry, "personal_model_id", None),
-                state_id=getattr(entry, "state_id", None),
-                metadata={**metadata, "owner_scope": str(getattr(entry, "owner_scope", "") or scope_label), "importance": str(importance)},
-                importance=importance,
-            )
-        )
-    return out
-
-
-def candidates_from_memory_entries(entries: Iterable[Any], *, scope_label: str) -> list[RecallCandidate]:
-    return [document.candidate() for document in documents_from_memory_entries(entries, scope_label=scope_label)]
 
 
 def documents_from_episodes(episodes: Iterable[Any]) -> list[RecallDocument]:
@@ -363,7 +275,7 @@ def documents_from_episodes(episodes: Iterable[Any]) -> list[RecallDocument]:
                 personal_model_id=getattr(episode, "personal_model_id", None),
                 state_id=getattr(episode, "state_id", None),
                 episode_id=getattr(episode, "episode_id", None),
-                metadata={**{str(k): str(v) for k, v in metadata.items()}, "memory_lifecycle": "episode"},
+                metadata={**{str(k): str(v) for k, v in metadata.items()}, "recall_source": "episode"},
             )
         )
     return out
@@ -393,8 +305,8 @@ def documents_from_steps(steps: Iterable[Any]) -> list[RecallDocument]:
                 episode_id=getattr(step, "episode_id", None),
                 loop_id=getattr(step, "loop_id", None),
                 step_id=getattr(step, "step_id", None),
-                source_record_id=str(payload_refs[0]) if payload_refs else None,
-                metadata={**metadata, "memory_lifecycle": "episode", "owner_scope": "state"},
+                source_id=str(payload_refs[0]) if payload_refs else None,
+                metadata={**metadata, "recall_source": "step", "owner_scope": "state"},
                 importance=_step_importance(str(getattr(step, "action", "") or "")),
             )
         )
@@ -403,32 +315,6 @@ def documents_from_steps(steps: Iterable[Any]) -> list[RecallDocument]:
 
 def candidates_from_steps(steps: Iterable[Any]) -> list[RecallCandidate]:
     return [document.candidate() for document in documents_from_steps(steps)]
-
-
-def documents_from_records(records: Iterable[Record], *, scope_label: str) -> list[RecallDocument]:
-    out: list[RecallDocument] = []
-    for record in records:
-        if _record_is_recall_noise(record):
-            continue
-        text = _record_payload_text(record)
-        if not text:
-            continue
-        metadata = {str(k): str(v) for k, v in dict(getattr(record, "metadata", {}) or {}).items()}
-        out.append(
-            RecallDocument(
-                document_id=record.record_id,
-                kind=f"source:{record.layer_type or record.schema_version or record.kind}",
-                text=text,
-                scope=scope_label,
-                when=getattr(record, "created_at", None),
-                personal_model_id=getattr(record, "personal_model_id", None),
-                state_id=getattr(record, "state_id", None),
-                source_record_id=record.record_id,
-                metadata={**metadata, "schema_version": record.schema_version, "layer_type": str(record.layer_type or ""), "owner_scope": str(record.owner_scope or "")},
-                importance=0.5,
-            )
-        )
-    return out
 
 
 def _step_text(step: Any, metadata: Mapping[str, str]) -> str:
@@ -451,17 +337,6 @@ def _step_text(step: Any, metadata: Mapping[str, str]) -> str:
     if _is_filtered_step(action, metadata, text=text):
         return ""
     return text
-
-
-def _record_payload_text(record: Record) -> str:
-    payload = dict(record.payload or {})
-    metadata = dict(record.metadata or {})
-    pieces: list[str] = []
-    for key in ("title", "summary", "content", "text", "message", "prompt", "reason"):
-        value = str(payload.get(key) or metadata.get(key) or "").strip()
-        if value:
-            pieces.append(value)
-    return " | ".join(dict.fromkeys(pieces))
 
 
 def _collect_recall_documents(
@@ -549,39 +424,36 @@ def _match_has_text_anchor(match: Any) -> bool:
     return bool(_TEXT_ANCHOR_SIGNALS.intersection(reasons | signal_scores))
 
 
-def _semantic_step_is_noise(record: Record | None, hit: RecallHit | None = None) -> bool:
-    if record is None:
+def _semantic_step_is_noise(document: Any | None, hit: RecallHit | None = None) -> bool:
+    if document is None:
         return True
-    metadata = {str(k): str(v) for k, v in dict(getattr(record, "metadata", {}) or {}).items()}
+    metadata = {str(k): str(v) for k, v in dict(getattr(document, "metadata", {}) or {}).items()}
     action = str(metadata.get("action") or "").strip()
     text = str(getattr(hit, "content", "") if hit is not None else "")
     if not text:
-        payload = dict(getattr(record, "payload", {}) or {})
+        payload = dict(getattr(document, "payload", {}) or {})
         text = str(payload.get("text") or payload.get("content") or payload.get("summary") or "")
     return _is_filtered_step(action, metadata, text=text)
 
 
-def _hit_from_match(match: Any, record: Record | None) -> RecallHit | None:
+def _hit_from_match(match: Any, document: Any | None) -> RecallHit | None:
     """Build a human-readable hit from a HybridSemanticSearcher match."""
     entry = getattr(match, "semantic_index_entry", None)
     owner_scope = str(getattr(entry, "owner_scope", "") or "")
     metadata: Mapping[str, str] = getattr(entry, "metadata", {}) or {}
     when_value: datetime | None = getattr(entry, "created_at", None)
-    # Prefer record.created_at for display stability.
-    if record is not None:
-        when_value = getattr(record, "created_at", when_value) or when_value
+    if document is not None:
+        when_value = getattr(document, "created_at", when_value) or when_value
 
     text = ""
-    if record is not None:
-        payload = record.payload or {}
+    if document is not None:
+        payload = document.payload or {}
         if isinstance(payload, Mapping):
             for key in ("content", "text", "summary", "title"):
                 candidate = str(payload.get(key) or "").strip()
                 if candidate:
                     text = candidate
                     break
-    # Episode-scope records store their text under 'text' key; personal_model
-    # records may only surface via metadata.
     if not text:
         text = str(metadata.get("text") or "").strip()
     if not text:
@@ -597,8 +469,8 @@ def _hit_from_match(match: Any, record: Record | None) -> RecallHit | None:
     hit_metadata = {
         **dict(metadata),
         "owner_scope": owner_scope,
-        "schema_version": str(getattr(record, "schema_version", "") or "") if record is not None else "",
-        "layer_type": str(getattr(record, "layer_type", "") or "") if record is not None else "",
+        "schema_version": str(getattr(document, "schema_version", "") or "") if document is not None else "",
+        "layer_type": str(getattr(document, "layer_type", "") or "") if document is not None else "",
         "semantic_reasons": ",".join(str(reason) for reason in tuple(getattr(match, "reasons", ()) or ())),
     }
     return RecallHit(
@@ -623,7 +495,7 @@ def summarize_recall_hits(
     Why this exists: the raw RecallHit stream is good for machine ranking
     but not for LLM consumption. Hermes-agent's `session_search` returns
     narrative lines like "4月15日和 Alice 聊过 AA 项目：结论是X" because
-    that's both (a) shorter than raw records, (b) easier for the model
+    that's both (a) shorter than raw hits, (b) easier for the model
     to assimilate into its next reply. Mem0 (2025) and Letta also funnel
     recall output through a compact narrative layer before prompt
     injection.
@@ -902,13 +774,13 @@ def unified_recall(
         for match in matches:
             if require_text_anchor and not _match_has_text_anchor(match):
                 continue
-            record = getattr(match, "record", None)
-            if scope == "steps" and not _is_step_record(record):
+            document = getattr(match, "document", None)
+            if scope == "steps" and not _is_step_document(document):
                 continue
-            if scope in {"episodes", "episode"} and not _is_episode_record(record):
+            if scope in {"episodes", "episode"} and not _is_episode_document(document):
                 continue
-            hit = _hit_from_match(match, record)
-            if scope == "steps" and _semantic_step_is_noise(record, hit):
+            hit = _hit_from_match(match, document)
+            if scope == "steps" and _semantic_step_is_noise(document, hit):
                 continue
             hit_episode_id = dict(getattr(hit, "extra_metadata", {}) or {}).get("episode_id") if hit is not None else ""
             if hit is not None and not _is_excluded_episode(hit_episode_id, excluded) and _in_time_range(hit.when_datetime, time_range):
@@ -916,7 +788,7 @@ def unified_recall(
 
     step_candidates = _collect_fallback_candidates(
         repository=repository,
-        scopes=tuple(scope for scope in scopes if scope in {"steps", "sources"}),
+        scopes=tuple(scope for scope in scopes if scope == "steps"),
         personal_model_id=request.personal_model_id,
         state_id=request.state_id,
         episodes_cap=max(20, capped * 4),
@@ -934,7 +806,7 @@ def unified_recall(
         metadata = dict(hit.extra_metadata or {})
         provenance = "|".join(
             str(metadata.get(key) or "").strip()
-            for key in ("episode_id", "loop_id", "step_id", "source_record_id")
+            for key in ("episode_id", "loop_id", "step_id", "source_id")
         ).strip("|")
         key = provenance or hit.content.casefold()
         if key in seen_keys:

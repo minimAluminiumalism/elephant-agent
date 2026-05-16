@@ -18,9 +18,9 @@ wrappers:
   - id: api.session-recovery
     scenario_ids:
       - continuity.resume-after-gap
-      - continuity.memory-recovery
+      - continuity.recall-recovery
     surface: apps/api
-    purpose: verify programmatic recovery of session and memory state
+    purpose: verify programmatic recovery of session and recall state
 
   - id: gateway.text-continuity
     scenario_ids:

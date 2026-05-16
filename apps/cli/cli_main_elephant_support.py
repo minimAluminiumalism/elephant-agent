@@ -131,7 +131,7 @@ def _select_elephant(runtime: CliRuntime, elephant_id: str):
         profile=loaded_profile.state,
         session=session,
         work_items=(),
-        memories=(),
+        recall_items=(),
         plan=None,
         execution=None,
         delivery=None,
@@ -313,7 +313,7 @@ def _print_elephant_retired(elephant_id: str, deleted_sessions: int) -> None:
                 (
                     f"elephant_id · {elephant_id}",
                     f"deleted_sessions · {deleted_sessions}",
-                    "personal_model_memory · preserved",
+                    "personal_model_facts · preserved",
                 ),
             ),
         ),
@@ -337,7 +337,7 @@ def _print_all_herd_retired(deleted_elephants: int, deleted_sessions: int) -> No
                 (
                     f"deleted_elephants · {deleted_elephants}",
                     f"deleted_sessions · {deleted_sessions}",
-                    "personal_model_memory · preserved",
+                    "personal_model_facts · preserved",
                 ),
             ),
         ),
@@ -538,7 +538,7 @@ def _print_assistant_turn(runtime: CliRuntime, outcome, *, title: str = "Elephan
         f"execution · {outcome.execution.summary}",
         f"current_context · {outcome.state.summary or '<unset>'}",
         f"steps_recorded · {len(outcome.steps)}",
-        f"memory_hits · {len(outcome.memories)}",
+        f"recall_hits · {len(outcome.recall_items)}",
     ]
     cache_metric = cache_hit_metric_line(outcome.execution)
     if cache_metric:

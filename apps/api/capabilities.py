@@ -11,7 +11,7 @@ from packages.capabilities.runtime import (
     CapabilityDescriptor,
     ContextCapability,
     DeliveryAdapterCapability,
-    MemoryCapability,
+    RecallCapability,
     ModelProviderCapability,
     TelemetrySinkCapability,
     ToolCapability,
@@ -26,13 +26,15 @@ from packages.contracts import (
     ContextBundle,
     Episode,
     ExecutionResult,
-    MemoryRecord,
 )
 from packages.contracts.runtime import (
+    EvidenceRetrievalRequest,
+    EvidenceRetrievalResult,
+    RecallEvidence,
     StateFocusDecision,
     PersonalModelRuntimeState,
 )
-from packages.evidence import MemoryRuntime
+from packages.evidence import RecallRuntime
 from packages.storage import RuntimeStorageRepository
 from packages.skills import SkillPromptContextBuilder
 from packages.tools import ToolRuntime
@@ -56,38 +58,18 @@ class APITelemetrySink(TelemetrySinkCapability):
         self._events.append(dict(event))
 
 
-class APIMemoryCapability(MemoryCapability):
-    def __init__(self, store: MemoryRuntime) -> None:
+class APIRecallCapability(RecallCapability):
+    def __init__(self, runtime: RecallRuntime) -> None:
         self.descriptor = CapabilityDescriptor(
-            capability_id="api.memory",
-            kind="memory",
+            capability_id="api.recall",
+            kind="recall",
             version="1.0.0",
-            metadata={"description": "Memory adapter for API-backed kernel flows."},
+            metadata={"description": "Evidence recall adapter for API-backed kernel flows."},
         )
-        self.store = store
+        self.runtime = runtime
 
-    def record(self, memory: MemoryRecord) -> None:
-        self.store.store.upsert(memory)
-
-    def search(
-        self,
-        session_id: str,
-        query: str,
-        *,
-        work_item_ids: tuple[str, ...] = (),
-        scope_session_ids: tuple[str, ...] = (),
-        scope_episode_ids: tuple[str, ...] = (),
-        scope_reason: str = "",
-    ) -> tuple[MemoryRecord, ...]:
-        resolved_scope_episode_ids = scope_episode_ids or scope_session_ids
-        result = self.store.retrieve(
-            session_id,
-            query,
-            work_item_ids=work_item_ids,
-            scope_episode_ids=resolved_scope_episode_ids,
-            scope_reason=scope_reason,
-        )
-        return tuple(candidate.record for candidate in result.candidates)
+    def retrieve_evidence(self, request: EvidenceRetrievalRequest) -> EvidenceRetrievalResult:
+        return self.runtime.retrieve_evidence(request)
 
 
 class APIContextCapability(ContextCapability):
@@ -113,7 +95,7 @@ class APIContextCapability(ContextCapability):
         self,
         session: Episode,
         work_items: tuple[object, ...],
-        memories: tuple[MemoryRecord, ...],
+        recall_items: tuple[RecallEvidence, ...],
         *,
         state_focus: StateFocusDecision | None = None,
     ) -> ContextBundle:
@@ -126,7 +108,7 @@ class APIContextCapability(ContextCapability):
                     instruction_refs=(*self.runtime.instruction_refs, *skill_lines),
                     total_tokens=self.runtime.total_tokens,
                 )
-        bundle = runtime.assemble(session, work_items, memories, state_focus=state_focus)
+        bundle = runtime.assemble(session, work_items, recall_items, state_focus=state_focus)
         bundle = replace(bundle, instruction_refs=runtime.instruction_refs)
         _epoch_store = FileEpochStore(self.repository.database_path.parent) if self.repository is not None else None
         epoch = _epoch_store.load(session.episode_id) if _epoch_store is not None else None
@@ -157,7 +139,7 @@ class APIContextCapability(ContextCapability):
             return _compress_result
         return None
 
-    def flush_projection_memory(self) -> None:
+    def flush_projection_cache(self) -> None:
         return None
 
 

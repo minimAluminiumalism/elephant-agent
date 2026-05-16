@@ -533,7 +533,7 @@ def _meaningful_rollout_signals(profile_id: str, *, session_id: str, now: dateti
         active_work_item_present=True,
         plan_step_count=3,
         work_item_dependency_count=1,
-        memory_count=2,
+        recall_count=2,
         context_work_item_count=1,
         tool_call_count=2,
         model_turn_count=2,

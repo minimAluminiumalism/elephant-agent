@@ -18,7 +18,7 @@ from .prompts import BOUNDARIES, CLAIM_TEXT_RULE, CONSERVATISM_PROMPTS, LANGUAGE
 class ReflectResult:
     status: str
     summary: str
-    result_record_id: str
+    result_source_id: str
     agent_status: str
     child_episode_id: str = ""
     tool_calls_total: int = 0
@@ -220,7 +220,7 @@ def run_reflect_agent(
     return ReflectResult(
         status=status,
         summary=str(result_payload["summary"]),
-        result_record_id="",
+        result_source_id="",
         agent_status=agent_status,
         child_episode_id=str(result.get("session_id") if isinstance(result, Mapping) else ""),
         tool_calls_total=tool_calls_total,

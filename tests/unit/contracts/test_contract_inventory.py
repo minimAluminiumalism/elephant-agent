@@ -1,12 +1,12 @@
-"""Contract inventory tests for the v5 personal-model shape.
+"""Contract inventory tests for the Personal-Model-first public surface.
 
 This test pins the public contract surface as emitted by
-``packages.contracts.__all__``: the four‑lens Observation / Fact /
-OpenQuestion trio plus the core system-layer records.  Anything that
+``packages.contracts.__all__``: four-lens Facts, OpenQuestions, semantic index
+entries, and the core system-layer records. Anything that
 referred to the old 6-component taxonomy (CoreMemory, BigFiveTraitSignal,
 PersonalityStyleModel, PersonalKnowledge, EpisodicIndex, ProceduralMemory,
-RelationshipMemory) has been removed per the Observation/Fact redesign
-and should no longer be reachable.
+relationship projections) or the legacy Record/Grounding/Observation path has been
+removed and should no longer be reachable.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from packages.capabilities.runtime import (
     CapabilityRegistry,
     ContextCapability,
     DeliveryAdapterCapability,
-    MemoryCapability,
+    RecallCapability,
     ModelProviderCapability,
     SkillCapability,
     StorageBackendCapability,
@@ -43,14 +43,9 @@ from packages.contracts import (
     Episode,
     Fact,
     GenerationProviderConfig,
-    Grounding,
     Loop,
-    MemoryEntry,
-    Observation,
     OpenQuestion,
     PersonalModel,
-    Record,
-    ReflectionProposal,
     SemanticIndexEntry,
     State,
     Step,
@@ -71,15 +66,21 @@ REMOVED_PUBLIC_CONTRACT_SURFACES = (
     "big_five_to_mapping",
     "blend_big_five",
     "parse_big_five_mapping",
+    "Record",
+    "Grounding",
+    "MemoryEntry",
+    "ReflectionProposal",
+    "Observation",
+    "ALLOWED_OBSERVATION_SOURCES",
+    "ALLOWED_OBSERVATION_STATUSES",
 )
 
 
 class ContractInventoryTest(unittest.TestCase):
     def test_contract_inventory_matches_current_design(self) -> None:
-        # The four-lens design (ADR-0001/0003) collapses the old 6-component
-        # taxonomy into Observation / Fact.  OpenQuestion carries the
-        # Curiosity subsystem's prompts.  Everything else is the core
-        # system-layer triple.
+        # The four-lens design keeps Facts and OpenQuestions as the public
+        # durable understanding contract. Steps are evidence; semantic index
+        # entries are retrieval metadata.
         self.assertEqual(
             CONTRACT_SURFACES,
             (
@@ -88,12 +89,7 @@ class ContractInventoryTest(unittest.TestCase):
                 "Episode",
                 "Loop",
                 "Step",
-                "Record",
-                "Grounding",
-                "MemoryEntry",
-                "ReflectionProposal",
                 "SemanticIndexEntry",
-                "Observation",
                 "Fact",
                 "OpenQuestion",
                 "GenerationProviderConfig",
@@ -102,11 +98,9 @@ class ContractInventoryTest(unittest.TestCase):
         )
 
     def test_contract_root_all_includes_new_types(self) -> None:
-        self.assertIn("Observation", contracts.__all__)
         self.assertIn("Fact", contracts.__all__)
         self.assertIn("OpenQuestion", contracts.__all__)
         self.assertIn("ALLOWED_LENSES", contracts.__all__)
-        self.assertIn("ALLOWED_OBSERVATION_SOURCES", contracts.__all__)
         self.assertIn("ALLOWED_FACT_SOURCES", contracts.__all__)
 
     def test_removed_public_surfaces_are_not_importable(self) -> None:
@@ -123,7 +117,7 @@ class ContractInventoryTest(unittest.TestCase):
                 "CapabilityDescriptor",
                 "CapabilityHealth",
                 "CapabilityRegistry",
-                "MemoryCapability",
+                "RecallCapability",
                 "ContextCapability",
                 "ModelProviderCapability",
                 "AuthProviderCapability",
@@ -142,12 +136,7 @@ class ContractInventoryTest(unittest.TestCase):
             Episode,
             Loop,
             Step,
-            Record,
-            Grounding,
-            MemoryEntry,
-            ReflectionProposal,
             SemanticIndexEntry,
-            Observation,
             Fact,
             OpenQuestion,
             GenerationProviderConfig,
@@ -167,7 +156,7 @@ class ContractInventoryTest(unittest.TestCase):
         self.assertEqual(health.status, "healthy")
         self.assertTrue(issubclass(CapabilityRegistry, object))
         for protocol in (
-            MemoryCapability,
+            RecallCapability,
             ContextCapability,
             ModelProviderCapability,
             AuthProviderCapability,
@@ -180,26 +169,8 @@ class ContractInventoryTest(unittest.TestCase):
             self.assertTrue(hasattr(protocol, "__dict__"), protocol.__name__)
 
 
-class ObservationFactOpenQuestionShapeTest(unittest.TestCase):
-    """Smoke-tests for the v5 Observation / Fact / OpenQuestion trio."""
-
-    def test_observation_records_raw_signal_with_lens_and_source(self) -> None:
-        now = datetime.now(timezone.utc)
-        observation = Observation(
-            observation_id="obs-1",
-            personal_model_id="pm-1",
-            text="Prefers short, direct updates",
-            confidence=0.6,
-            episode_id="episode-1",
-            last_seen_at=now,
-            source="chat_llm_note",
-            lens="identity",
-            sub_lens="feedback_preference",
-        )
-        self.assertEqual(observation.lens, "identity")
-        self.assertEqual(observation.sub_lens, "feedback_preference")
-        self.assertEqual(observation.source, "chat_llm_note")
-        self.assertAlmostEqual(observation.confidence, 0.6)
+class FactOpenQuestionShapeTest(unittest.TestCase):
+    """Smoke-tests for the Fact / OpenQuestion pair."""
 
     def test_fact_is_active_and_confident_by_default(self) -> None:
         now = datetime.now(timezone.utc)

@@ -16,7 +16,7 @@ class ContinuityScenarioFixturesTest(unittest.TestCase):
             [
                 "continuity.resume-after-gap",
                 "continuity.interrupted-work",
-                "continuity.memory-recovery",
+                "continuity.recall-recovery",
                 "continuity.explainable-next-step",
                 "continuity.state-continuity",
                 "continuity.correction-aware-recovery",

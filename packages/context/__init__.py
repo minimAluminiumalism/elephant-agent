@@ -32,7 +32,6 @@ from .session_projection import (
     render_prompt_messages,
     restore_session_context_epoch,
     session_context_epoch_payload,
-    session_context_epoch_record_id,
 )
 from .runtime import (
     BudgetManager,
@@ -121,5 +120,4 @@ __all__ = [
     "render_prompt_messages",
     "restore_session_context_epoch",
     "session_context_epoch_payload",
-    "session_context_epoch_record_id",
 ]

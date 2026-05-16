@@ -389,7 +389,7 @@ def inheritable_recall_metadata(targets: tuple[Fact, ...]) -> dict[str, str]:
     metadata = dict(source.metadata or {})
     keys = (
         "recall_policy",
-        "memory_lifecycle",
+        "retention_lifecycle",
         "recall_time_sensitivity",
         "recall_verification",
         "review_after_days",
@@ -413,7 +413,7 @@ def claim_payload(fact: Fact) -> dict[str, Any]:
         "updated_at": fact.committed_at.isoformat(),
         "reason": metadata.get("reason", ""),
         "recall_policy": metadata.get("recall_policy", ""),
-        "memory_lifecycle": metadata.get("memory_lifecycle", ""),
+        "retention_lifecycle": metadata.get("retention_lifecycle", ""),
         "last_verified_at": metadata.get("last_verified_at", ""),
         "review_after_days": metadata.get("review_after_days", ""),
         "protected": protection.protection if protection is not None else "",
@@ -461,7 +461,7 @@ def topic_rows(facts: tuple[Fact, ...], *, limit: int) -> tuple[dict[str, Any], 
                 "updated_at": newest.committed_at.isoformat(),
                 "sample_text": newest.text,
                 "recall_policy": metadata.get("recall_policy", ""),
-                "memory_lifecycle": metadata.get("memory_lifecycle", ""),
+                "retention_lifecycle": metadata.get("retention_lifecycle", ""),
                 **protected_topic_metadata(topic, metadata),
             }
         )
@@ -572,7 +572,7 @@ def _parse_datetime_value(value: object) -> datetime | None:
     return parsed
 
 
-def memory_health_report(facts: tuple[Fact, ...], *, now: datetime | None = None) -> dict[str, Any]:
+def personal_model_health_report(facts: tuple[Fact, ...], *, now: datetime | None = None) -> dict[str, Any]:
     current = now or datetime.now(timezone.utc)
     active = tuple(fact for fact in facts if fact.status == "active")
     retired = tuple(fact for fact in facts if fact.status == "retired")

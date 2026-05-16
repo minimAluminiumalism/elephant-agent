@@ -14,12 +14,12 @@ import time
 
 from packages.contracts import ExperienceRecord
 from packages.kernel.runtime import KernelOutcome
-from packages.operator import (
-    MemoryOperatorDetail,
-    MemorySearchHit,
-    build_memory_operator_surface,
+from packages.operator.runtime import (
+    RecallEvidenceOperatorDetail,
+    RecallEvidenceSearchHit,
+    build_recall_evidence_operator_surface,
     build_profile_operator_surface,
-    render_memory_lines,
+    render_recall_evidence_lines,
     render_profile_lines,
 )
 from packages.tools.handler_support import resolve_allowed_path
@@ -422,13 +422,17 @@ def _handle_slash_command(self, raw_command: str) -> bool:
         elephant_id = self.runtime.elephant_id_for_session(self.runtime.inspect_session(self.session_id))
         learning_detail = "background learning queued"
         try:
-            job = self.runtime.schedule_learning_for_session(
-                session_id=self.session_id,
-                trigger="exit",
+            from packages.kernel.episode_state_machine import close_episode
+
+            close_episode(
+                self.runtime.repository,
+                self.session_id,
+                reason="shell_exit",
                 summary="wake surface exited by user",
-                metadata={"source": "shell"},
+                semantic_summary_indexer=getattr(self.runtime, "_semantic_summary_indexer", None),
             )
-            learning_detail = f"background learning queued · {job.job_id}"
+            self.runtime._ensure_learning_worker_if_needed()
+            learning_detail = "episode closed · learning queued"
         except Exception:
             pass
         self._append_entry(
@@ -443,8 +447,8 @@ def _handle_slash_command(self, raw_command: str) -> bool:
     if command == "/status":
         self._append_status()
         return False
-    if command == "/memory":
-        self._append_memory(args)
+    if command == "/recall":
+        self._append_recall(args)
         return False
     if command == "/tools":
         self._append_tools(args)
@@ -472,17 +476,7 @@ def _handle_slash_command(self, raw_command: str) -> bool:
         return False
     if command == "/clear":
         previous_session_id = self.session_id
-        learning_detail = "background learning queued"
-        try:
-            job = self.runtime.schedule_learning_for_session(
-                session_id=previous_session_id,
-                trigger="clear",
-                summary="wake surface reopened on a fresh Episode",
-                metadata={"source": "shell"},
-            )
-            learning_detail = f"background learning queued · {job.job_id}"
-        except Exception:
-            pass
+        learning_detail = "episode closed · learning queued"
         # Close the previous episode explicitly so the dashboard / history
         # shows a clean break, then start a fresh Episode on the same elephant.
         # The old behavior called `runtime.resume(...)` which created a

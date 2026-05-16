@@ -14,9 +14,11 @@ from typing import Any, Mapping, Protocol, runtime_checkable
 from packages.contracts import Episode
 from packages.contracts.runtime import (
     ContextBundle,
+    EvidenceRetrievalRequest,
+    EvidenceRetrievalResult,
     ExecutionResult,
     StateFocusDecision,
-    MemoryRecord,
+    RecallEvidence,
     RuntimeModelChoice,
     PersonalModelRuntimeState,
 )
@@ -53,23 +55,11 @@ class CapabilityRegistry(Protocol):
 
 
 @runtime_checkable
-class MemoryCapability(Protocol):
+class RecallCapability(Protocol):
     descriptor: CapabilityDescriptor
 
-    def record(self, memory: MemoryRecord) -> None:
-        """Persist a memory record."""
-
-    def search(
-        self,
-        session_id: str,
-        query: str,
-        *,
-        work_item_ids: tuple[str, ...] = (),
-        scope_session_ids: tuple[str, ...] = (),
-        scope_episode_ids: tuple[str, ...] = (),
-        scope_reason: str = "",
-    ) -> tuple[MemoryRecord, ...]:
-        """Search memories for a session or an explicit recovery scope."""
+    def retrieve_evidence(self, request: EvidenceRetrievalRequest) -> EvidenceRetrievalResult:
+        """Retrieve Step/Episode/SemanticIndex evidence for the active kernel turn."""
 
 
 @runtime_checkable
@@ -80,7 +70,7 @@ class ContextCapability(Protocol):
         self,
         session: Episode,
         work_items: tuple[object, ...],
-        memories: tuple[MemoryRecord, ...],
+        recall_items: tuple[RecallEvidence, ...],
         *,
         state_focus: StateFocusDecision | None = None,
     ) -> ContextBundle:
@@ -152,11 +142,11 @@ class DeliveryAdapterCapability(Protocol):
 class StorageBackendCapability(Protocol):
     descriptor: CapabilityDescriptor
 
-    def write(self, record: object) -> None:
-        """Persist a contract-shaped record."""
+    def write(self, item: object) -> None:
+        """Persist a contract-shaped item."""
 
-    def read(self, record_type: str, record_id: str) -> object | None:
-        """Read a record from storage."""
+    def read(self, item_type: str, item_id: str) -> object | None:
+        """Read a contract-shaped item from storage."""
 
 
 @runtime_checkable

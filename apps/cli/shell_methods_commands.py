@@ -16,12 +16,12 @@ import time
 
 from packages.contracts import ExperienceRecord
 from packages.kernel.runtime import KernelOutcome
-from packages.operator import (
-    MemoryOperatorDetail,
-    MemorySearchHit,
-    build_memory_operator_surface,
+from packages.operator.runtime import (
+    RecallEvidenceOperatorDetail,
+    RecallEvidenceSearchHit,
+    build_recall_evidence_operator_surface,
     build_profile_operator_surface,
-    render_memory_lines,
+    render_recall_evidence_lines,
     render_profile_lines,
 )
 from packages.state import parse_user_profile_text
@@ -177,7 +177,7 @@ def _append_help(self) -> None:
         "Stay in the conversation. Slash commands exist only for orientation and control.",
         "",
         "/status - refresh elephant, provider, and Personal Model posture",
-        "/memory [list|inspect|search|lineage|correct|pin|unpin|delete] - inspect or govern durable understanding",
+        "/recall [list|inspect|search|lineage] - inspect Step/Episode recall evidence",
         "/tools [inspect|enable|disable|install|run] - govern built-ins and manifest-backed tools",
         "/skills [list|active|search|view|enable|disable|install] - discover, inspect, and govern skill packages",
         "/learn [queue|run|start|status|history] - manually trigger or inspect background learning",
@@ -209,79 +209,53 @@ def _append_personal_model(self, args: list[str]) -> None:
     continuity = self.runtime.inspect_continuity(session_id=self.session_id)
     known_user_fields = parse_user_profile_text((continuity.profile.user_profile_text or "").strip())
     who_i_am = str(known_user_fields.get("preferred_name") or "").strip() or "<not learned yet>"
-    records = tuple(
-        record
-        for record in self.runtime.repository.list_records(owner_scope="personal_model", personal_model_id=state.personal_model_id)
-    )
-    memories = tuple(
-        entry
-        for entry in self.runtime.repository.list_memory_entries(owner_scope="personal_model", personal_model_id=state.personal_model_id)
-    )
-    proposals = self.runtime.repository.list_reflection_proposals(personal_model_id=state.personal_model_id)
-    learning = tuple(record for record in records if record.layer_type == "personal_model_learning_summary")
+    list_facts = getattr(self.runtime.repository, "list_personal_model_facts", None)
+    if callable(list_facts):
+        try:
+            facts = tuple(list_facts(personal_model_id=state.personal_model_id, status="active"))
+        except Exception:
+            facts = ()
+    else:
+        facts = ()
+    list_questions = getattr(self.runtime.repository, "list_open_questions", None)
+    if callable(list_questions):
+        try:
+            open_questions = tuple(list_questions(personal_model_id=state.personal_model_id, status="open"))
+        except Exception:
+            open_questions = ()
+    else:
+        open_questions = ()
     if action in {"summary", "show", "who"}:
         lines = [
             f"personal_model_id: {state.personal_model_id}",
             f"state_id: {state.state_id}",
             f"who_i_am: {who_i_am}",
-            f"how_elephant_understands_me: {len(records)} support row(s), {len(memories)} understanding entry row(s), {len(learning)} learning summary row(s)",
-            f"what_is_grounded: {sum(1 for record in records if str(record.payload).find('committed') >= 0)} committed support row(s)",
-            f"what_needs_correction: {len(proposals)} insight proposal row(s), {sum(1 for entry in memories if entry.status != 'active')} non-active understanding row(s)",
-            f"procedure_rows: {sum(1 for record in records if record.layer_type == 'procedural_memory')} procedure support row(s)",
+            f"how_elephant_understands_me: {len(facts)} durable fact(s)",
+            f"what_is_grounded: {sum(1 for fact in facts if getattr(fact, 'status', '') == 'active')} active fact(s)",
+            f"what_needs_correction: {len(open_questions)} open question(s)",
+            "procedure_rows: procedures are tracked in procedure library state, not Personal Model support rows",
         ]
         self._append_entry("notice", "About you", "\n".join(lines))
         return
     if action == "evidence":
         rows = [
-            f"{record.record_id} | {record.layer_type or record.schema_version} | {record.created_at.isoformat() if record.created_at else '<time?>'}"
-            for record in records[:20]
-        ] or ["<no personal understanding provenance rows>"]
-        self._append_entry("notice", "About you provenance", "\n".join(rows))
+            f"{getattr(fact, 'fact_id', '<fact>')} | {getattr(fact, 'lens', '')}.{getattr(fact, 'facet', '')} | {getattr(fact, 'committed_at', None).isoformat() if getattr(fact, 'committed_at', None) else '<time?>'}"
+            for fact in facts[:20]
+        ] or ["<no personal model facts>"]
+        self._append_entry("notice", "About you facts", "\n".join(rows))
         return
     if action in {"uncertain", "proposals", "confirm"}:
         rows = [
-            f"{proposal.reflection_proposal_id} | {proposal.proposal_type} | {proposal.status} | {proposal.content}"
-            for proposal in proposals[:20]
+            f"{getattr(question, 'question_id', '<question>')} | {getattr(question, 'lens', '')}.{getattr(question, 'sub_lens', '')} | {getattr(question, 'status', '')} | {getattr(question, 'text', '')}"
+            for question in open_questions[:20]
         ] or ["<no pending understanding updates>"]
         self._append_entry("notice", "About you to confirm", "\n".join(rows))
         return
     if action in {"procedural", "skills"}:
-        rows = [
-            f"{record.record_id} | {record.payload.get('title') or record.payload.get('summary') or record.layer_type}"
-            for record in records
-            if record.layer_type == "procedural_memory"
-        ]
-        self._append_entry("notice", "How I help", "\n".join(rows or ["<no procedural learning rows>"]))
+        self._append_entry("notice", "How I help", "Procedural patterns are tracked outside Personal Model support rows.")
         return
     if action in {"learned", "diff", "recent"}:
-        diff_records = sorted(
-            (record for record in records if record.layer_type == "personal_model_learning_diff"),
-            key=lambda r: r.created_at or datetime(1970, 1, 1, tzinfo=timezone.utc),
-            reverse=True,
-        )
-        if not diff_records:
-            self._append_entry("notice", "What I learned recently", "<no recent learning diff rows>")
-            return
-        lines: list[str] = []
-        for record in diff_records[:5]:
-            payload = record.payload if isinstance(record.payload, dict) else {}
-            episode_id = str(payload.get("episode_id") or "").strip() or "<episode?>"
-            created = record.created_at.isoformat() if record.created_at else "<time?>"
-            lines.append(f"episode: {episode_id} | committed_at: {created}")
-            entries = payload.get("entries")
-            if isinstance(entries, list):
-                for entry in entries:
-                    if not isinstance(entry, dict):
-                        continue
-                    kind = str(entry.get("kind") or "").strip() or "personal_model"
-                    content = str(entry.get("content") or "").strip()
-                    record_id = str(entry.get("record_id") or "").strip()
-                    revise_hint = f" | /forget {record_id} to revise" if record_id else ""
-                    lines.append(f"  - [{kind}] {content}{revise_hint}")
-            overflow = int(payload.get("overflow") or 0)
-            if overflow > 0:
-                lines.append(f"  (+{overflow} more)")
-        self._append_entry("notice", "What I learned recently", "\n".join(lines))
+        self._append_entry("notice", "What I learned recently", "Use Personal Model facts and History for recent learning provenance.")
         return
     self._append_entry("recovery", "About you", "Usage: [summary|evidence|uncertain|procedural|learned]")
 
@@ -819,7 +793,7 @@ def _append_status(self) -> None:
         f"state_action: {continuity.wake_action}",
         f"state_summary: {continuity.wake_summary}",
         f"personal_model_understanding: {growth.stage_title}",
-        f"personal_model_memory: {growth.cycle_label}",
+        f"personal_model_growth: {growth.cycle_label}",
         f"personal_model_checkpoint: {growth.level}",
         f"personal_model_signal: {growth.power_score}",
         f"personal_model_progress: {growth.progress_percent}%",
@@ -867,145 +841,64 @@ def _append_status(self) -> None:
         lines.append("next: keep talking")
     self._append_entry("status", "Elephant status", "\n".join(lines))
 
-def _append_memory(self, args: list[str]) -> None:
+def _append_recall(self, args: list[str]) -> None:
     action = args[0] if args else "inspect"
     if action in {"inspect", "show", "list", "ls"} and len(args) <= 1:
-        surface = self.runtime.inspect_memory_surface(self.session_id)
-        lines = list(render_memory_lines(surface))
+        surface = self.runtime.inspect_recall_evidence_surface(self.session_id)
+        lines = list(render_recall_evidence_lines(surface))
         lines.extend(
             [
                 "",
-                "inspect: /memory inspect <entry-id>",
-                "search: /memory search <query>",
-                "correct: /memory correct <entry-id> <content>",
-                "pin: /memory pin <entry-id> [reason]",
-                "unpin: /memory unpin <entry-id> [reason]",
-                "delete: /memory delete <entry-id> [reason]",
+                "inspect: /recall inspect <evidence-ref>",
+                "search: /recall search <query>",
+                "lineage: /recall lineage <evidence-ref>",
             ]
         )
         self._append_entry("notice", "Understanding", "\n".join(lines))
         return
     if action == "inspect":
         if len(args) < 2:
-            self._append_entry("recovery", "Understanding", "Usage: /memory inspect <entry-id>")
+            self._append_entry("recovery", "Understanding", "Usage: /recall inspect <evidence-ref>")
             return
-        memory = self.runtime.inspect_memory(self.session_id, args[1])
-        detail = MemoryOperatorDetail(
-            memory=memory,
-            state=self.runtime.memory_state(memory.memory_id),
-            lineage=self.runtime.memory_lineage(memory.memory_id),
+        evidence = self.runtime.inspect_recall_evidence_item(self.session_id, args[1])
+        detail = RecallEvidenceOperatorDetail(
+            evidence=evidence,
+            state=self.runtime.recall_evidence_state(evidence.evidence_id),
+            lineage=self.runtime.recall_evidence_lineage(evidence.evidence_id),
         )
-        surface = build_memory_operator_surface(
+        surface = build_recall_evidence_operator_surface(
             session_id=self.session_id,
-            memories=(detail,),
-            index_policy=self.runtime.memory_runtime.index_policy(),
+            evidence_items=(detail,),
+            index_policy=self.runtime.recall_runtime.index_policy(),
         )
-        self._append_entry("notice", "Understanding detail", "\n".join(render_memory_lines(surface)))
+        self._append_entry("notice", "Understanding detail", "\n".join(render_recall_evidence_lines(surface)))
         return
     if action == "search":
         query = " ".join(args[1:]).strip()
         if not query:
-            self._append_entry("recovery", "Understanding", "Usage: /memory search <query>")
+            self._append_entry("recovery", "Understanding", "Usage: /recall search <query>")
             return
-        surface = self.runtime.search_memory_surface(self.session_id, query=query)
-        self._append_entry("notice", "Understanding search", "\n".join(render_memory_lines(surface)))
+        surface = self.runtime.search_recall_evidence_surface(self.session_id, query=query)
+        self._append_entry("notice", "Understanding search", "\n".join(render_recall_evidence_lines(surface)))
         return
     if action == "lineage":
         if len(args) < 2:
-            self._append_entry("recovery", "Understanding", "Usage: /memory lineage <entry-id>")
+            self._append_entry("recovery", "Understanding", "Usage: /recall lineage <evidence-ref>")
             return
-        memory_id = args[1]
+        evidence_ref = args[1]
         self._append_entry(
             "notice",
             "Understanding lineage",
             "\n".join(
                 [
-                    f"memory_id: {memory_id}",
-                    f"state: {self.runtime.memory_state(memory_id) or 'unknown'}",
-                    f"lineage: {self.runtime.memory_lineage(memory_id) or '<none>'}",
+                    f"evidence_ref: {evidence_ref}",
+                    f"state: {self.runtime.recall_evidence_state(evidence_ref) or 'unknown'}",
+                    f"lineage: {self.runtime.recall_evidence_lineage(evidence_ref) or '<none>'}",
                 ]
             ),
         )
         return
-    if action == "correct":
-        if len(args) < 3:
-            self._append_entry("recovery", "Understanding", "Usage: /memory correct <entry-id> <content>")
-            return
-        _, corrected, reason, lineage = self.runtime.correct_memory(
-            self.session_id,
-            args[1],
-            corrected_content=" ".join(args[2:]).strip(),
-            reason="understanding corrected from /memory",
-        )
-        target = corrected if corrected is not None else self.runtime.inspect_memory(self.session_id, args[1])
-        self._append_entry(
-            "notice",
-            "Understanding corrected",
-            "\n".join(
-                [
-                    f"memory_id: {target.memory_id}",
-                    f"lineage: {lineage or '<none>'}",
-                    f"reason: {reason}",
-                    f"content: {target.content}",
-                ]
-            ),
-        )
-        return
-    if action in {"pin", "freeze"}:
-        if len(args) < 2:
-            self._append_entry("recovery", "Understanding", "Usage: /memory pin <entry-id> [reason]")
-            return
-        reason = " ".join(args[2:]).strip() or "understanding pinned from /memory"
-        record, decision_reason = self.runtime.pin_memory(self.session_id, args[1], reason=reason)
-        self._append_entry(
-            "notice",
-            "Understanding pinned",
-            "\n".join(
-                [
-                    f"memory_id: {record.memory_id}",
-                    f"tags: {', '.join(record.tags) or '<none>'}",
-                    f"reason: {decision_reason or reason}",
-                ]
-            ),
-        )
-        return
-    if action in {"unpin", "unfreeze", "thaw"}:
-        if len(args) < 2:
-            self._append_entry("recovery", "Understanding", "Usage: /memory unpin <entry-id> [reason]")
-            return
-        reason = " ".join(args[2:]).strip() or "understanding unpinned from /memory"
-        record, decision_reason = self.runtime.unpin_memory(self.session_id, args[1], reason=reason)
-        self._append_entry(
-            "notice",
-            "Understanding unpinned",
-            "\n".join(
-                [
-                    f"memory_id: {record.memory_id}",
-                    f"tags: {', '.join(record.tags) or '<none>'}",
-                    f"reason: {decision_reason or reason}",
-                ]
-            ),
-        )
-        return
-    if action in {"delete", "drop"}:
-        if len(args) < 2:
-            self._append_entry("recovery", "Understanding", "Usage: /memory delete <entry-id> [reason]")
-            return
-        reason = " ".join(args[2:]).strip() or "understanding retired from /memory"
-        original, decision_reason = self.runtime.delete_memory(self.session_id, args[1], reason=reason)
-        self._append_entry(
-            "notice",
-            "Understanding retired",
-            "\n".join(
-                [
-                    f"memory_id: {original.memory_id}",
-                    f"state: {self.runtime.memory_state(original.memory_id) or 'deleted'}",
-                    f"reason: {decision_reason or reason}",
-                ]
-            ),
-        )
-        return
-    self._append_entry("recovery", "Understanding", "Usage: /memory [list|inspect|search|lineage|correct|pin|unpin|delete]")
+    self._append_entry("recovery", "Understanding", "Usage: /recall [list|inspect|search|lineage]")
 
 def _append_outcome(self, outcome: KernelOutcome) -> None:
     self._last_prompt_tokens = outcome.execution.prompt_tokens
@@ -1026,7 +919,7 @@ def _append_outcome(self, outcome: KernelOutcome) -> None:
             [
                 f"execution: {outcome.execution.outcome}",
                 f"current_context: {outcome.state.summary or '<none>'}",
-                f"memory_hits: {len(outcome.memories)}",
+                f"recall_hits: {len(outcome.recall_items)}",
             ]
         )
     self._append_entry("assistant", assistant_name, "\n".join(assistant_lines), meta=outcome_state_focus_meta(outcome))
@@ -1038,22 +931,22 @@ def _append_growth_update_message(self, update) -> None:
     assistant_name = continuity.profile.state.display_name or "Elephant Agent"
     after = update.after
     after_checkpoint = getattr(after, "level", 0)
-    after_memory = getattr(after, "cycle_label", "Memory I")
+    after_growth = getattr(after, "cycle_label", "Evidence I")
     after_identity = getattr(after, "identity_line", getattr(getattr(after, "stage", None), "title", "Elephant Agent"))
     if update.stage_changed:
         body = (
             f"The path is clearer now: {after_identity}. "
             "I'll carry this understanding forward."
         )
-        meta = "memory · clearer path"
+        meta = "understanding · clearer path"
     else:
         body = (
-            f"Something settled into memory — checkpoint {after_checkpoint} in {after_memory}. "
+            f"Something settled into the Personal Model — checkpoint {after_checkpoint} in {after_growth}. "
             "I'll carry it forward."
         )
-        meta = "memory · checkpoint"
+        meta = "understanding · checkpoint"
     self._append_entry("growth", assistant_name, body, meta=meta)
-    # Force the status bar to pick up the new memory checkpoint on the next render tick,
+    # Force the status bar to pick up the new growth checkpoint on the next render tick,
     # rather than waiting on the 1.5s growth-cache TTL.
     self._status_bar_growth_cache = None
     # Poke the background refresher to re-prime the growth snapshot now,

@@ -1,10 +1,10 @@
-"""Fuzzy locator matching shared by CLI / API / Gateway memory tools.
+"""Fuzzy locator matching shared by CLI / API / Gateway recall tools.
 
 ## Why this module exists
 
 All three surfaces (`apps/cli/runtime_records.py`, `apps/api/tool_surfaces.py`,
 `apps/gateway/runtime_capabilities.py`) implemented the same four-step
-matching pipeline for `memory.delete(locator=...)`, `memory.correct(...)`,
+matching pipeline for recall delete/correct commands,
 etc.:
 
   1. lowercase-strip the locator,
@@ -82,7 +82,7 @@ def find_entry_by_locator(
     embedding_service: Any = None,
     embedding_threshold: float = 0.80,
 ) -> Any | None:
-    """Find one memory entry by fuzzy locator match.
+    """Find one recall entry by fuzzy locator match.
 
     Semantics (same as pre-refactor, plus NFKC):
       1. `normalize_locator(content) == normalize_locator(locator)` —

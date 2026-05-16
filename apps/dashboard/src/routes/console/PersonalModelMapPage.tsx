@@ -88,7 +88,7 @@ function detailItems(row: DashboardRow): DetailListItem[] {
 }
 
 function memoryPalaceOwner(model: DashboardRow | undefined): string {
-  const card = jsonObject(model?.user_card);
+  const card = jsonObject(model?.user_profile);
   const name = valueOf(card, "preferred_name", valueOf(model, "user_preferred_name", valueOf(model, "preferred_name", ""))).trim();
   return name && name !== "n/a" ? name : "Your";
 }
@@ -251,7 +251,7 @@ function LensQuadrant({ lens, slots, refresh }: { lens: string; slots: TopicSlot
   );
 }
 
-// Profile facts derived directly from PM claims (no separate user_card needed)
+// Profile facts derived directly from PM claims (no separate user_profile needed)
 // Topics follow the canonical four-lens schema: identity/world/pulse/journey.<facet>.<sub>
 const TOPIC_DISPLAY: readonly { topic: string; label: string; full?: boolean }[] = [
   { topic: "identity.anchor.name.preferred", label: "Name" },
@@ -380,8 +380,8 @@ function SkillsPanel({ slots, refresh }: { slots: TopicSlot[]; refresh: () => Pr
 
 // --- Main Page ---
 
-export function MemoryGraphPage(): React.JSX.Element {
-  const { dashboard, loading, error, refresh } = useDashboardSnapshot("memory-graph");
+export function PersonalModelMapPage(): React.JSX.Element {
+  const { dashboard, loading, error, refresh } = useDashboardSnapshot("personal-models");
   const model = dashboard?.personal_models[0];
   const palace = React.useMemo(() => buildPalaceData(model), [model]);
   const owner = memoryPalaceOwner(model);
@@ -389,7 +389,7 @@ export function MemoryGraphPage(): React.JSX.Element {
   return (
     <div className={styles.pageStack}>
       <header className={styles.pageHeader} data-dashboard-page>
-        <div className={styles.memoryGraphHeaderTop}>
+        <div className={styles.personalModelMapHeaderTop}>
           <div className={styles.pageHeaderCopy}>
             <div className={styles.pageHeaderBadges}>
               <span className={styles.pageHeaderBrandBadge}>
@@ -401,7 +401,7 @@ export function MemoryGraphPage(): React.JSX.Element {
             <h1>{owner === "Your" ? "Your Personal Model" : `${owner}'s Personal Model`}</h1>
             <p>What Elephant Agent understands about {owner === "Your" ? "you" : owner}, organized by lens.</p>
           </div>
-          <div className={styles.memoryGraphMetricGrid}>
+          <div className={styles.personalModelMapMetricGrid}>
             {palace.metrics.map((metric) => <MetricCard key={metric.label} metric={metric} compact />)}
           </div>
         </div>

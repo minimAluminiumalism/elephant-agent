@@ -1,4 +1,4 @@
-"""Memory unit tests for unittest discovery."""
+"""Recall unit tests for unittest discovery."""
 
 from __future__ import annotations
 

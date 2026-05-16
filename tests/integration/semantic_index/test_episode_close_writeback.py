@@ -116,11 +116,11 @@ class EpisodeCloseSemanticIndexWritebackTest(unittest.TestCase):
             matches,
             "hybrid search must return at least one match for the indexed exit_summary",
         )
-        source_ids = {m.semantic_index_entry.source_record_id for m in matches}
+        source_ids = {m.semantic_index_entry.source_id for m in matches}
         self.assertIn(
             f"episode:{closed_episode.episode_id}",
             source_ids,
-            "indexed exit_summary should surface under source_record_id 'episode:<id>'",
+            "indexed exit_summary should surface under source_id 'episode:<id>'",
         )
 
     def test_indexer_noop_when_episode_is_none(self) -> None:

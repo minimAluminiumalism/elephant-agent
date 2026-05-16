@@ -84,7 +84,7 @@ def test_english_temporal_recap_terms_keep_topic_core() -> None:
 
 
 def test_chinese_nearest_neighbor_is_not_temporal_recent() -> None:
-    plan = plan_recall_query("最近邻算法 memory search")
+    plan = plan_recall_query("最近邻算法 evidence search")
     assert plan.temporal_intent == "neutral"
     assert "最近邻" in plan.search_query
 
@@ -118,7 +118,7 @@ def test_render_hit_strips_internal_fields() -> None:
     rendered = render_recall_hit(ranked[0])
     assert set(rendered) == {"title", "kind", "when", "content"}
     assert "score" not in rendered
-    assert "memory_id" not in rendered
+    assert "evidence_id" not in rendered
 
 
 def test_zero_signal_candidate_filtered() -> None:

@@ -37,7 +37,7 @@ from packages.auth import (
 from packages.capabilities.runtime import (
     CapabilityDescriptor,
     ContextCapability,
-    MemoryCapability,
+    RecallCapability,
     ModelProviderCapability,
     TelemetrySinkCapability,
 )
@@ -47,7 +47,7 @@ from packages.contracts.runtime import (
     ContextBundle,
     EventEnvelope,
     ExecutionResult,
-    MemoryRecord,
+    RecallEvidence,
     PersonalModelRuntimeState,
 )
 from packages.gateway_core import (
@@ -71,8 +71,8 @@ from packages.gateway_core import (
     InMemoryGatewaySessionStore,
     default_outbound_queue_path,
 )
-from packages.kernel import KernelDependencies, KernelService, KernelSourceRequest, ObservationPipeline, StateReconciler
-from packages.evidence import MemoryRuntime, SemanticSummaryIndexer, build_semantic_index_bundle
+from packages.kernel import KernelDependencies, KernelService, KernelSourceRequest, ReconciliationPipeline, StateReconciler
+from packages.evidence import RecallRuntime, SemanticSummaryIndexer, build_semantic_index_bundle
 from packages.skills import (
     RuntimeSkillManagementSurface,
     SkillHub,
@@ -103,7 +103,7 @@ from .runtime_adapters import ChatBotMessagingAdapter, WebhookMessagingAdapter
 from .runtime_app import GatewayApp
 from .runtime_capabilities import (
     GatewayContextCapability,
-    GatewayMemoryCapability,
+    GatewayRecallCapability,
     GatewayPreviewModelProvider,
     GatewaySurfaceModelProvider,
     GatewayTelemetrySink,
@@ -289,9 +289,9 @@ def build_gateway_app(
         repository=runtime_repository,
         state_dir=runtime_state_dir,
     )
-    memory_runtime = MemoryRuntime.from_repository(
+    recall_runtime = RecallRuntime.from_repository(
         runtime_repository,
-        semantic_bundle=semantic_index_bundle,
+        semantic_index_bundle=semantic_index_bundle,
     )
     cron_dir = default_cron_dir(install_root=install_root)
     cron_runtime = CronRuntime(
@@ -303,7 +303,7 @@ def build_gateway_app(
         loaded_profile.manifest,
         profile_dir=install_root,
     )
-    _gateway_embedding_service = memory_runtime.retriever.evidence_retriever.embedding_service
+    _gateway_embedding_service = recall_runtime.evidence_retriever.embedding_service
     semantic_summary_indexer = (
         SemanticSummaryIndexer(
             semantic_index=semantic_index_bundle.service,
@@ -449,11 +449,11 @@ def build_gateway_app(
                 repository=runtime_repository,
                 epoch_store=epoch_store,
             ),
-            memory=GatewayMemoryCapability(memory_runtime),
+            recall=GatewayRecallCapability(recall_runtime),
             model_provider=model_provider,
             telemetry=telemetry,
             tools=RequesterScopedToolCapability(tool_runtime, "model"),
-            embedding_service=memory_runtime.retriever.evidence_retriever.embedding_service,
+            embedding_service=recall_runtime.evidence_retriever.embedding_service,
             security_policy=SecurityPolicy.default(),
             skill_runtime=skill_runtime,
             semantic_summary_indexer=semantic_summary_indexer,
@@ -466,7 +466,7 @@ def build_gateway_app(
         provider_runtime=provider_runtime,
         repository=runtime_repository,
         auth_store=auth_store,
-        memory_runtime=memory_runtime,
+        recall_runtime=recall_runtime,
         kernel=kernel,
         telemetry=telemetry,
         model_provider=model_provider,

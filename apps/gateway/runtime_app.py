@@ -23,7 +23,7 @@ from packages.models.runtime_capability import provider_fallback_summary, provid
 from packages.capabilities.runtime import (
     CapabilityDescriptor,
     ContextCapability,
-    MemoryCapability,
+    RecallCapability,
     ModelProviderCapability,
     TelemetrySinkCapability,
 )
@@ -37,7 +37,7 @@ from packages.contracts.runtime import (
     ContextBundle,
     EventEnvelope,
     ExecutionResult,
-    MemoryRecord,
+    RecallEvidence,
     PersonalModelRuntimeState,
     PromptMessage,
 )
@@ -61,18 +61,18 @@ from packages.gateway_core import (
     InMemoryGatewayIdentityStore,
     InMemoryGatewaySessionStore,
 )
-from packages.kernel import KernelDependencies, KernelOutcome, KernelService, KernelSourceRequest, ObservationPipeline, StateReconciler
+from packages.kernel import KernelDependencies, KernelOutcome, KernelService, KernelSourceRequest, ReconciliationPipeline, StateReconciler
 from packages.kernel.context_compaction import (
-    flush_projection_memory,
+    flush_projection_cache,
 )
-from packages.evidence import MemoryRuntime
+from packages.evidence.recall_runtime import RecallRuntime
 from packages.state import (
     DEFAULT_ELEPHANT_IDENTITY_TEXT,
     LoadedProfile,
     ProfileLoader,
     build_prompt_contract,
-    resolve_runtime_state,
 )
+from packages.state.persistence import resolve_runtime_state
 from packages.security.runtime import SecurityPolicy
 from packages.skills import SkillRuntime
 from packages.storage import RuntimeStorageRepository
@@ -86,7 +86,7 @@ FEISHU_ADAPTER_ID = "messaging.feishu"
 DISCORD_ADAPTER_ID = "messaging.discord"
 
 from .runtime_support import *  # noqa: F401,F403
-from .runtime_capabilities import GatewayContextCapability, GatewayMemoryCapability, GatewayPreviewModelProvider, GatewaySurfaceModelProvider, GatewayTelemetrySink
+from .runtime_capabilities import GatewayContextCapability, GatewayRecallCapability, GatewayPreviewModelProvider, GatewaySurfaceModelProvider, GatewayTelemetrySink
 
 def _aware_gateway_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
@@ -134,7 +134,7 @@ class GatewayApp:
     provider_runtime: Mapping[str, object]
     repository: RuntimeStorageRepository
     auth_store: PersistentAuthProfileStore
-    memory_runtime: MemoryRuntime
+    recall_runtime: RecallRuntime
     kernel: KernelService
     telemetry: GatewayTelemetrySink
     model_provider: GatewaySurfaceModelProvider
@@ -399,7 +399,7 @@ class GatewayApp:
             "source": "gateway",
             "payload": {"stage": "context-compact", "detail": f"method={compress_result.method} messages={compress_result.before_messages}->{compress_result.after_messages}", "recorded_at": datetime.now(timezone.utc).isoformat(), "event_id": event_id},
         })
-        flush_projection_memory(self.kernel.dependencies.context)
+        flush_projection_cache(self.kernel.dependencies.context)
 
     def _llm_compress(
         self,
@@ -488,7 +488,7 @@ class GatewayApp:
                 decision_summary=decision_summary,
             ),
         )
-        observation = ObservationPipeline().observe_turn(
+        observation = ReconciliationPipeline().observe_turn(
             inbound_event=observed_event,
             execution=outcome.execution,
             decision_summary=decision_summary,
@@ -501,7 +501,7 @@ class GatewayApp:
         )
         StateReconciler().reconcile_turn(
             repository=self.repository,
-            memory_runtime=self.memory_runtime,
+            recall_runtime=self.recall_runtime,
             observation=observation,
         )
 
@@ -529,8 +529,8 @@ class GatewayApp:
     def session_records(self) -> tuple[GatewayRouteState, ...]:
         return self.core.dependencies.session_store.list_records()
 
-    def memory_records(self, session_id: str | None = None) -> tuple[MemoryRecord, ...]:
-        return self.memory_runtime.store.list(episode_id=session_id)
+    def recall_evidence_records(self, session_id: str | None = None) -> tuple[RecallEvidence, ...]:
+        return self.recall_runtime.store.list(episode_id=session_id)
 
     def interrupt_episode(
         self,

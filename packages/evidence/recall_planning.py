@@ -1,4 +1,4 @@
-"""Recall query planning for multilingual memory search.
+"""Recall query planning for multilingual history and claim search.
 
 This module intentionally keeps deterministic heuristics small and explicit.
 They are weak signals that can abstain, not a replacement for semantic search.

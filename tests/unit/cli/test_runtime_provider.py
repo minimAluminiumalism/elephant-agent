@@ -17,7 +17,7 @@ class CliRuntimeProviderMetadataTest(unittest.TestCase):
             repository=repository,
             profile_loader=mock.Mock(),
             snapshot_path=Path("/tmp/elephant-cli-runtime-provider-snapshot.json"),
-            memory_runtime=mock.Mock(),
+            recall_runtime=mock.Mock(),
             cron_runtime=mock.Mock(),
             model_provider=model_provider,
             tool_runtime=mock.Mock(),

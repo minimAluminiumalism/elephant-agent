@@ -7,7 +7,6 @@ export type DashboardSection =
   | "runtime"
   | "chat"
   | "questions"
-  | "memory-graph"
   | "providers"
   | "skills"
   | "tools"
@@ -69,15 +68,10 @@ export interface InternalDashboardSnapshot {
     jobs: DashboardRow[];
   };
   evidence: {
-    records: DashboardRow[];
-    groundings: DashboardRow[];
-    memory_entries: DashboardRow[];
-    reflection_proposals: DashboardRow[];
     semantic_index_entries: DashboardRow[];
   };
   questions: {
     facts: DashboardRow[];
-    observations: DashboardRow[];
     waiting_questions: DashboardRow[];
     asked_questions: DashboardRow[];
     answered_questions: DashboardRow[];

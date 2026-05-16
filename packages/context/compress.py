@@ -4,8 +4,8 @@ Single entry point for both systems:
 - LLM-based compress via reflect agent (high quality, requires sub-agent capability)
 - Deterministic fallback (truncate + template summary, for hot-path overflow retries)
 
-Split logic protects user queries and assistant responses while compressing
-intermediate tool call/result messages.
+Split logic protects the most recent tail while compressing older or oversized
+completed context into a reference summary.
 """
 
 from __future__ import annotations
@@ -152,12 +152,19 @@ def split_for_compress(
     """Split messages into (to_summarize, protected_tail).
 
     For multi-turn conversations: keeps last N user turns intact.
-    For single long turns (1 user + many tools): keeps first user query +
-    last ~25% of messages (final assistant response + recent tool context).
+    For single long turns (1 user + many tools): keeps the first user query plus
+    the last ~25% of messages (final assistant response + recent tool context).
+    For very short high-usage histories (for example one huge user request plus
+    one assistant reply), keeps only the latest completed tail message and
+    summarizes the earlier oversized context. Callers only invoke this splitter
+    after a high-usage threshold, so this branch does not affect ordinary short
+    conversations.
     """
     total = len(messages)
-    if total < 4:
+    if total < 2:
         return (), messages
+    if total < 4:
+        return messages[:-1], messages[-1:]
 
     # Find user-message boundaries
     user_starts: list[int] = []

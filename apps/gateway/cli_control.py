@@ -426,24 +426,8 @@ class GatewayCliControlService:
         previous_episode_id = session.episode_id
         runtime = self.runtime()
 
-        learning_detail = "background learning queued"
-        try:
-            job = runtime.schedule_learning_for_session(
-                session_id=previous_episode_id,
-                trigger="clear",
-                summary=f"{self.surface_label} {self.binding_subject} reopened on a fresh Episode",
-                metadata={
-                    "source": f"gateway.{self.control_config_path}",
-                    "adapter": inbound.adapter_id,
-                },
-            )
-            job_id = getattr(job, "job_id", None)
-            if job_id:
-                learning_detail = f"background learning queued · {job_id}"
-        except Exception:
-            pass
-
         fresh_session = runtime.start_fresh_episode(previous_episode_id)
+        learning_detail = "episode closed · learning queued"
         new_episode_id = fresh_session.episode_id
 
         # Rewrite the gateway identity so the fresh Episode becomes the active route.

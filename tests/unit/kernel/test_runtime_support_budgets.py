@@ -13,7 +13,6 @@ from packages.contracts.runtime import (
     PersonalModelRuntimeState,
     PromptEnvelope,
     PromptMessage,
-    UserCardRecord,
 )
 from packages.kernel import KernelService, KernelSourceRequest
 from packages.kernel.execution_support import execute_kernel_turn
@@ -50,7 +49,7 @@ class RuntimeSupportBudgetTest(unittest.TestCase):
             status="completed",
             metadata={"user_query": "raw question"},
             payload_refs=(),
-            summary="source record ingested",
+            summary="source item ingested",
         )
 
         self.assertEqual(_step_event_type(effective_step), "user_query")
@@ -265,12 +264,6 @@ class RuntimeSupportBudgetTest(unittest.TestCase):
             started_at=datetime(2026, 4, 27, 23, 30, tzinfo=timezone.utc),
             updated_at=datetime(2026, 4, 27, 23, 30, tzinfo=timezone.utc),
         )
-        user = UserCardRecord(
-            user_card_id="profile-1:user",
-            profile_id="profile-1",
-            timezone="Asia/Shanghai",
-        )
-
         with mock.patch.dict("os.environ", {"ELEPHANT_TIMEZONE": "America/Los_Angeles"}, clear=False):
             clock = _build_clock(
                 "Asia/Shanghai",

@@ -32,13 +32,16 @@ class SystemLayerResetMatrixTests(unittest.TestCase):
             with self.subTest(path=relative_path):
                 self.assertFalse((ROOT / relative_path).exists())
 
-    def test_legacy_goal_event_types_are_not_runtime_compatibility_inputs(self) -> None:
-        text = _read("packages/evidence/memory_runtime_support.py")
-
-        self.assertNotIn("goal_update", text)
-        self.assertNotIn("goal_snapshot", text)
-        self.assertIn("work_item_update", text)
-        self.assertIn("work_item_snapshot", text)
+    def test_deleted_legacy_evidence_modules_are_gone(self) -> None:
+        for relative_path in (
+            "packages/evidence/recall_runtime_impl.py",
+            "packages/evidence/recall_runtime_support.py",
+            "packages/evidence/personal_model_support.py",
+            "packages/evidence/memory_capture_support.py",
+            "packages/evidence/memory_inventory.py",
+        ):
+            with self.subTest(path=relative_path):
+                self.assertFalse((ROOT / relative_path).exists())
 
     def test_makefile_targets_reference_reset_lifecycle_surfaces(self) -> None:
         text = _read("Makefile")
@@ -52,7 +55,7 @@ class SystemLayerResetMatrixTests(unittest.TestCase):
             "tests.integration.kernel.test_turn_lifecycle",
             "tests.integration.storage_system_layers.test_repository",
             "tests.integration.tools_skills.test_tools_and_skills_runtime",
-            "tests.unit.memory.test_memory_runtime",
+            "tests.unit.recall.test_recall_scenarios",
             "tests.scenarios.continuity.test_continuity_scenarios",
             "tests.scenarios.companion.test_companion_scenarios",
         ):
@@ -67,7 +70,7 @@ class SystemLayerResetMatrixTests(unittest.TestCase):
             "test_elephant_state_create_switch_list_and_delete_preserves_personal_model",
             "test_episode_loop_and_step_round_trip_without_legacy_evidence",
             "test_elephant_delete_removes_state_scoped_semantic_rows_only",
-            "test_legacy_evidence_memory_methods_are_noops",
+            "test_legacy_storage_methods_are_removed",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, text)
@@ -108,7 +111,7 @@ class SystemLayerResetMatrixTests(unittest.TestCase):
             "test_kernel_turn_uses_state_query_without_goal_graph_dependency",
             "KernelSourceRequest",
             "state_query",
-            "active_task",
+            "outcome.state.summary",
         ):
             with self.subTest(marker=marker):
                 self.assertIn(marker, kernel_text)

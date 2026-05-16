@@ -11,7 +11,7 @@ from typing import Mapping
 
 from packages.contracts.layers import Episode, Loop, PersonalModel, State, Step
 from packages.contracts.runtime import LearningJob
-from packages.contracts.support import Grounding, MemoryEntry, Record, ReflectionProposal, SemanticIndexEntry
+from packages.contracts.support import SemanticIndexEntry
 
 SCHEMA_VERSION = 1
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
@@ -181,82 +181,11 @@ def _step_from_row(row: sqlite3.Row) -> Step:
     )
 
 
-def _record_contract_from_row(row: sqlite3.Row) -> Record:
-    return Record(
-        record_id=str(row["record_id"]),
-        kind=str(row["kind"]),
-        schema_version=str(row["schema_version"]),
-        payload=_mapping_object(str(row["payload_json"])),
-        owner_scope=str(row["owner_scope"]) if row["owner_scope"] is not None else None,
-        personal_model_id=canonical_personal_model_ref(str(row["personal_model_id"]) if row["personal_model_id"] is not None else None),
-        state_id=str(row["state_id"]) if row["state_id"] is not None else None,
-        layer_type=str(row["layer_type"]) if row["layer_type"] is not None else None,
-        artifact_uri=str(row["artifact_uri"]) if row["artifact_uri"] is not None else None,
-        created_at=_parse_datetime(str(row["created_at"])),
-        metadata=_mapping_text(str(row["metadata_json"])),
-    )
-
-
-def _grounding_from_row(row: sqlite3.Row, source_record_ids: tuple[str, ...]) -> Grounding:
-    return Grounding(
-        grounding_id=str(row["grounding_id"]),
-        source_record_ids=source_record_ids,
-        summary=str(row["summary"]),
-        confidence=float(row["confidence"]),
-        policy_decision=str(row["policy_decision"]),
-        repair_state=str(row["repair_state"]),
-        created_at=_parse_datetime(str(row["created_at"])),
-        metadata=_mapping_text(str(row["metadata_json"])),
-    )
-
-
-def _memory_entry_from_row(row: sqlite3.Row, grounding_ids: tuple[str, ...]) -> MemoryEntry:
-    # Legacy rows may have NULL importance; default to 0.5.
-    raw_importance = row["importance"] if "importance" in row.keys() else None
-    importance = 0.5
-    if raw_importance is not None:
-        try:
-            importance = float(raw_importance)
-        except (TypeError, ValueError):
-            importance = 0.5
-    return MemoryEntry(
-        memory_entry_id=str(row["memory_entry_id"]),
-        owner_scope=str(row["owner_scope"]),
-        kind=str(row["kind"]),
-        content=str(row["content"]),
-        grounding_ids=grounding_ids,
-        personal_model_id=canonical_personal_model_ref(str(row["personal_model_id"]) if row["personal_model_id"] is not None else None),
-        state_id=str(row["state_id"]) if row["state_id"] is not None else None,
-        sensitivity=str(row["sensitivity"]),
-        status=str(row["status"]),
-        created_at=_parse_datetime(str(row["created_at"])),
-        updated_at=_parse_datetime(str(row["updated_at"])),
-        metadata=_mapping_text(str(row["metadata_json"])),
-        importance=max(0.0, min(1.0, importance)),
-    )
-
-
-def _reflection_proposal_from_row(row: sqlite3.Row, grounding_ids: tuple[str, ...]) -> ReflectionProposal:
-    return ReflectionProposal(
-        reflection_proposal_id=str(row["reflection_proposal_id"]),
-        owner_scope=str(row["owner_scope"]),
-        proposal_type=str(row["proposal_type"]),
-        content=str(row["content"]),
-        grounding_ids=grounding_ids,
-        personal_model_id=canonical_personal_model_ref(str(row["personal_model_id"]) if row["personal_model_id"] is not None else None),
-        state_id=str(row["state_id"]) if row["state_id"] is not None else None,
-        target_id=str(row["target_id"]) if row["target_id"] is not None else None,
-        status=str(row["status"]),
-        created_at=_parse_datetime(str(row["created_at"])),
-        updated_at=_parse_datetime(str(row["updated_at"])),
-        metadata=_mapping_text(str(row["metadata_json"])),
-    )
-
 def _semantic_index_entry_from_row(row: sqlite3.Row) -> SemanticIndexEntry:
     return SemanticIndexEntry(
         semantic_index_entry_id=str(row["semantic_index_entry_id"]),
         owner_scope=str(row["owner_scope"]),
-        source_record_id=str(row["source_record_id"]),
+        source_id=str(row["source_id"]),
         provider_id=str(row["provider_id"]),
         model_id=str(row["model_id"]),
         dimensions=int(row["dimensions"]),

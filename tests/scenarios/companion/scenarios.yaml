@@ -21,7 +21,7 @@
       "purpose": "Make companion identity state visible in the CLI proving surface.",
       "primary_assertions": [
         "persona state is inspectable from the CLI",
-        "relationship-memory policy is visible and stable",
+        "relationship policy is visible and stable",
         "the user can tell when text-first mode is active"
       ]
     }

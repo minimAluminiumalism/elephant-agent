@@ -1,4 +1,4 @@
-"""Session, memory, and profile persistence methods for the CLI runtime."""
+"""Session, recall, and profile persistence methods for the CLI runtime."""
 
 from __future__ import annotations
 
@@ -11,38 +11,38 @@ import shutil
 from typing import Any
 from uuid import uuid4
 
-from packages.contracts import Record
 from packages.contracts.layers import Episode
-from packages.contracts.runtime import EvidenceRetrievalRequest, EvidenceRetrievalResult, MemoryRecord
+from packages.contracts.runtime import EvidenceRetrievalRequest, EvidenceRetrievalResult, RecallEvidence
 from packages.evidence import (
-    MemoryCaptureRequest,
     UnifiedRecallRequest,
     render_recall_hit,
     unified_recall,
 )
 from packages.state import (
     LoadedProfile,
-    build_canonical_profile_state,
-    load_persisted_canonical_state,
     load_runtime_profile,
     parse_elephant_identity_display_name,
     profile_manifest_payload,
     read_elephant_identity_file,
+)
+from packages.state.canonical import build_canonical_profile_state
+from packages.state.persistence import (
+    load_persisted_canonical_state,
     resolve_runtime_state,
     sync_canonical_profile_state,
 )
 
 from .runtime_cognition import (
-    _list_scope_memories,
-    _memory_query_seed,
-    _memory_query_with_relationship,
-    _memory_scope_reason,
-    _memory_scope_session_ids,
+    _list_scope_recall_evidence,
+    _recall_query_seed,
+    _recall_query_with_relationship,
+    _recall_scope_reason,
+    _recall_scope_session_ids,
 )
 from .runtime_snapshot import load_snapshot_state_focus
 from .runtime_support import (
     EggSummary,
-    _PlanningMemoryRecovery,
+    _PlanningRecallRecovery,
     _elephant_state_id,
     _coerce_str_tuple,
     _optional_datetime,
@@ -199,7 +199,6 @@ class CliRuntimeRecordsMixin:
         elephant_state = self.state_for_elephant(elephant_id)
         if not session_ids and elephant_state is None:
             return 0
-        self._delete_memory_rows_for_sessions(session_ids)
         deleted_sessions = 0
         if session_ids:
             deleted_sessions = self.repository.delete_episodes(session_ids, delete_orphaned_profiles=False)
@@ -216,7 +215,6 @@ class CliRuntimeRecordsMixin:
         session_ids = tuple(session.episode_id for session in self._list_sessions())
         if not session_ids and not states:
             return (0, 0)
-        self._delete_memory_rows_for_sessions(session_ids)
         deleted_sessions = 0
         if session_ids:
             deleted_sessions = self.repository.delete_episodes(session_ids, delete_orphaned_profiles=False)
@@ -232,10 +230,6 @@ class CliRuntimeRecordsMixin:
             if session is not None and session.personal_model_id:
                 profile_ids.append(session.personal_model_id)
         return tuple(profile_ids)
-
-    def _delete_memory_rows_for_sessions(self, session_ids: tuple[str, ...]) -> None:
-        # No-op retained for callers after migration 0013 removed row deletion work.
-        pass
 
     def _delete_elephant_file_dirs(self, elephant_ids: tuple[str, ...]) -> None:
         cleaned_elephant_ids = tuple(dict.fromkeys(elephant_id.strip() for elephant_id in elephant_ids if elephant_id.strip()))
@@ -280,87 +274,37 @@ class CliRuntimeRecordsMixin:
             return None
         return sessions[0]
 
-    def _planning_memory_recovery(self, session: Episode, *, limit: int = 8) -> _PlanningMemoryRecovery:
-        from .runtime_records_planning import plan_memory_recovery
+    def _planning_recall_evidence_recovery(self, session: Episode, *, limit: int = 8) -> _PlanningRecallRecovery:
+        from .runtime_records_planning import plan_recall_evidence_recovery
 
-        return plan_memory_recovery(self, session, limit=limit)
+        return plan_recall_evidence_recovery(self, session, limit=limit)
 
-    def _planning_memories(self, session: Episode, *, limit: int = 8) -> tuple[MemoryRecord, ...]:
-        return self._planning_memory_recovery(session, limit=limit).memories
+    def _planning_recall_evidence(self, session: Episode, *, limit: int = 8) -> tuple[RecallEvidence, ...]:
+        return self._planning_recall_evidence_recovery(session, limit=limit).recall_items
 
-    def inspect_memories(self, session_id: str) -> tuple[MemoryRecord, ...]:
-        return tuple(self.memory_runtime.store.list(episode_id=session_id))
+    def inspect_recall_evidence(self, session_id: str) -> tuple[RecallEvidence, ...]:
+        return tuple(self.recall_runtime.store.list(episode_id=session_id))
 
-    def list_personal_model_memories(
+    def inspect_recall_evidence_item(self, session_id: str, evidence_ref: str) -> RecallEvidence:
+        evidence = self.recall_runtime.store.get(evidence_ref)
+        if evidence is None or evidence.episode_id != session_id:
+            raise KeyError(evidence_ref)
+        return evidence
+
+    def recall_evidence_state(self, evidence_ref: str) -> Mapping[str, object]:
+        return self.recall_runtime.store.state(evidence_ref)
+
+    def recall_evidence_lineage(self, evidence_ref: str) -> tuple[str, ...]:
+        return self.recall_runtime.store.lineage(evidence_ref)
+
+    def list_personal_model_facts(
         self,
         personal_model_id: str,
-    ) -> tuple[MemoryEntry, ...]:
-        return tuple(
-            entry
-            for entry in self.repository.list_memory_entries(
-                owner_scope="personal_model",
-                personal_model_id=personal_model_id,
-            )
-            if entry.status != "deleted"
-        )
+    ) -> tuple[object, ...]:
+        del personal_model_id
+        return ()
 
-    def inspect_personal_model_memory(self, personal_model_id: str, memory_id: str) -> MemoryEntry:
-        entry = self.repository.load_memory_entry(memory_id)
-        if entry is None or entry.owner_scope != "personal_model" or entry.personal_model_id != personal_model_id:
-            raise KeyError(memory_id)
-        return entry
-
-    def _memory_scope_target(self, session_id: str, scope: str):
-        session = self._load_session(session_id)
-        state = self.state_for_elephant(str(session.elephant_id or "")) or self.current_elephant_state()
-        if state is None:
-            state = self.ensure_elephant_state(session)
-        owner_scope = "state" if scope == "state" else "personal_model"
-        return session, state, owner_scope
-
-    def _memory_entries_for_scope(self, session_id: str, scope: str):
-        _session, state, owner_scope = self._memory_scope_target(session_id, scope)
-        if owner_scope == "state":
-            return tuple(self.repository.list_memory_entries(owner_scope="state", state_id=state.state_id))
-        return tuple(
-            self.repository.list_memory_entries(
-                owner_scope="personal_model",
-                personal_model_id=state.personal_model_id,
-            )
-        )
-
-    def _find_entry_by_locator(
-        self,
-        session_id: str,
-        scope: str,
-        locator: str,
-    ) -> object | None:
-        """Resolve a memory entry via the shared fuzzy locator matcher.
-
-        Delegates to `packages/evidence/locator_match.py` which handles
-        NFKC normalisation, case-folding, unique/substring precedence,
-        most-recent-wins for ambiguity, and optional embedding-based
-        fuzzy fallback. Callers refine the locator and retry on None.
-        """
-        from packages.evidence import find_entry_by_locator
-
-        entries = tuple(
-            entry
-            for entry in self._memory_entries_for_scope(session_id, scope)
-            if entry.status in {"active", "committed"}
-        )
-        embedding_service = getattr(
-            getattr(self.memory_runtime.retriever, "evidence_retriever", None),
-            "embedding_service",
-            None,
-        )
-        return find_entry_by_locator(
-            entries,
-            locator,
-            embedding_service=embedding_service,
-        )
-
-    def recall_memory(
+    def recall_evidence(
         self,
         session_id: str,
         *,
@@ -406,7 +350,7 @@ class CliRuntimeRecordsMixin:
             limit=capped,
             time_range=recall_time_range_from_payload(time_range),
         )
-        embedding_service = getattr(getattr(self.memory_runtime, "retriever", None), "evidence_retriever", None)
+        embedding_service = getattr(getattr(self.recall_runtime, "retriever", None), "evidence_retriever", None)
         embedding_service = getattr(embedding_service, "embedding_service", None)
         ranked = unified_recall(
             request,
@@ -513,7 +457,7 @@ class CliRuntimeRecordsMixin:
             canonical_bundle,
             previous=previous_canonical,
             sync_source=sync_source,
-            memory_runtime=self.memory_runtime,
+            recall_runtime=self.recall_runtime,
             surface="cli",
             state_id=resolved_state.state_id if resolved_state is not None else None,
             episode_id=(latest_session.episode_id if latest_session is not None and latest_session.personal_model_id == loaded_profile.state.profile_id else None),
@@ -525,7 +469,7 @@ class CliRuntimeRecordsMixin:
                 profile=reloaded.state,
                 session=latest_session,
                 work_items=(),
-                memories=self.inspect_memories(latest_session.episode_id),
+                recall_items=self.inspect_recall_evidence(latest_session.episode_id),
                 plan=None,
                 execution=None,
                 delivery=None,

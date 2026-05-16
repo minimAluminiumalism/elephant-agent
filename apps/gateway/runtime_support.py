@@ -23,7 +23,7 @@ from packages.models.runtime_capability import provider_fallback_summary, provid
 from packages.capabilities.runtime import (
     CapabilityDescriptor,
     ContextCapability,
-    MemoryCapability,
+    RecallCapability,
     ModelProviderCapability,
     TelemetrySinkCapability,
 )
@@ -33,7 +33,7 @@ from packages.contracts.runtime import (
     ContextBundle,
     EventEnvelope,
     ExecutionResult,
-    MemoryRecord,
+    RecallEvidence,
 )
 from packages.gateway_core import (
     DEFAULT_GATEWAY_ACCOUNT_ID,
@@ -53,8 +53,8 @@ from packages.gateway_core import (
     InMemoryGatewayIdentityStore,
     InMemoryGatewaySessionStore,
 )
-from packages.kernel import KernelDependencies, KernelService, KernelSourceRequest, ObservationPipeline, StateReconciler
-from packages.evidence import MemoryRuntime
+from packages.kernel import KernelDependencies, KernelService, KernelSourceRequest, ReconciliationPipeline, StateReconciler
+from packages.evidence.recall_runtime import RecallRuntime
 from packages.state import build_prompt_contract
 from packages.security.runtime import SecurityPolicy
 from packages.storage import RuntimeStorageRepository

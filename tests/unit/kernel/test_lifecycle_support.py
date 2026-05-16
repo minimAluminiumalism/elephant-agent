@@ -64,6 +64,9 @@ class KernelLifecycleSupportTests(unittest.TestCase):
             assert stored_stale is not None
             self.assertEqual(stored_stale.status, "closed")
             self.assertEqual(stored_stale.metadata.get("closed_reason"), "idle_timeout")
+            jobs = repository.list_learning_jobs(episode_id=stale_episode.episode_id)
+            self.assertEqual(len(jobs), 1)
+            self.assertEqual(jobs[0].trigger, "episode_close")
             self.assertEqual(
                 lifecycle.episode.metadata.get("opening_resume_snapshot"),
                 "Resume the gateway handoff from the prior episode.",

@@ -24,7 +24,7 @@ def _utc_now() -> datetime:
 
 @dataclass(frozen=True, slots=True)
 class SemanticIndexDocument:
-    source_record_id: str
+    source_id: str
     owner_scope: str
     text: str
     vector: tuple[float, ...]
@@ -36,8 +36,8 @@ class SemanticIndexDocument:
     metadata: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if not self.source_record_id.strip():
-            raise ValueError("semantic index source record id must not be empty")
+        if not self.source_id.strip():
+            raise ValueError("semantic index source id must not be empty")
         if not self.text.strip():
             raise ValueError("semantic index document text must not be empty")
         if not self.provider_id.strip():
@@ -100,7 +100,7 @@ class SemanticIndexService:
     def index_document(self, document: SemanticIndexDocument) -> SemanticIndexEntry:
         content_hash = semantic_content_hash(document.text)
         entry_id = semantic_index_entry_id(
-            source_record_id=document.source_record_id,
+            source_id=document.source_id,
             provider_id=document.provider_id,
             model_id=document.model_id,
             dimensions=document.dimensions,
@@ -189,14 +189,14 @@ class SemanticIndexService:
             _entry_id_for_document(document): document for document in desired_documents
         }
         current_by_id = {entry.semantic_index_entry_id: entry for entry in current}
-        desired_source_ids = {document.source_record_id for document in desired_documents}
+        desired_source_ids = {document.source_id for document in desired_documents}
         reuse = tuple(sorted(set(current_by_id) & set(desired_by_id)))
         rebuild = tuple(sorted(set(desired_by_id) - set(current_by_id)))
         delete = tuple(
             sorted(
                 entry.semantic_index_entry_id
                 for entry in current
-                if entry.source_record_id in desired_source_ids
+                if entry.source_id in desired_source_ids
                 and entry.semantic_index_entry_id not in desired_by_id
             )
         )
@@ -235,7 +235,7 @@ class SemanticIndexService:
         return SemanticIndexEntry(
             semantic_index_entry_id=entry_id,
             owner_scope=document.owner_scope,
-            source_record_id=document.source_record_id,
+            source_id=document.source_id,
             provider_id=document.provider_id,
             model_id=document.model_id,
             dimensions=document.dimensions,
@@ -256,20 +256,20 @@ def semantic_content_hash(text: str) -> str:
 
 def semantic_index_entry_id(
     *,
-    source_record_id: str,
+    source_id: str,
     provider_id: str,
     model_id: str,
     dimensions: int,
     content_hash: str,
 ) -> str:
-    identity = "|".join((source_record_id, provider_id, model_id, str(dimensions), content_hash))
+    identity = "|".join((source_id, provider_id, model_id, str(dimensions), content_hash))
     digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()
     return f"semantic-index:{digest}"
 
 
 def _entry_id_for_document(document: SemanticIndexDocument) -> str:
     return semantic_index_entry_id(
-        source_record_id=document.source_record_id,
+        source_id=document.source_id,
         provider_id=document.provider_id,
         model_id=document.model_id,
         dimensions=document.dimensions,

@@ -18,7 +18,7 @@ import {
   UsagePage,
   UsageLogsPage,
 } from "../routes/console/ConsolePages";
-import { MemoryGraphPage } from "../routes/console/MemoryGraphPage";
+import { PersonalModelMapPage } from "../routes/console/PersonalModelMapPage";
 import { ChatPage } from "../routes/chat/ChatPage";
 import { DashboardShell } from "../shell/DashboardShell";
 
@@ -27,9 +27,8 @@ export const router = createBrowserRouter([
     path: "/",
     element: <DashboardShell />,
     children: [
-      { index: true, element: <MemoryGraphPage /> },
-      { path: "palace", element: <MemoryGraphPage /> },
-      { path: "memory-graph", element: <MemoryGraphPage /> },
+      { index: true, element: <PersonalModelMapPage /> },
+      { path: "palace", element: <PersonalModelMapPage /> },
       { path: "you", element: <PersonalModelsPage /> },
       { path: "diary", element: <PersonalModelsPage /> },
       { path: "personal-models", element: <PersonalModelsPage /> },

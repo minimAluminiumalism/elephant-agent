@@ -5,7 +5,7 @@ import unittest
 
 from packages.continuity import (
     apply_episode_continuity_state,
-    build_relationship_memory_policy,
+    build_relationship_policy,
     build_episode_continuity_state,
 )
 from packages.contracts.layers import Episode
@@ -72,8 +72,8 @@ class ContinuityRuntimeTests(unittest.TestCase):
 
         self.assertEqual(restored.interruption_state, "Return to the design review")
 
-    def test_build_relationship_memory_policy_summary_is_text_first(self) -> None:
-        policy = build_relationship_memory_policy("companion", text_first=True)
+    def test_build_relationship_projection_policy_summary_is_text_first(self) -> None:
+        policy = build_relationship_policy("companion", text_first=True)
 
         self.assertTrue(policy.allows("relationship"))
         self.assertFalse(policy.allows("voice"))

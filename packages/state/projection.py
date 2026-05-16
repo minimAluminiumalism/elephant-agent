@@ -5,15 +5,16 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import replace
 
-from packages.contracts import ElephantIdentityRecord, RelationshipMemoryRecord, UserCardRecord
+from packages.contracts import ElephantIdentityRecord
+from packages.state.rendered_views import RenderedRelationshipView, RenderedUserProfileView
 from packages.contracts.runtime import PersonalModelRuntimeState
 
-from .governance import render_user_profile_text
+from .governance import render_user_profile_text as render_user_profile_content
 from .loader import LoadedProfile
 from .policy import CompanionSettings, resolve_personality_preset
 
 
-def render_user_card_profile_text(record: UserCardRecord | None) -> str | None:
+def render_user_profile_projection_text(record: RenderedUserProfileView | None) -> str | None:
     if record is None:
         return None
     field_values: dict[str, str | None] = {
@@ -26,7 +27,7 @@ def render_user_card_profile_text(record: UserCardRecord | None) -> str | None:
         key, _, value = fragment.partition(":")
         if key and value:
             field_values[key.strip()] = value.strip()
-    rendered = render_user_profile_text(durable_notes=record.durable_notes, **field_values)
+    rendered = render_user_profile_content(durable_notes=record.durable_notes, **field_values)
     cleaned = rendered.strip()
     return cleaned or None
 
@@ -35,8 +36,8 @@ def overlay_canonical_profile_state(
     profile: LoadedProfile,
     *,
     identity_record: ElephantIdentityRecord | None = None,
-    user_card: UserCardRecord | None = None,
-    relationship_record: RelationshipMemoryRecord | None = None,
+    user_profile: RenderedUserProfileView | None = None,
+    relationship_record: RenderedRelationshipView | None = None,
 ) -> LoadedProfile:
     state = profile.state
     if identity_record is not None:
@@ -51,7 +52,7 @@ def overlay_canonical_profile_state(
         identity_record=identity_record,
         relationship_record=relationship_record,
     )
-    user_profile_text = render_user_card_profile_text(user_card) if user_card is not None else profile.user_profile_text
+    user_profile_text = render_user_profile_projection_text(user_profile) if user_profile is not None else profile.user_profile_text
     elephant_identity_text = profile.elephant_identity_text
     if identity_record is not None and identity_record.elephant_identity_text is not None:
         elephant_identity_text = identity_record.elephant_identity_text
@@ -78,8 +79,8 @@ def build_loaded_profile_from_state(
     user_profile_text: str | None = None,
     user_profile_path: str | None = None,
     identity_record: ElephantIdentityRecord | None = None,
-    user_card: UserCardRecord | None = None,
-    relationship_record: RelationshipMemoryRecord | None = None,
+    user_profile: RenderedUserProfileView | None = None,
+    relationship_record: RenderedRelationshipView | None = None,
 ) -> LoadedProfile:
     base = LoadedProfile(
         state=profile_state,
@@ -94,7 +95,7 @@ def build_loaded_profile_from_state(
     return overlay_canonical_profile_state(
         base,
         identity_record=identity_record,
-        user_card=user_card,
+        user_profile=user_profile,
         relationship_record=relationship_record,
     )
 
@@ -104,7 +105,7 @@ def _project_companion_settings(
     *,
     mode: str,
     identity_record: ElephantIdentityRecord | None,
-    relationship_record: RelationshipMemoryRecord | None,
+    relationship_record: RenderedRelationshipView | None,
 ) -> CompanionSettings:
     resolved_current = current or _default_companion_settings(mode)
     if identity_record is None and relationship_record is None:

@@ -28,7 +28,7 @@ RESET_API_E2E_TARGETS = (
 
 DETERMINISTIC_SCENARIO_MODULES = (
     "tests.scenarios.context.test_context_scenarios",
-    "tests.unit.memory.test_memory_scenarios",
+    "tests.unit.recall.test_recall_scenarios",
     "tests.scenarios.continuity.test_continuity_scenarios",
 )
 

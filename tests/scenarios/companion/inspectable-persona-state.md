@@ -13,12 +13,12 @@ Verify the companion profile exposes its persona and continuity policy in inspec
 ## Steps
 
 1. inspect the profile state from the CLI
-2. inspect the relationship-memory policy hook
+2. inspect the relationship policy hook
 3. verify the mode is reported as text-first
 4. verify the persona controls are visible in plain text
 
 ## Expected Assertions
 
 - canonical identity state is loaded and shown
-- the relationship-memory policy is visible
+- the relationship policy is visible
 - the CLI does not hide persona state behind prompt text

@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "track": "MOD-2",
+  "purpose": "recall and Personal Model governance fixtures for the first release train",
+  "scenarios": [
+    {
+      "id": "recall.durable-substrate",
+      "file": "durable-recall-substrate.md",
+      "owner_profile": "Retrieval and persistence engineer",
+      "purpose": "Persist the Step/Episode recall evidence and Personal Model fact provenance across a full process restart.",
+      "primary_assertions": [
+        "the ledger survives restart and still lists all appended events",
+        "consolidated evidence remains marked consolidated after restart",
+        "deleted fact stays deleted after restart and no longer appears in retrieval"
+      ]
+    },
+    {
+      "id": "recall.resume-after-gap",
+      "file": "resume-after-gap.md",
+      "owner_profile": "Retrieval and persistence engineer",
+      "purpose": "Resume a collaboration after a time gap and recover the relevant recall evidence that still matters.",
+      "primary_assertions": [
+        "current-work-linked evidence are retrievable after inactivity",
+        "the system explains why the recalled evidence matters now",
+        "freshly corrected fact is preferred over stale evidence"
+      ]
+    },
+    {
+      "id": "recall.correction-and-deletion",
+      "file": "recall-correction-and-deletion.md",
+      "owner_profile": "Retrieval and persistence engineer",
+      "purpose": "Correct stale evidence, delete disallowed facts, and keep the durable trail inspectable.",
+      "primary_assertions": [
+        "corrections supersede stale evidence instead of silently rewriting it",
+        "protected fact is not deleted without explicit governance permission",
+        "retrieval ignores deleted or superseded records"
+      ]
+    }
+  ]
+}

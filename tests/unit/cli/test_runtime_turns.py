@@ -6,12 +6,11 @@ from unittest import mock
 
 import apps.cli.runtime_turns as runtime_turns
 from packages.contracts import EventEnvelope, ExecutionResult
-from packages.evidence.memory_runtime_support import parse_structured_turn_memory
-from packages.kernel import ObservationPipeline
+from packages.kernel import ReconciliationPipeline
 
 
 class RuntimeTurnsReasoningPayloadTests(unittest.TestCase):
-    def test_payload_with_turn_reasoning_carries_provider_trace_for_structured_turns(self) -> None:
+    def test_payload_with_turn_reasoning_stays_on_event_payload_not_structured_evidence_copy(self) -> None:
         outcome = SimpleNamespace(
             state=SimpleNamespace(next_step="", summary=""),
             execution=SimpleNamespace(
@@ -31,7 +30,7 @@ class RuntimeTurnsReasoningPayloadTests(unittest.TestCase):
         self.assertEqual(payload["reasoning_summary"], "Inspect tool evidence before drafting the answer.")
         self.assertEqual(payload["reasoning_provenance"], "provider.raw_trace")
 
-        observation = ObservationPipeline().observe_turn(
+        observation = ReconciliationPipeline().observe_turn(
             inbound_event=EventEnvelope(
                 event_id="event:reasoning-trace",
                 event_type="turn.received",
@@ -52,13 +51,8 @@ class RuntimeTurnsReasoningPayloadTests(unittest.TestCase):
             elephant_id="elephant-1",
         )
 
-        structured = parse_structured_turn_memory(observation.evidence_memories[0])
-
-        self.assertIsNotNone(structured)
-        assert structured is not None
-        self.assertEqual(structured.reasoning.detail, ("Inspect tool evidence before drafting the answer.",))
-        self.assertEqual(structured.reasoning.provenance, "provider.raw_trace")
-        self.assertEqual(structured.reasoning_availability, "raw_trace")
+        self.assertEqual(observation.durable_events[0].payload["reasoning_trace"], "Inspect tool evidence before drafting the answer.")
+        self.assertIn("Step records", observation.summary)
 
     def test_payload_with_turn_reasoning_falls_back_to_decision_summary_when_trace_missing(self) -> None:
         outcome = SimpleNamespace(

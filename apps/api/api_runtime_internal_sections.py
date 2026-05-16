@@ -28,10 +28,8 @@ from .api_runtime_internal_methods import (
     _connection,
     _dashboard_active_provider,
     _dashboard_step_row,
-    _is_elephant_identity_memory_entry,
     _learning_snapshot,
     _personal_model_lens_summaries,
-    _record_payload_by_id,
     _now,
     _runtime_traces,
     _serialize,
@@ -89,7 +87,6 @@ DASHBOARD_SECTIONS = {
     "chat",
     "evidence",
     "questions",
-    "memory-graph",
     "providers",
     "skills",
     "tools",
@@ -144,14 +141,10 @@ def _empty_dashboard(self, *, section: str, generated_at: str) -> dict[str, Any]
         "runtime": {"episodes": (), "loops": (), "steps": (), "episode_traces": (), "learning_jobs": ()},
         "learning": _empty_learning(),
         "evidence": {
-            "records": (),
-            "groundings": (),
-            "memory_entries": (),
             "semantic_index_entries": (),
         },
         "questions": {
             "facts": (),
-            "observations": (),
             "waiting_questions": (),
             "asked_questions": (),
             "answered_questions": (),
@@ -202,8 +195,6 @@ def _state_projection_rows(
     episodes_by_state: Mapping[str, tuple[Any, ...]] | None = None,
     loops_by_episode: Mapping[str, tuple[Any, ...]] | None = None,
     steps_by_loop: Mapping[str, tuple[Any, ...]] | None = None,
-    records: tuple[Any, ...] = (),
-    memory_entries: tuple[Any, ...] = (),
     semantic_index_entries: tuple[Any, ...] = (),
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     episode_map = episodes_by_state or {}
@@ -215,8 +206,6 @@ def _state_projection_rows(
         state_episodes = episode_map.get(state.state_id, ())
         state_loops = tuple(loop for episode in state_episodes for loop in loop_map.get(episode.episode_id, ()))
         state_steps = tuple(step for loop in state_loops for step in step_map.get(loop.loop_id, ()))
-        state_records = tuple(record for record in records if getattr(record, "state_id", None) == state.state_id)
-        state_memory_entries = tuple(entry for entry in memory_entries if getattr(entry, "state_id", None) == state.state_id)
         state_index_entries = tuple(entry for entry in semantic_index_entries if getattr(entry, "state_id", None) == state.state_id)
         is_current = bool(current_state is not None and current_state.state_id == state.state_id)
         growth_state = repository.load_personal_model_growth(state.personal_model_id) if repository is not None else None
@@ -256,8 +245,6 @@ def _state_projection_rows(
             "episode_count": len(state_episodes),
             "loop_count": len(state_loops),
             "step_count": len(state_steps),
-            "record_count": len(state_records),
-            "memory_entry_count": len(state_memory_entries),
             "semantic_index_entry_count": len(state_index_entries),
         })
     return elephant_rows, state_rows
@@ -266,13 +253,13 @@ def _state_projection_rows(
 def _personal_model_dashboard_row(model: Any, repository: Any) -> dict[str, Any]:
     row = dict(_serialize(model))
     personal_model_id = str(model.personal_model_id)
-    # Derive user_card directly from active PM facts
+    # Derive user_profile directly from active PM facts
     from packages.state.profile_from_claims import derive_profile_from_claims
     facts = _active_personal_model_facts(repository, personal_model_id)
-    user_card = derive_profile_from_claims(facts)
-    if user_card:
-        row["user_card"] = user_card
-        preferred_name = str(user_card.get("preferred_name") or "").strip()
+    user_profile = derive_profile_from_claims(facts)
+    if user_profile:
+        row["user_profile"] = user_profile
+        preferred_name = str(user_profile.get("preferred_name") or "").strip()
         if preferred_name:
             row["user_preferred_name"] = preferred_name
     return row
@@ -296,8 +283,6 @@ def _personal_model_rows(
     *,
     personal_models: tuple[Any, ...],
     states: tuple[Any, ...],
-    records: tuple[Any, ...],
-    memory_entries: tuple[Any, ...],
     semantic_index_entries: tuple[Any, ...],
     repository: Any,
 ) -> list[dict[str, Any]]:
@@ -307,26 +292,13 @@ def _personal_model_rows(
     }
     rows: list[dict[str, Any]] = []
     for model in personal_models:
-        component_records = tuple(
-            record for record in records
-            if record.owner_scope == "personal_model" and record.personal_model_id == model.personal_model_id
-        )
-        model_memory_entries = tuple(
-            entry for entry in memory_entries
-            if entry.owner_scope == "personal_model"
-            and entry.personal_model_id == model.personal_model_id
-            and entry.status != "deleted"
-            and not _is_elephant_identity_memory_entry(entry)
-        )
         model_index_entries = tuple(entry for entry in semantic_index_entries if entry.personal_model_id == model.personal_model_id)
         model_facts = _active_personal_model_facts(repository, str(model.personal_model_id))
         model_all_facts = _personal_model_facts(repository, str(model.personal_model_id), ("active", "retired", "disputed"))
         rows.append({
             **_personal_model_dashboard_row(model, repository),
             "state_count": len(states_by_personal_model.get(model.personal_model_id, ())),
-            "component_record_count": len(component_records),
             "personal_model_fact_count": len(model_facts),
-            "memory_entry_count": len(model_memory_entries),
             "semantic_index_entry_count": len(model_index_entries),
             "states": tuple({
                 "state_id": state.state_id,
@@ -342,8 +314,6 @@ def _personal_model_rows(
             ),
             "personal_model_facts": tuple(_serialize(fact) for fact in model_facts),
             "personal_model_all_facts": tuple(_serialize(fact) for fact in model_all_facts),
-            "component_records": tuple(_serialize(record) for record in component_records),
-            "memory_entries": tuple(_serialize(entry) for entry in model_memory_entries),
             "semantic_index_entries": tuple(_serialize(entry) for entry in model_index_entries),
         })
     return rows
@@ -509,14 +479,10 @@ def _fill_overview(dashboard: dict[str, Any], self) -> None:
     )[:1]
     overview_target_models = canonical_models or personal_models[:1]
     current_personal_model_id = DEFAULT_PERSONAL_MODEL_ID
-    records: tuple[Any, ...] = ()
-    memory_entries: tuple[Any, ...] = ()
     semantic_index_entries = self.repository.list_semantic_index_entries() if hasattr(self.repository, "list_semantic_index_entries") else ()
     overview_models = tuple(_personal_model_rows(
         personal_models=overview_target_models,
         states=states,
-        records=records,
-        memory_entries=memory_entries,
         semantic_index_entries=tuple(semantic_index_entries),
         repository=self.repository,
     ))
@@ -558,8 +524,6 @@ def _fill_personal_models(dashboard: dict[str, Any], self) -> None:
     dashboard["personal_models"] = tuple(_personal_model_rows(
         personal_models=canonical_models or personal_models[:1],
         states=states,
-        records=(),
-        memory_entries=(),
         semantic_index_entries=_sort_items(self.repository.list_semantic_index_entries(), id_field="semantic_index_entry_id", time_field="updated_at"),
         repository=self.repository,
     ))
@@ -591,7 +555,7 @@ def _fill_runtime(dashboard: dict[str, Any], self) -> None:
     dashboard["states"] = tuple(state_rows)
     dashboard["runtime"] = {
         "episodes": tuple(_episode_rows(all_episodes, loops_by_episode, steps_by_loop)),
-        "episode_traces": _runtime_traces(episodes=recent_episodes, loops_by_episode=loops_by_episode, steps_by_loop=steps_by_loop, record_payloads={}),
+        "episode_traces": _runtime_traces(episodes=recent_episodes, loops_by_episode=loops_by_episode, steps_by_loop=steps_by_loop, source_payloads={}),
         "learning_jobs": (),
     }
 
@@ -613,7 +577,6 @@ def _fill_reflect(dashboard: dict[str, Any], self) -> None:
 def _fill_chat(dashboard: dict[str, Any], self) -> None:
     states, current_state = _state_collections(self)
     episodes, loops, steps = _runtime_collections(self)
-    records: tuple[Any, ...] = ()
     _, loops_by_episode, steps_by_loop = _runtime_maps(states=states, episodes=episodes, loops=loops, steps=steps)
     elephant_rows, state_rows = _state_projection_rows(
         states,
@@ -629,18 +592,16 @@ def _fill_chat(dashboard: dict[str, Any], self) -> None:
     dashboard["herd"] = tuple(elephant_rows)
     dashboard["states"] = tuple(state_rows)
     dashboard["personal_models"] = _basic_personal_model_rows(personal_models, repository=self.repository)
-    dashboard["runtime"] = {**dashboard["runtime"], "episode_traces": _runtime_traces(episodes=episodes, loops_by_episode=loops_by_episode, steps_by_loop=steps_by_loop, record_payloads=_record_payload_by_id(records))}
+    dashboard["runtime"] = {**dashboard["runtime"], "episode_traces": _runtime_traces(episodes=episodes, loops_by_episode=loops_by_episode, steps_by_loop=steps_by_loop, source_payloads={})}
     dashboard["overview"] = {**dashboard["overview"], "current_state_id": current_state.state_id if current_state is not None else None, "current_personal_model_id": current_state.personal_model_id if current_state is not None else DEFAULT_PERSONAL_MODEL_ID}
 
 
 def _fill_evidence(dashboard: dict[str, Any], self) -> None:
-    # Legacy: Sources page removed. Only semantic index stats remain useful.
+    # Steps, Episodes, and Facts own evidence. This section only exposes the
+    # shared semantic index that makes those rows searchable.
     semantic_index_entries = _sort_items(self.repository.list_semantic_index_entries(), id_field="semantic_index_entry_id", time_field="updated_at")
     active_provider = dict(self.model_provider.describe())
     dashboard["evidence"] = {
-        "records": (),
-        "groundings": (),
-        "memory_entries": (),
         "semantic_index_entries": tuple(_serialize(entry) for entry in semantic_index_entries),
     }
     dashboard["semantic_index_health"] = _semantic_index_health(semantic_index_entries, active_provider)
@@ -662,7 +623,6 @@ def _fill_questions(dashboard: dict[str, Any], self) -> None:
         except Exception:
             pass
     facts: tuple = ()
-    observations: tuple = ()
     waiting_questions: tuple = ()
     asked_questions: tuple = ()
     answered_questions: tuple = ()
@@ -676,13 +636,6 @@ def _fill_questions(dashboard: dict[str, Any], self) -> None:
             facts = tuple(list_facts(personal_model_id=personal_model_id, status="active"))
         except Exception:
             facts = ()
-
-    list_obs = getattr(repository, "list_personal_model_observations", None)
-    if callable(list_obs):
-        try:
-            observations = tuple(list_obs(personal_model_id=personal_model_id))
-        except Exception:
-            observations = ()
 
     list_questions = getattr(repository, "list_open_questions", None)
     if callable(list_questions):
@@ -709,20 +662,16 @@ def _fill_questions(dashboard: dict[str, Any], self) -> None:
         learning_intensity = configured_intensity
     effective_policy = _effective_question_policy(learning_intensity, question_config)
 
-    # Coverage grid — one row per (lens, sub_lens) with Fact/Observation counts.
+    # Coverage grid — one row per (lens, facet) with durable Fact counts.
     by_key: dict[tuple[str, str], dict[str, Any]] = {}
     for fact in facts:
-        key = (str(getattr(fact, "lens", "") or ""), str(getattr(fact, "sub_lens", "") or ""))
-        row = by_key.setdefault(key, {"lens": key[0], "sub_lens": key[1], "facts": 0, "observations": 0})
+        key = (str(getattr(fact, "lens", "") or ""), str(getattr(fact, "facet", "") or ""))
+        row = by_key.setdefault(key, {"lens": key[0], "facet": key[1], "facts": 0})
         row["facts"] += 1
-    for obs in observations:
-        key = (str(getattr(obs, "lens", "") or ""), str(getattr(obs, "sub_lens", "") or ""))
-        row = by_key.setdefault(key, {"lens": key[0], "sub_lens": key[1], "facts": 0, "observations": 0})
-        row["observations"] += 1
     for row in by_key.values():
         row["covered"] = row["facts"] > 0
         lens_coverage.append(row)
-    lens_coverage.sort(key=lambda r: (r["lens"], r["sub_lens"]))
+    lens_coverage.sort(key=lambda r: (r["lens"], r["facet"]))
 
     # Build an index so the dashboard can show the resulting claims next to
     # each answered question.
@@ -746,7 +695,6 @@ def _fill_questions(dashboard: dict[str, Any], self) -> None:
 
     dashboard["questions"] = {
         "facts": tuple(_serialize(fact) for fact in facts),
-        "observations": tuple(_serialize(obs) for obs in observations),
         "waiting_questions": tuple(_serialize_question(q) for q in waiting_questions),
         "asked_questions": tuple(_serialize_question(q) for q in asked_questions),
         "answered_questions": tuple(_serialize_question(q) for q in answered_questions),
@@ -952,7 +900,7 @@ def inspect_internal_dashboard(self, section: str) -> dict[str, Any]:
     dashboard = _empty_dashboard(self, section=normalized_section, generated_at=_now())
     if normalized_section == "overview":
         _fill_overview(dashboard, self)
-    elif normalized_section in {"personal-models", "memory-graph"}:
+    elif normalized_section == "personal-models":
         _fill_personal_models(dashboard, self)
     elif normalized_section == "herd":
         _fill_states(dashboard, self)

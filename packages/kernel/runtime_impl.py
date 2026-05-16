@@ -9,7 +9,7 @@ from .context_compaction import (
     compact_context_after_usage,
     compaction_step_metadata,
     episode_continuity_packet,
-    flush_projection_memory,
+    flush_projection_cache,
     latest_compacted_projection,
     projection_compaction_detail,
     retry_context_after_provider_overflow,
@@ -185,9 +185,7 @@ class KernelService:
             episode_id=episode_lifecycle.episode.episode_id,
             loop_id=loop_lifecycle.loop.loop_id,
         )
-        source_record = request.to_source_record(created_at=current)
-        # NOTE: source_record is kept in-memory for KernelOutcome compatibility
-        # but no longer persisted. Steps are the canonical conversation record.
+        source_id = request.source_id
         event = request.to_event()
         step_recorder = KernelStepRecorder(
             self.dependencies.storage,
@@ -199,9 +197,9 @@ class KernelService:
             action="record_input",
             status="completed",
             current=current,
-            summary="source record ingested",
+            summary="source input recorded",
             outcome="ok",
-            payload_refs=(source_record.record_id, event.event_id),
+            payload_refs=(source_id, event.event_id),
             metadata={
                 "event_type": request.source_event_type,
                 "user_query": request.prompt,
@@ -232,7 +230,7 @@ class KernelService:
             "ingest",
             " ".join(
                 (
-                    f"source_record={source_record.record_id}",
+                    f"source={source_id}",
                     f"event={event.event_id}",
                     f"personal_model={identity.personal_model.personal_model_id}",
                     f"state={identity.state.state_id}",
@@ -262,26 +260,25 @@ class KernelService:
                 )
             ),
         )
-        user = self._route_user(profile)
-        clock = _build_clock(user.timezone if user is not None else None, now=current)
-        memory_recovery = self._recover_memories(
+        clock = _build_clock(None, now=current)
+        recall_selection = self._retrieve_recall_evidence(
             session,
             request,
             state=identity.state,
         )
-        memories = memory_recovery.memories
+        recall_items = recall_selection.recall_items
         stage(
             "recover",
             " ".join(
                 (
-                    f"memories={len(memories)}",
-                    f"scope={','.join(memory_recovery.scope_episode_ids)}",
-                    f"vector_cache={memory_recovery.vector_cache_status or 'n/a'}",
+                    f"recall_items={len(recall_items)}",
+                    f"scope={','.join(recall_selection.scope_episode_ids)}",
+                    f"vector_cache={recall_selection.vector_cache_status or 'n/a'}",
                 )
             ),
         )
 
-        context = self.dependencies.context.assemble(session, (), memories, state_focus=None)
+        context = self.dependencies.context.assemble(session, (), recall_items, state_focus=None)
         step_recorder.record(
             phase="reasoning",
             action="assemble_context",
@@ -294,10 +291,10 @@ class KernelService:
         projection_compaction = latest_compacted_projection(self.dependencies.context)
         if projection_compaction is not None:
             stage("context-compact", projection_compaction_detail(projection_compaction))
-            flush_projection_memory(self.dependencies.context)
+            flush_projection_cache(self.dependencies.context)
         stage(
             "context",
-            f"bundle={context.bundle_id} budget={context.token_budget} recovery_scope_reason={memory_recovery.scope_reason}",
+            f"bundle={context.bundle_id} budget={context.token_budget} recovery_scope_reason={recall_selection.scope_reason}",
         )
 
         context = self._context_for_generation(
@@ -306,7 +303,7 @@ class KernelService:
             session=session,
             state_focus=None,
             work_items=(),
-            memories=memories,
+            recall_items=recall_items,
             context=context,
             decision=None,
             plan=None,
@@ -340,13 +337,13 @@ class KernelService:
                 session=session,
                 state_focus=None,
                 work_items=(),
-                memories=memories,
+                recall_items=recall_items,
                 decision=None,
                 plan=None,
                 continuity=None,
                 stage=stage,
                 context_for_generation=self._context_for_generation,
-                recovery_scope_reason=memory_recovery.scope_reason,
+                recovery_scope_reason=recall_selection.scope_reason,
                 source_step_ids=tuple(step.step_id for step in step_recorder.steps),
             )
             if retry_compaction is None:
@@ -402,7 +399,7 @@ class KernelService:
         stage("persist", f"state={projected_state.state_id}")
         step_recorder.record(
             phase="acting",
-            action="write_memory",
+            action="write_state",
             status="completed",
             current=_clock_now(),
             summary="runtime state persisted",
@@ -413,7 +410,7 @@ class KernelService:
         if episode_lifecycle.idle_closed_episodes:
             stage(
                 "gateway_idle_learning",
-                f"skipped {len(episode_lifecycle.idle_closed_episodes)} idle-closed episode(s)",
+                f"queued {len(episode_lifecycle.idle_closed_episodes)} idle-closed episode(s)",
             )
 
         delivery = self._deliver(request, profile, session, execution)
@@ -489,14 +486,13 @@ class KernelService:
 
         outcome = KernelOutcome(
             event=event,
-            source_record=source_record,
+            source_id=source_id,
             personal_model=identity.personal_model,
             state=projected_state,
             episode=episode,
             loop=loop,
             steps=step_recorder.steps,
-            groundings=(),
-            memories=memories,
+            recall_items=recall_items,
             context=context,
             execution=execution,
             delivery=delivery,
@@ -587,24 +583,18 @@ class KernelService:
             metadata=existing_session.metadata if existing_session is not None else {},
         ), previous_updated_at
 
-    def _route_user(self, profile: PersonalModelRuntimeState) -> UserCardRecord | None:
-        load_user = getattr(self.dependencies.storage, "load_user_card_for_profile", None)
-        if not callable(load_user):
-            return None
-        return load_user(profile.profile_id)
-
-    def _recover_memories(
+    def _retrieve_recall_evidence(
         self,
         session: Episode,
         request: KernelSourceRequest,
         *,
         state: State,
-    ) -> _MemoryRecoverySelection:
+    ) -> _RecallSelection:
         del state
         query = request.state_query or request.prompt or str(request.event.payload.get("message", "")).strip()
         if not query.strip():
-            return _MemoryRecoverySelection(
-                memories=(),
+            return _RecallSelection(
+                recall_items=(),
                 query="",
                 work_item_ids=(),
                 scope_episode_ids=(session.episode_id,),
@@ -613,54 +603,38 @@ class KernelService:
         work_item_ids: tuple[str, ...] = ()
         scope_episode_ids = _episode_lineage_ids(self.dependencies.storage, session)
         scope_reason = "recovery follows the active episode lineage while allowing elephant and personal-model continuity recall"
-        retrieve_evidence = getattr(self.dependencies.memory, "retrieve_evidence", None)
-        if callable(retrieve_evidence):
-            requested_scopes = ["episode"]
-            if session.elephant_id:
-                requested_scopes.append("elephant")
-            if session.personal_model_id:
-                requested_scopes.append("personal_model")
-            retrieval = retrieve_evidence(
-                EvidenceRetrievalRequest(
-                    episode_id=session.episode_id,
-                    personal_model_id=session.personal_model_id,
-                    elephant_id=session.elephant_id,
-                    lineage_episode_ids=scope_episode_ids,
-                    work_item_ids=work_item_ids,
-                    query=query,
-                    scopes=tuple(requested_scopes),
-                    latency_mode="fast",
-                    limit=5,
-                    scope_reason=scope_reason,
-                    relationship_hints=(),
-                    max_compression="episode_summary",
-                    replay_mode="off",
-                    allow_embeddings=str(request.event.payload.get("allow_embeddings", "true")).strip().lower() != "false",
-                )
-            )
-            return _MemoryRecoverySelection(
-                memories=tuple(candidate.memory for candidate in retrieval.candidates),
-                query=query,
+        requested_scopes = ["episode"]
+        if session.elephant_id:
+            requested_scopes.append("elephant")
+        if session.personal_model_id:
+            requested_scopes.append("personal_model")
+        retrieval = self.dependencies.recall.retrieve_evidence(
+            EvidenceRetrievalRequest(
+                episode_id=session.episode_id,
+                personal_model_id=session.personal_model_id,
+                elephant_id=session.elephant_id,
+                lineage_episode_ids=scope_episode_ids,
                 work_item_ids=work_item_ids,
-                scope_episode_ids=retrieval.scope_episode_ids,
-                scope_reason=retrieval.scope_reason,
-                vector_cache_status=str(
-                    getattr(retrieval.recall_reasons, "vector_cache_status", "") or ""
-                ),
+                query=query,
+                scopes=tuple(requested_scopes),
+                latency_mode="fast",
+                limit=5,
+                scope_reason=scope_reason,
+                relationship_hints=(),
+                max_compression="episode_summary",
+                replay_mode="off",
+                allow_embeddings=str(request.event.payload.get("allow_embeddings", "true")).strip().lower() != "false",
             )
-        memories = self.dependencies.memory.search(
-            session.episode_id,
-            query,
-            work_item_ids=work_item_ids,
-            scope_episode_ids=scope_episode_ids,
-            scope_reason=scope_reason,
         )
-        return _MemoryRecoverySelection(
-            memories=memories,
+        return _RecallSelection(
+            recall_items=tuple(candidate.evidence for candidate in retrieval.candidates),
             query=query,
             work_item_ids=work_item_ids,
-            scope_episode_ids=scope_episode_ids,
-            scope_reason=scope_reason,
+            scope_episode_ids=retrieval.scope_episode_ids,
+            scope_reason=retrieval.scope_reason,
+            vector_cache_status=str(
+                getattr(retrieval.recall_reasons, "vector_cache_status", "") or ""
+            ),
         )
 
     def _context_for_generation(
@@ -671,7 +645,7 @@ class KernelService:
         session: Episode,
         state_focus: StateFocusDecision | None,
         work_items: tuple[object, ...],
-        memories: tuple[MemoryRecord, ...],
+        recall_items: tuple[RecallEvidence, ...],
         context: ContextBundle,
         decision: object | None,
         plan: PlanDraft | None,
@@ -684,7 +658,7 @@ class KernelService:
             session=session,
             state_focus=state_focus,
             work_items=work_items,
-            memories=memories,
+            recall_items=recall_items,
             context=context,
             decision=decision,
             plan=plan,
@@ -742,13 +716,12 @@ class KernelService:
                 "source": "kernel",
                 "payload": {
                     "event_id": outcome.event.event_id,
-                    "source_record_id": outcome.source_record.record_id,
+                    "source_id": outcome.source_id,
                     "personal_model_id": outcome.personal_model.personal_model_id,
                     "state_id": outcome.state.state_id,
                     "episode_id": outcome.episode.episode_id,
                     "loop_id": outcome.loop.loop_id,
                     "step_ids": outcome.step_ids,
-                    "grounding_ids": outcome.grounding_ids,
                     "context_bundle_id": outcome.context.bundle_id,
                     "context_token_budget": outcome.context.token_budget,
                     "execution_id": outcome.execution.execution_id,
@@ -765,7 +738,7 @@ class KernelService:
                     "cancelled_step_count": cancelled_steps,
                     "tool_call_count": outcome.tool_call_count,
                     "model_turn_count": outcome.model_turn_count,
-                    "memory_count": len(outcome.memories),
+                    "recall_count": len(outcome.recall_items),
                     "turn_message_count": len(outcome.turn_messages),
                     "produced_artifact_ids": outcome.execution.produced_artifact_ids,
                     "context_artifact_ids": outcome.context.artifact_ids,

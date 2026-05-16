@@ -4,7 +4,7 @@ CAPABILITY_SURFACES = (
     "CapabilityDescriptor",
     "CapabilityHealth",
     "CapabilityRegistry",
-    "MemoryCapability",
+    "RecallCapability",
     "ContextCapability",
     "ModelProviderCapability",
     "AuthProviderCapability",

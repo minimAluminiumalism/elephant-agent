@@ -69,9 +69,7 @@ def personal_model_growth_metrics(
         text = str(getattr(fact, "text", "") or "").strip()
         if len(text.split()) >= 8 or len(text) >= 80:
             rich_facts += 1
-        fact_evidence_refs = len(tuple(getattr(fact, "source_episode_ids", ()) or ())) + len(
-            tuple(getattr(fact, "source_observation_ids", ()) or ())
-        )
+        fact_evidence_refs = len(tuple(getattr(fact, "source_episode_ids", ()) or ()))
         evidence_refs += fact_evidence_refs
         if fact_evidence_refs > 0:
             supported_facts += 1

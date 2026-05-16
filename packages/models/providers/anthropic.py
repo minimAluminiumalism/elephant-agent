@@ -480,7 +480,7 @@ class AnthropicMessagesModelAdapter(ModelAdapter):
 
     def _compose_user_text(self, request: ModelRequest) -> str:
         context_bits: list[str] = []
-        for key in ("work_item_ids", "memory_ids", "artifact_ids", "mode"):
+        for key in ("work_item_ids", "evidence_refs", "artifact_ids", "mode"):
             value = request.context.get(key)
             if value:
                 context_bits.append(f"{key}={value}")
@@ -710,7 +710,7 @@ class AnthropicMessagesProviderCapability(ModelProviderCapability):
                 "token_budget": str(context.token_budget),
                 "instruction_refs": ",".join(context.instruction_refs),
                 "work_item_ids": ",".join(context.work_item_ids),
-                "memory_ids": ",".join(context.memory_ids),
+                "evidence_refs": ",".join(context.evidence_refs),
                 "artifact_ids": ",".join(context.artifact_ids),
                 "frozen_prefix_prompt": context.prompt_envelope.frozen_prefix,
                 "session_snapshot_prompt": context.prompt_envelope.session_snapshot,

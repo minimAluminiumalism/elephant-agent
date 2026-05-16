@@ -1,4 +1,4 @@
-"""Scoped hybrid semantic search over indexed Records."""
+"""Scoped hybrid semantic search over indexed Step, Episode, and Fact text."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import math
 import unicodedata
 from typing import Mapping, Protocol
 
-from packages.contracts import Record, SemanticIndexEntry
+from packages.contracts import SemanticIndexEntry
 
 from .backend import SemanticIndexBackend, SemanticIndexVectorQuery
 
@@ -21,6 +21,21 @@ FUSION_WEIGHTS = {
     "vector": 1.0,
     "ngram": 0.9,
 }
+
+
+@dataclass(frozen=True, slots=True)
+class SemanticSourceDocument:
+    source_id: str
+    kind: str
+    schema_version: str
+    payload: Mapping[str, object] = field(default_factory=dict)
+    owner_scope: str | None = None
+    personal_model_id: str | None = None
+    state_id: str | None = None
+    layer_type: str | None = None
+    artifact_uri: str | None = None
+    created_at: datetime | None = None
+    metadata: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,7 +66,7 @@ class SemanticSearchQuery:
 @dataclass(frozen=True, slots=True)
 class SemanticSearchMatch:
     semantic_index_entry: SemanticIndexEntry
-    record: Record
+    document: SemanticSourceDocument
     score: float
     signal_scores: Mapping[str, float] = field(default_factory=dict)
     reasons: tuple[str, ...] = ()
@@ -68,9 +83,6 @@ class SemanticSearchRepository(Protocol):
         model_id: str | None = None,
     ) -> tuple[SemanticIndexEntry, ...]:
         """Return semantic-index metadata rows under hard owner/provider gates."""
-
-    def load_record(self, record_id: str) -> Record | None:
-        """Return one source Record."""
 
 
 class HybridSemanticSearcher:
@@ -92,39 +104,39 @@ class HybridSemanticSearcher:
             if entry.status != "deleted"
         )
         entries_by_id = {entry.semantic_index_entry_id: entry for entry in entries}
-        records_by_entry_id = _records_by_entry_id(self.repository, entries, query)
+        documents_by_entry_id = _documents_by_entry_id(self.repository, entries, query)
         contributions: dict[str, dict[str, float]] = {
-            entry_id: {} for entry_id in records_by_entry_id
+            entry_id: {} for entry_id in documents_by_entry_id
         }
-        vector_ranked_ids = self._vector_ranking(query, records_by_entry_id, entries_by_id)
+        vector_ranked_ids = self._vector_ranking(query, documents_by_entry_id, entries_by_id)
         _add_ranked_signal(
             contributions,
             signal="vector",
             ranked_ids=vector_ranked_ids,
             weight=FUSION_WEIGHTS["vector"],
         )
-        coverage_ranked_ids = _token_coverage_ranking(query.text, records_by_entry_id)
+        coverage_ranked_ids = _token_coverage_ranking(query.text, documents_by_entry_id)
         _add_ranked_signal(
             contributions,
             signal="token_coverage",
             ranked_ids=coverage_ranked_ids,
             weight=FUSION_WEIGHTS["token_coverage"],
         )
-        keyword_ranked_ids = _keyword_exact_ranking(query.text, records_by_entry_id)
+        keyword_ranked_ids = _keyword_exact_ranking(query.text, documents_by_entry_id)
         _add_ranked_signal(
             contributions,
             signal="keyword_exact",
             ranked_ids=keyword_ranked_ids,
             weight=FUSION_WEIGHTS["keyword_exact"],
         )
-        bm25_ranked_ids = _bm25_ranking(query.text, records_by_entry_id)
+        bm25_ranked_ids = _bm25_ranking(query.text, documents_by_entry_id)
         _add_ranked_signal(
             contributions,
             signal="bm25",
             ranked_ids=bm25_ranked_ids,
             weight=FUSION_WEIGHTS["bm25"],
         )
-        ngram_ranked_ids = _ngram_ranking(query.text, records_by_entry_id)
+        ngram_ranked_ids = _ngram_ranking(query.text, documents_by_entry_id)
         _add_ranked_signal(
             contributions,
             signal="ngram",
@@ -142,7 +154,7 @@ class HybridSemanticSearcher:
         return tuple(
             SemanticSearchMatch(
                 semantic_index_entry=entries_by_id[entry_id],
-                record=records_by_entry_id[entry_id],
+                document=documents_by_entry_id[entry_id],
                 score=score,
                 signal_scores=dict(signal_scores),
                 reasons=tuple(sorted(signal_scores)),
@@ -153,7 +165,7 @@ class HybridSemanticSearcher:
     def _vector_ranking(
         self,
         query: SemanticSearchQuery,
-        records_by_entry_id: Mapping[str, Record],
+        documents_by_entry_id: Mapping[str, SemanticSourceDocument],
         entries_by_id: Mapping[str, SemanticIndexEntry],
     ) -> tuple[str, ...]:
         if not query.vector or query.dimensions is None:
@@ -171,7 +183,7 @@ class HybridSemanticSearcher:
                         limit=max(query.limit, len(entries_by_id) or query.limit),
                     )
                 )
-                if match.semantic_index_entry_id in records_by_entry_id
+                if match.semantic_index_entry_id in documents_by_entry_id
             )
         except Exception:
             return ()
@@ -182,44 +194,37 @@ def _aware(value: datetime) -> datetime:
     return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
 
 
-def _records_by_entry_id(
+def _documents_by_entry_id(
     repository: SemanticSearchRepository,
     entries: tuple[SemanticIndexEntry, ...],
     query: SemanticSearchQuery,
-) -> dict[str, Record]:
-    records: dict[str, Record] = {}
+) -> dict[str, SemanticSourceDocument]:
+    documents: dict[str, SemanticSourceDocument] = {}
     for entry in entries:
-        record = _source_record_for_entry(repository, entry)
-        if record is None:
+        document = _source_document_for_entry(repository, entry)
+        if document is None:
             continue
-        if not _record_matches_query_scope(record, entry, query):
+        if not _document_matches_query_scope(document, entry, query):
             continue
-        if not _record_in_time_range(record, entry, query):
+        if not _document_in_time_range(document, entry, query):
             continue
-        records[entry.semantic_index_entry_id] = record
-    return records
+        documents[entry.semantic_index_entry_id] = document
+    return documents
 
 
-def _source_record_for_entry(repository: SemanticSearchRepository, entry: SemanticIndexEntry) -> Record | None:
-    record = _legacy_record(repository, entry.source_record_id)
-    if record is not None:
-        return record
+def _source_document_for_entry(
+    repository: SemanticSearchRepository,
+    entry: SemanticIndexEntry,
+) -> SemanticSourceDocument | None:
     metadata = _entry_metadata(entry)
-    source_id = str(entry.source_record_id or "").strip()
+    source_id = str(entry.source_id or "").strip()
     if source_id.startswith("episode:"):
         return _episode_record(repository, entry, metadata, source_id.removeprefix("episode:"))
-    if source_id.startswith("record:"):
-        return _step_record(repository, entry, metadata, source_id.removeprefix("record:"))
+    if source_id.startswith("step:"):
+        return _step_record(repository, entry, metadata, source_id.removeprefix("step:"))
     if entry.owner_scope == "personal_model":
         return _fact_record(repository, entry, metadata, source_id)
     return _metadata_record(entry, metadata)
-
-
-def _legacy_record(repository: SemanticSearchRepository, record_id: str) -> Record | None:
-    try:
-        return repository.load_record(record_id)
-    except Exception:
-        return None
 
 
 def _entry_metadata(entry: SemanticIndexEntry) -> dict[str, str]:
@@ -235,7 +240,7 @@ def _episode_record(
     entry: SemanticIndexEntry,
     metadata: Mapping[str, str],
     episode_id: str,
-) -> Record | None:
+) -> SemanticSourceDocument | None:
     load_episode = getattr(repository, "load_episode", None)
     episode = None
     if callable(load_episode):
@@ -256,8 +261,8 @@ def _episode_record(
             str(episode_metadata.get("note") or "").strip(),
         )
         text = " | ".join(dict.fromkeys(part for part in parts if part))
-    return Record(
-        record_id=entry.source_record_id,
+    return SemanticSourceDocument(
+        source_id=entry.source_id,
         kind="derived",
         schema_version="episode_summary/v1",
         payload={"text": text},
@@ -275,7 +280,7 @@ def _step_record(
     entry: SemanticIndexEntry,
     metadata: Mapping[str, str],
     step_id: str,
-) -> Record | None:
+) -> SemanticSourceDocument | None:
     load_step = getattr(repository, "load_step", None)
     step = None
     if callable(load_step):
@@ -288,8 +293,8 @@ def _step_record(
     step_metadata = {str(key): str(value) for key, value in dict(getattr(step, "metadata", {}) or {}).items()}
     merged_metadata = {**step_metadata, **dict(metadata)}
     text = _indexed_text(metadata) or _step_text(step, merged_metadata)
-    return Record(
-        record_id=entry.source_record_id,
+    return SemanticSourceDocument(
+        source_id=entry.source_id,
         kind="derived",
         schema_version="step/v1",
         payload={"text": text},
@@ -332,14 +337,14 @@ def _fact_record(
     entry: SemanticIndexEntry,
     metadata: Mapping[str, str],
     fact_id: str,
-) -> Record | None:
+) -> SemanticSourceDocument | None:
     fact = _load_fact(repository, entry, fact_id)
     if fact is None:
         return _metadata_record(entry, metadata, schema_version="personal_model_claim/v1", layer_type="personal_model_claim")
     fact_metadata = {str(key): str(value) for key, value in dict(getattr(fact, "metadata", {}) or {}).items()}
     text = _indexed_text(metadata) or str(getattr(fact, "text", "") or "").strip()
-    return Record(
-        record_id=fact_id,
+    return SemanticSourceDocument(
+        source_id=fact_id,
         kind="derived",
         schema_version="personal_model_claim/v1",
         payload={"text": text},
@@ -380,13 +385,13 @@ def _metadata_record(
     *,
     schema_version: str | None = None,
     layer_type: str | None = None,
-) -> Record | None:
+) -> SemanticSourceDocument | None:
     text = _indexed_text(metadata)
     if not text:
         return None
     resolved_layer = layer_type or str(metadata.get("layer_type") or metadata.get("kind") or entry.owner_scope or "semantic_index")
-    return Record(
-        record_id=entry.source_record_id,
+    return SemanticSourceDocument(
+        source_id=entry.source_id,
         kind="derived",
         schema_version=schema_version or f"{resolved_layer}/v1",
         payload={"text": text},
@@ -399,20 +404,28 @@ def _metadata_record(
     )
 
 
-def _record_matches_query_scope(record: Record, entry: SemanticIndexEntry, query: SemanticSearchQuery) -> bool:
+def _document_matches_query_scope(
+    document: SemanticSourceDocument,
+    entry: SemanticIndexEntry,
+    query: SemanticSearchQuery,
+) -> bool:
     if query.owner_scope != "episode":
         return True
     return (
-        str(getattr(record, "schema_version", "") or "") == "episode_summary/v1"
-        or str(getattr(record, "layer_type", "") or "") == "episode_summary"
+        str(getattr(document, "schema_version", "") or "") == "episode_summary/v1"
+        or str(getattr(document, "layer_type", "") or "") == "episode_summary"
         or str(getattr(entry, "metadata", {}).get("kind") or "") == "episode_summary"
     )
 
 
-def _record_in_time_range(record: Record, entry: SemanticIndexEntry, query: SemanticSearchQuery) -> bool:
+def _document_in_time_range(
+    document: SemanticSourceDocument,
+    entry: SemanticIndexEntry,
+    query: SemanticSearchQuery,
+) -> bool:
     if query.start_at is None and query.end_at is None:
         return True
-    when = getattr(record, "created_at", None) or getattr(entry, "created_at", None)
+    when = getattr(document, "created_at", None) or getattr(entry, "created_at", None)
     if when is None:
         return False
     resolved = _aware(when)
@@ -436,40 +449,49 @@ def _add_ranked_signal(
         contributions[entry_id][signal] = weight / (RRF_K + rank)
 
 
-def _token_coverage_ranking(text: str, records_by_entry_id: Mapping[str, Record]) -> tuple[str, ...]:
+def _token_coverage_ranking(
+    text: str,
+    documents_by_entry_id: Mapping[str, SemanticSourceDocument],
+) -> tuple[str, ...]:
     tokens = tuple(dict.fromkeys(_tokens(text)))
     if not tokens:
         return ()
     scored: list[tuple[str, float]] = []
-    for entry_id, record in records_by_entry_id.items():
-        record_text = _normalized_text(_record_text(record))
-        hits = sum(1 for token in tokens if token in record_text)
+    for entry_id, document in documents_by_entry_id.items():
+        document_text = _normalized_text(_document_text(document))
+        hits = sum(1 for token in tokens if token in document_text)
         if hits:
             coverage = hits / float(len(tokens))
             scored.append((entry_id, coverage + (0.05 * hits)))
     return tuple(entry_id for entry_id, _score in sorted(scored, key=lambda item: (-item[1], item[0])))
 
 
-def _keyword_exact_ranking(text: str, records_by_entry_id: Mapping[str, Record]) -> tuple[str, ...]:
+def _keyword_exact_ranking(
+    text: str,
+    documents_by_entry_id: Mapping[str, SemanticSourceDocument],
+) -> tuple[str, ...]:
     tokens = _tokens(text)
     if not tokens:
         return ()
     scored: list[tuple[str, int]] = []
-    for entry_id, record in records_by_entry_id.items():
-        record_text = _normalized_text(_record_text(record))
-        exact_hits = sum(1 for token in tokens if token in record_text)
+    for entry_id, document in documents_by_entry_id.items():
+        document_text = _normalized_text(_document_text(document))
+        exact_hits = sum(1 for token in tokens if token in document_text)
         if exact_hits:
             scored.append((entry_id, exact_hits))
     return tuple(entry_id for entry_id, _score in sorted(scored, key=lambda item: (-item[1], item[0])))
 
 
-def _bm25_ranking(text: str, records_by_entry_id: Mapping[str, Record]) -> tuple[str, ...]:
+def _bm25_ranking(
+    text: str,
+    documents_by_entry_id: Mapping[str, SemanticSourceDocument],
+) -> tuple[str, ...]:
     query_tokens = _tokens(text)
-    if not query_tokens or not records_by_entry_id:
+    if not query_tokens or not documents_by_entry_id:
         return ()
     documents = {
-        entry_id: _tokens(_record_text(record))
-        for entry_id, record in records_by_entry_id.items()
+        entry_id: _tokens(_document_text(document))
+        for entry_id, document in documents_by_entry_id.items()
     }
     document_count = float(len(documents))
     average_length = sum(len(tokens) for tokens in documents.values()) / max(document_count, 1.0)
@@ -495,16 +517,19 @@ def _bm25_ranking(text: str, records_by_entry_id: Mapping[str, Record]) -> tuple
     return tuple(entry_id for entry_id, _score in sorted(scored, key=lambda item: (-item[1], item[0])))
 
 
-def _ngram_ranking(text: str, records_by_entry_id: Mapping[str, Record]) -> tuple[str, ...]:
+def _ngram_ranking(
+    text: str,
+    documents_by_entry_id: Mapping[str, SemanticSourceDocument],
+) -> tuple[str, ...]:
     query_ngrams = _char_ngrams(_compact_lexical_text(text))
     if not query_ngrams:
         return ()
     scored: list[tuple[str, float]] = []
-    for entry_id, record in records_by_entry_id.items():
-        record_ngrams = _char_ngrams(_compact_lexical_text(_record_text(record)))
-        if not record_ngrams:
+    for entry_id, document in documents_by_entry_id.items():
+        document_ngrams = _char_ngrams(_compact_lexical_text(_document_text(document)))
+        if not document_ngrams:
             continue
-        score = len(query_ngrams & record_ngrams) / float(len(query_ngrams))
+        score = len(query_ngrams & document_ngrams) / float(len(query_ngrams))
         if score > 0.0:
             scored.append((entry_id, score))
     return tuple(entry_id for entry_id, _score in sorted(scored, key=lambda item: (-item[1], item[0])))
@@ -568,12 +593,12 @@ def _char_ngrams(text: str, *, widths: tuple[int, ...] = (2, 3)) -> set[str]:
     return grams
 
 
-def _record_text(record: Record) -> str:
-    fragments: list[str] = [record.record_id, record.kind, record.schema_version]
-    if record.layer_type:
-        fragments.append(record.layer_type)
-    if record.artifact_uri:
-        fragments.append(record.artifact_uri)
-    fragments.extend(str(value) for value in record.payload.values())
-    fragments.extend(str(value) for value in record.metadata.values())
+def _document_text(document: SemanticSourceDocument) -> str:
+    fragments: list[str] = [document.source_id, document.kind, document.schema_version]
+    if document.layer_type:
+        fragments.append(document.layer_type)
+    if document.artifact_uri:
+        fragments.append(document.artifact_uri)
+    fragments.extend(str(value) for value in document.payload.values())
+    fragments.extend(str(value) for value in document.metadata.values())
     return " ".join(fragment for fragment in fragments if fragment)

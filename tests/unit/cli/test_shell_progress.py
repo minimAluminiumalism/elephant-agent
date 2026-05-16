@@ -40,21 +40,21 @@ from packages.tools.runtime import ToolLifecycleEvent, ToolInvocation
 
 
 class ShellProgressTest(unittest.TestCase):
-    def _memory_event(self, *, tool_id: str, action: str | None = None, memory_id: str = "memory-release") -> ToolLifecycleEvent:
+    def _evidence_event(self, *, tool_id: str, action: str | None = None, evidence_id: str = "evidence-release") -> ToolLifecycleEvent:
         invocation = ToolInvocation(
-            invocation_id="invoke-memory",
+            invocation_id="invoke-evidence",
             tool_id=tool_id,
             session_id="session-test",
             arguments=(
-                {"memory_id": memory_id}
+                {"evidence_id": evidence_id}
                 if action is None
-                else {"action": action, "memory_id": memory_id}
+                else {"action": action, "evidence_id": evidence_id}
             ),
             requested_at=datetime.now(timezone.utc),
             requester="test",
         )
         return ToolLifecycleEvent(
-            event_id="event-memory",
+            event_id="event-evidence",
             invocation=invocation,
             phase="requested",
             detail="requested",
@@ -151,9 +151,9 @@ class ShellProgressTest(unittest.TestCase):
 
     def test_tool_event_tracker_keeps_short_lived_feed_for_fast_personal_model_events(self) -> None:
         holder, lock, observer = tool_event_tracker()
-        requested = self._tool_event(tool_id="tool.personal_model.search", arguments={"query": "memory-release"}, phase="requested")
+        requested = self._tool_event(tool_id="tool.personal_model.search", arguments={"query": "evidence-release"}, phase="requested")
         completed = ToolLifecycleEvent(
-            event_id="event-memory-complete",
+            event_id="event-evidence-complete",
             invocation=requested.invocation,
             phase="execution.completed",
             detail="done",

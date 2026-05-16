@@ -7,8 +7,8 @@ The clean Understanding projection is intentionally small:
 * optional lens/topic-bound Personal Model question hints
 
 Current-turn evidence recall is injected by the context layer as
-`current-turn recall support`. Raw memory entries, profile snapshots, and style summaries
-are not durable prompt truth.
+`current-turn recall support`. Raw notes, profile snapshots, and style
+summaries are not durable prompt truth.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ def build_context_for_generation(
     session: Any,
     state_focus: Any,
     work_items: tuple[Any, ...],
-    memories: tuple[Any, ...],
+    recall_items: tuple[Any, ...],
     context: ContextBundle,
     decision: Any,
     plan: Any,
@@ -44,7 +44,7 @@ def build_context_for_generation(
         enriched = augment(
             session=session,
             work_items=work_items,
-            memories=memories,
+            recall_items=recall_items,
             context=context,
             state_focus=state_focus,
             decision=decision,
@@ -82,7 +82,7 @@ def _minimal_generation_context(context: ContextBundle, *, system_prompt: str = 
         rendered_prompt=system_text,
         instruction_refs=(),
         work_item_ids=(),
-        memory_ids=(),
+        evidence_refs=(),
         artifact_ids=(),
     )
 
@@ -299,8 +299,8 @@ def _frozen_committed_pm_lines(storage: Any, request: Any) -> tuple[str, ...]:
 
 def _fact_visible_in_core_prompt(fact: Any, metadata: dict[str, Any]) -> bool:
     recall_policy = str(metadata.get("recall_policy") or "").strip().lower()
-    lifecycle = str(metadata.get("memory_lifecycle") or "").strip().lower()
-    if recall_policy in {"temporary", "review"} or lifecycle in {"temporal", "draft", "working_memory"}:
+    lifecycle = str(metadata.get("retention_lifecycle") or "").strip().lower()
+    if recall_policy in {"temporary", "review"} or lifecycle in {"temporal", "draft", "working"}:
         return False
     text = str(getattr(fact, "text", "") or "").strip()
     if text.startswith("Question-bank signal for "):

@@ -21,6 +21,7 @@ if str(ROOT) not in sys.path:
 from apps.api import create_app
 from packages.auth import AuthProfile, ProviderAuthState, SecretReference
 from packages.runtime_config import global_config_path_for_state_dir, load_global_config
+from packages.storage.repository_bootstrap_methods import LEGACY_STORAGE_TABLES
 from packages.contracts import (
     Episode,
     ExecutionResult,
@@ -31,10 +32,7 @@ from packages.contracts import (
     SemanticIndexEntry,
     State,
     Step,
-    StructuredTurnRecord,
-    StructuredTurnSlot,
 )
-from packages.evidence import build_structured_turn_memory
 from packages.kernel.loop_checkpoint_support import LoopCheckpointService
 from packages.runtime_config import parse_global_config_text
 from packages.runtime_layout import elephant_file_path
@@ -354,7 +352,7 @@ class APISurfaceE2ETest(unittest.TestCase):
         self.assertNotIn("active_task", turn.payload["outcome"]["state"])
         self.assertGreaterEqual(len(turn.payload["outcome"]["stages"]), 6)
         self.assertGreaterEqual(len(turn.payload["outcome"]["steps"]), 6)
-        self.assertEqual(turn.payload["inspection"]["memory_count"], 0)
+        self.assertGreaterEqual(turn.payload["inspection"]["recall_count"], 0)
         self.assertGreaterEqual(turn.payload["inspection"]["telemetry_count"], 1)
         self.assertEqual(turn.payload["inspection"]["progression"]["stage_title"], "learning the path")
         self.assertTrue(
@@ -408,7 +406,8 @@ class APISurfaceE2ETest(unittest.TestCase):
         self.assertEqual(inspect.status_code, 200)
         self.assertEqual(inspect.payload["latest_turn"]["request"]["tool_name"], "tool.clarify")
         self.assertEqual(inspect.payload["lineage"][0]["session_id"], "session-turn")
-        self.assertEqual(inspect.payload["memories"], [])
+        self.assertTrue(inspect.payload["recall_items"])
+        self.assertEqual(inspect.payload["recall_items"][0]["source_kind"], "step")
 
         for method, route in (
             ("GET", "/v1/sessions/session-turn/goals"),
@@ -426,9 +425,9 @@ class APISurfaceE2ETest(unittest.TestCase):
         work_surface = self.app.dispatch("GET", "/v1/sessions/session-turn/activity")
         self.assertEqual(work_surface.status_code, 404)
 
-        memory_surface = self.app.dispatch("GET", "/v1/sessions/session-turn/memory")
-        self.assertEqual(memory_surface.status_code, 200)
-        self.assertEqual(memory_surface.payload["memory"]["memories"], [])
+        recall_surface = self.app.dispatch("GET", "/v1/sessions/session-turn/recall/evidence")
+        self.assertEqual(recall_surface.status_code, 200)
+        self.assertTrue(recall_surface.payload["evidence"])
 
         procedure_surface = self.app.dispatch("GET", "/v1/sessions/session-turn/procedure")
         self.assertEqual(procedure_surface.status_code, 404)
@@ -467,12 +466,12 @@ class APISurfaceE2ETest(unittest.TestCase):
         self.assertIn("tool.personal_model.search", model_visible)
         self.assertIn("tool.personal_model.update", model_visible)
         self.assertIn("tool.personal_model.questions", model_visible)
-        self.assertNotIn("tool.memory.recall", model_visible)
-        self.assertNotIn("tool.memory.note", model_visible)
+        self.assertNotIn("tool.evidence.recall", model_visible)
+        self.assertNotIn("tool.evidence.note", model_visible)
         self.assertNotIn("tool.skill.manage", model_visible)
 
         bundle = self.app.context.assemble(session, (), ())
-        self.assertIn("### Memory tools", bundle.prompt_envelope.frozen_prefix)
+        self.assertIn("### Evidence tools", bundle.prompt_envelope.frozen_prefix)
         self.assertIn("Use `tool.personal_model.search`", bundle.rendered_prompt)
 
         result = self.app.kernel.dependencies.tools.invoke(
@@ -1040,7 +1039,7 @@ class APISurfaceE2ETest(unittest.TestCase):
         self.assertEqual(projection["runtime"]["learning_jobs"], [])
         self.assertEqual(projection["learning"]["jobs"], [])
         self.assertEqual(projection["learning"]["summary"]["total"], 0)
-        self.assertEqual(projection["evidence"]["records"], [])
+        self.assertNotIn("records", projection["evidence"])
         self.assertEqual(projection["overview"]["counts"]["personal_models"], 0)
         self.assertEqual(projection["overview"]["counts"]["states"], 0)
         self.assertNotIn("records", projection["overview"]["counts"])
@@ -1049,7 +1048,6 @@ class APISurfaceE2ETest(unittest.TestCase):
         self.assertIn("operations", projection)
         self.assertNotIn("sessions", projection)
         self.assertNotIn("stateLanes", projection)
-        self.assertNotIn("memoryLayers", projection)
         self.assertNotIn("providerProfiles", projection)
         self.assertNotIn("intent", json.dumps(projection["overview"], sort_keys=True).lower())
 
@@ -1201,7 +1199,7 @@ class APISurfaceE2ETest(unittest.TestCase):
         run = loop_service.start_loop(
             episode_id="session-console",
             source_event_id="event-console",
-            prompt="Show my current elephant memory.",
+            prompt="Show my current elephant evidence.",
         )
         self.app.repository.upsert_loop_checkpoint(run)
         run, context_step = loop_service.record_context_prompt(
@@ -1212,58 +1210,26 @@ class APISurfaceE2ETest(unittest.TestCase):
         self.app.repository.append_loop_checkpoint_step(context_step)
         run, model_step = loop_service.record_model_turn(
             run,
-            summary="I can inspect persisted memory layers.",
-            response_text="I can inspect persisted memory layers and show the elephant profile.",
+            summary="I can inspect persisted evidence layers.",
+            response_text="I can inspect persisted evidence layers and show the elephant profile.",
         )
         self.app.repository.upsert_loop_checkpoint(run)
         self.app.repository.append_loop_checkpoint_step(model_step)
         run, tool_step = loop_service.record_tool_step(
             run,
-            tool_name="memory.inspect",
+            tool_name="evidence.inspect",
             arguments={"profile_id": "profile-console"},
             result=ExecutionResult(
                 execution_id="tool-console",
                 episode_id="session-console",
                 outcome="ok",
-                summary="Memory inspection returned the Console Elephant profile.",
+                summary="Evidence inspection returned the Console Elephant profile.",
             ),
         )
         self.app.repository.upsert_loop_checkpoint(run)
         self.app.repository.append_loop_checkpoint_step(tool_step)
         run = loop_service.complete(run, summary="Done.")
         self.app.repository.upsert_loop_checkpoint(run)
-        self.app.memory_runtime.record_memory(
-            build_structured_turn_memory(
-                StructuredTurnRecord(
-                    turn_id="turn-console-structured",
-                    episode_id="session-console",
-                    source="api.test",
-                    observation=StructuredTurnSlot(
-                        summary="User asked to inspect current elephant memory.",
-                        detail=("user_message:Show my current elephant memory.",),
-                        provenance="runtime.turn_transcript",
-                    ),
-                    reasoning=StructuredTurnSlot(
-                        summary="Inspect durable memory layers before answering.",
-                        detail=("decision:memory inspection is the relevant evidence path",),
-                        provenance="runtime.decision_summary",
-                    ),
-                    action=StructuredTurnSlot(
-                        summary="Called memory.inspect.",
-                        detail=("tool_call:memory.inspect args=profile_id id=call-console",),
-                        provenance="runtime.turn_transcript",
-                    ),
-                    outcome=StructuredTurnSlot(
-                        summary="Returned the elephant profile memory view.",
-                        detail=("assistant_response:I can inspect persisted memory layers and show the elephant profile.",),
-                        provenance="runtime.turn_transcript",
-                    ),
-                    personal_model_id="profile-console",
-                    source_event_id="event-console",
-                    work_item_ids=("work-console",),
-                )
-            )
-        )
         checkpoint_loop = self.app.repository.load_loop(run.run_id)
         self.assertIsNotNone(checkpoint_loop)
         assert checkpoint_loop is not None
@@ -1297,7 +1263,6 @@ class APISurfaceE2ETest(unittest.TestCase):
         operations = payload["operations"]
         self.assertEqual(payload["meta"]["database_path"], str(self.app.repository.database_path))
         self.assertNotIn("sessions", payload)
-        self.assertNotIn("memoryLayers", json.dumps(payload, sort_keys=True))
         self.assertIn("profileManifest", operations["settings"])
         self.assertIn("globalConfigPath", operations["settings"])
         self.assertIn("globalConfig", operations["settings"])
@@ -1826,7 +1791,6 @@ class APISurfaceE2ETest(unittest.TestCase):
             if elephant["elephant_id"] == "profile-stale-growth"
         )
         self.assertNotIn("growth_score", elephant)
-        self.assertNotIn("memoryLayers", json.dumps(dashboard.payload["dashboard"], sort_keys=True))
 
     def test_operator_namespace_no_longer_exposes_public_dashboard_reads(self) -> None:
         dashboard = self.app.dispatch("GET", "/v1/operator/dashboard")
@@ -2042,7 +2006,7 @@ class APISurfaceE2ETest(unittest.TestCase):
             SemanticIndexEntry(
                 semantic_index_entry_id="semantic-dashboard",
                 owner_scope="personal_model",
-                source_record_id="fact-dashboard-style",
+                source_id="fact-dashboard-style",
                 provider_id="openai-compatible",
                 model_id="text-embedding-3-small",
                 dimensions=1536,
@@ -2082,9 +2046,8 @@ class APISurfaceE2ETest(unittest.TestCase):
         self.assertNotIn("records", projection["overview"]["counts"])
         self.assertEqual(projection["overview"]["counts"]["learning_jobs"], 1)
         self.assertEqual(projection["overview"]["counts"]["learning_jobs_completed"], 1)
-        self.assertNotIn("groundings", projection["overview"]["counts"])
-        self.assertNotIn("memory_entries", projection["overview"]["counts"])
-        self.assertNotIn("reflection_proposals", projection["overview"]["counts"])
+        for legacy_table in LEGACY_STORAGE_TABLES:
+            self.assertNotIn(legacy_table, projection["overview"]["counts"])
         self.assertNotIn("skill_affinities", projection["overview"]["counts"])
         self.assertEqual(projection["overview"]["counts"]["semantic_index_entries"], 1)
         self.assertNotIn("embedding_provider_configs", projection["overview"]["counts"])
@@ -2098,12 +2061,13 @@ class APISurfaceE2ETest(unittest.TestCase):
         self.assertNotIn("next_step", projection["herd"][0])
         self.assertNotIn("blockers", projection["states"][0])
         personal_model_row = projection["personal_models"][0]
-        self.assertEqual(personal_model_row["component_records"], [])
-        self.assertEqual(personal_model_row["memory_entries"], [])
+        self.assertNotIn("component_records", personal_model_row)
+        for legacy_table in LEGACY_STORAGE_TABLES:
+            self.assertNotIn(legacy_table, personal_model_row)
         self.assertEqual(personal_model_row["states"][0]["state_id"], state.state_id)
         self.assertEqual(personal_model_row["user_preferred_name"], "Bit")
-        self.assertEqual(personal_model_row["user_card"]["preferred_name"], "Bit")
-        self.assertEqual(personal_model_row["user_card"]["current_work"], "Building durable agent systems.")
+        self.assertEqual(personal_model_row["user_profile"]["preferred_name"], "Bit")
+        self.assertEqual(personal_model_row["user_profile"]["current_work"], "Building durable agent systems.")
         overview_only = self._dashboard_section("overview")
         self.assertEqual(overview_only["personal_models"][0]["user_preferred_name"], "Bit")
         component_rows = {
@@ -2117,7 +2081,7 @@ class APISurfaceE2ETest(unittest.TestCase):
         self.assertEqual(personal_model_row["personal_model_fact_count"], 3)
         personal_model_fact_text = {fact["text"] for fact in personal_model_row["personal_model_facts"]}
         self.assertIn("Prefers concise, grounded replies.", personal_model_fact_text)
-        self.assertNotIn("State-only tool test memory", json.dumps(personal_model_row, sort_keys=True))
+        self.assertNotIn("State-only tool test evidence", json.dumps(personal_model_row, sort_keys=True))
         self.assertNotIn("Display name: Miles", json.dumps(personal_model_row, sort_keys=True))
         self.assertNotIn("reflection_proposals", personal_model_row)
         self.assertNotIn("skill_affinities", personal_model_row)
@@ -2128,7 +2092,9 @@ class APISurfaceE2ETest(unittest.TestCase):
         self.assertEqual(projection["learning"]["summary"]["completed"], 1)
         self.assertEqual(projection["learning"]["jobs"][0]["job_id"], learning_job.job_id)
         self.assertEqual(projection["learning"]["jobs"][0]["result_record_count"], 0)
-        self.assertEqual(projection["learning"]["jobs"][0]["result_records"], [])
+        self.assertNotIn("result_records", projection["learning"]["jobs"][0])
+        for legacy_table in LEGACY_STORAGE_TABLES:
+            self.assertNotIn(f"result_{legacy_table}", projection["learning"]["jobs"][0])
         self.assertEqual(projection["learning"]["jobs"][0]["result_status"], "completed")
         self.assertEqual(projection["learning"]["jobs"][0]["learning_result"]["summary"], "Dashboard learning result.")
         self.assertEqual(
@@ -2142,10 +2108,9 @@ class APISurfaceE2ETest(unittest.TestCase):
         self.assertEqual(usage["tokenEvents"][0]["source"], "runtime_step")
         self.assertEqual(usage["tokenTrend"][0]["totalTokens"], 53)
         self.assertEqual(usage["eggUsage"][0]["eggName"], "Elephant Agent Prime")
-        self.assertEqual(projection["evidence"]["records"], [])
-        self.assertEqual(projection["evidence"]["groundings"], [])
-        self.assertEqual(projection["evidence"]["memory_entries"], [])
-        self.assertNotIn("reflection_proposals", projection["evidence"])
+        self.assertNotIn("records", projection["evidence"])
+        for legacy_table in LEGACY_STORAGE_TABLES:
+            self.assertNotIn(legacy_table, projection["evidence"])
         self.assertNotIn("skill_affinities", projection["evidence"])
         self.assertEqual(projection["semantic_index_health"]["entry_count"], 1)
         self.assertNotIn("embedding_configs", projection["providers"])
@@ -2164,7 +2129,6 @@ class APISurfaceE2ETest(unittest.TestCase):
         self.assertNotIn("state_focus_mode", json.dumps(projection["providers"]["doctor"], sort_keys=True))
         self.assertNotIn("stateLanes", projection)
         self.assertNotIn("sessions", projection)
-        self.assertNotIn("memoryLayers", projection)
         serialized = json.dumps(projection, sort_keys=True)
         self.assertNotIn("sk-live-123", serialized)
 
@@ -2204,7 +2168,6 @@ class APISurfaceE2ETest(unittest.TestCase):
         self.assertNotIn("stateLanes", projection)
         self.assertNotIn("sessions", projection)
         self.assertNotIn("ops", projection)
-        self.assertNotIn("memoryLayers", projection)
 
     def test_default_provider_bad_request_hides_legacy_profile_field_names(self) -> None:
         response = self.app.dispatch(

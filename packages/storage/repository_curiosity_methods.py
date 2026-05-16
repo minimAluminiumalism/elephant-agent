@@ -1,4 +1,4 @@
-"""Repository methods for Observation / Fact / OpenQuestion tables (v5)."""
+"""Repository methods for Fact / OpenQuestion / Diary tables."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import json
 from typing import Sequence
 
-from packages.contracts import DiaryEntry, Fact, Observation, OpenQuestion
+from packages.contracts import DiaryEntry, Fact, OpenQuestion
 
 from .repository_support import (
     _iso,
@@ -54,38 +54,6 @@ def _parse_mapping(raw: str | None) -> dict[str, str]:
 
 
 # -----------------------------------------------------------------------------
-# Observation
-# -----------------------------------------------------------------------------
-
-
-def upsert_personal_model_observation(self, observation: Observation) -> None:
-    # Legacy no-op: personal_model_observations is not part of the clean storage schema.
-    # Observations are replaced by Facts with source_episode_ids provenance.
-    pass
-
-
-def list_personal_model_observations(
-    self,
-    *,
-    personal_model_id: str,
-    lens: str | None = None,
-    sub_lens: str | None = None,
-    episode_id: str | None = None,
-    status: str | Sequence[str] = "active",
-    limit: int | None = None,
-) -> tuple[Observation, ...]:
-    # Legacy no-op: personal_model_observations is not part of the clean storage schema.
-    return ()
-
-
-def list_observations_by_generating_question(
-    self, question_id: str
-) -> tuple[Observation, ...]:
-    # Legacy no-op: personal_model_observations is not part of the clean storage schema.
-    return ()
-
-
-# -----------------------------------------------------------------------------
 # Fact
 # -----------------------------------------------------------------------------
 
@@ -96,9 +64,9 @@ def upsert_personal_model_fact(self, fact: Fact) -> None:
             """
             INSERT INTO personal_model_facts (
                 fact_id, personal_model_id, lens, text, confidence,
-                committed_at, source, source_observation_ids, source_episode_ids,
+                committed_at, source, source_episode_ids,
                 status, supersedes_fact_id, metadata
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(fact_id) DO UPDATE SET
                 personal_model_id = excluded.personal_model_id,
                 lens = excluded.lens,
@@ -106,7 +74,6 @@ def upsert_personal_model_fact(self, fact: Fact) -> None:
                 confidence = excluded.confidence,
                 committed_at = excluded.committed_at,
                 source = excluded.source,
-                source_observation_ids = excluded.source_observation_ids,
                 source_episode_ids = excluded.source_episode_ids,
                 status = excluded.status,
                 supersedes_fact_id = excluded.supersedes_fact_id,
@@ -120,7 +87,6 @@ def upsert_personal_model_fact(self, fact: Fact) -> None:
                 float(fact.confidence),
                 _iso(fact.committed_at),
                 fact.source,
-                _json_list_text(fact.source_observation_ids),
                 _json_list_text(fact.source_episode_ids),
                 fact.status,
                 fact.supersedes_fact_id,
@@ -147,7 +113,6 @@ def _fact_from_row(row) -> Fact:
         confidence=float(row["confidence"]),
         committed_at=_parse_datetime(row["committed_at"]) or datetime.now(timezone.utc),
         source=row["source"],
-        source_observation_ids=_parse_json_list(row["source_observation_ids"]),
         source_episode_ids=_parse_json_list(row["source_episode_ids"]),
         status=row["status"],
         supersedes_fact_id=row["supersedes_fact_id"],

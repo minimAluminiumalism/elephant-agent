@@ -1,8 +1,7 @@
-"""Derive user profile display fields directly from PM facts (claims).
+"""Derive rendered user-profile fields directly from PM facts.
 
-This replaces the legacy UserCardRecord. The dashboard and prompt
-projection both call derive_profile_from_claims() to get structured
-profile data from the single source of truth: active PM claims.
+Rendered profile views are runtime projections. Active Personal Model facts
+remain the durable owner.
 """
 
 from __future__ import annotations
@@ -48,8 +47,8 @@ FIELD_TO_LABEL: dict[str, str] = {
 def derive_profile_from_claims(facts: tuple[Any, ...] | list[Any]) -> dict[str, str]:
     """Extract structured profile fields from active PM facts.
 
-    Returns a dict with keys matching the old user_card field names
-    (preferred_name, current_city, etc.) so downstream code works unchanged.
+    Returns keys used by the rendered profile view (preferred_name,
+    current_city, etc.).
     Only active claims are considered. First match per field wins.
     """
     profile: dict[str, str] = {}

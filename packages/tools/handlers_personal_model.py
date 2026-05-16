@@ -371,7 +371,6 @@ def run_personal_model_inspect(
         invocation.session_id,
         ref=optional_string(invocation.arguments.get("ref")) or "",
         topic=optional_string(invocation.arguments.get("topic")) or "",
-        record_id=optional_string(invocation.arguments.get("record_id")) or "",
         query=optional_string(invocation.arguments.get("query")) or "",
         limit=max(1, min(coerce_int(invocation.arguments.get("limit"), default=5), 10)),
         personal_model_id=optional_string(invocation.arguments.get("personal_model_id")) or invocation.context.personal_model_id,
@@ -380,12 +379,11 @@ def run_personal_model_inspect(
         f"personal_model_id: {result.get('personal_model_id', '')}",
         f"ref: {result.get('ref', '')}",
         f"topic: {result.get('topic', '')}",
-        f"record_id: {result.get('record_id', '')}",
     ]
     claim = result.get("claim")
     if isinstance(claim, Mapping):
         lines.append(f"claim: [{claim.get('lens', '')}/{claim.get('topic', '')}] {claim.get('text', '')}")
-    for key in ("claims", "history", "source_records", "supersedes_chain"):
+    for key in ("claims", "history", "supersedes_chain"):
         rows = tuple(result.get(key) or ())
         lines.append(f"{key}: {len(rows)}")
     return tool_summary(invocation, "\n".join(lines), side_effects=("personal_model", "inspect"))

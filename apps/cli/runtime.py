@@ -6,9 +6,9 @@ from .runtime_support import *  # noqa: F401,F403
 from .runtime_cognition import *  # noqa: F401,F403
 from .runtime_cognition import (
     _CliContextCapability,
-    _DurableMemoryCapability,
+    _DurableRecallCapability,
     _PreviewDeliveryCapability,
-    _PreviewMemoryCapability,
+    _PreviewRecallCapability,
     _PreviewModelProviderCapability,
     _PreviewToolCapability,
 )

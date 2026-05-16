@@ -14,8 +14,8 @@ from packages.context import (
 )
 from packages.context.epoch_store import FileEpochStore
 from packages.contracts import EventEnvelope
-from packages.kernel import KernelSourceRequest, ObservationPipeline, StateReconciler
-from packages.operator import MemoryOperatorDetail
+from packages.kernel import KernelSourceRequest, ReconciliationPipeline, StateReconciler
+from packages.operator.runtime import RecallEvidenceOperatorDetail
 from packages.runtime_layout import elephant_file_path
 from packages.state import write_elephant_identity_file
 
@@ -92,7 +92,7 @@ def run_loop(
             delivery_payload=dict(delivery_payload or {}),
         )
     )
-    observation = ObservationPipeline().observe_turn(
+    observation = ReconciliationPipeline().observe_turn(
         inbound_event=event,
         execution=outcome.execution,
         decision_summary=outcome.state.summary or outcome.execution.summary,
@@ -103,7 +103,7 @@ def run_loop(
     )
     StateReconciler().reconcile_turn(
         repository=self.repository,
-        memory_runtime=self.memory_runtime,
+        recall_runtime=self.recall_runtime,
         observation=observation,
     )
     _epoch_store = FileEpochStore(self.repository.database_path.parent)
@@ -388,92 +388,42 @@ def _dispatch_episodes(self, method: str, parts: tuple[str, ...], body: bytes | 
             delivery_payload=payload.get("delivery_payload"),
         )
         return APIResponse(200, _jsonable(result.to_record()))
-    if len(parts) == 2 and parts[1] == "memory":
+    if len(parts) == 2 and parts[1] == "recall":
         if method.upper() == "GET":
-            return APIResponse(200, _jsonable({"episode_id": episode_id, "memory": self.inspect_memory_surface(episode_id)}))
-    if len(parts) == 2 and parts[1] == "memories":
+            return APIResponse(200, _jsonable({"episode_id": episode_id, "recall": self.inspect_recall_evidence_surface(episode_id)}))
+    if len(parts) == 3 and parts[1] == "recall" and parts[2] == "evidence":
         if method.upper() == "GET":
-            return APIResponse(200, _jsonable({"episode_id": episode_id, "memories": self.list_memories(episode_id)}))
-    if len(parts) == 3 and parts[1] == "memory" and parts[2] == "search":
+            return APIResponse(200, _jsonable({"episode_id": episode_id, "evidence": self.list_recall_evidence(episode_id)}))
+    if len(parts) == 3 and parts[1] == "recall" and parts[2] == "search":
         payload = _read_json_bytes(body)
         query = _optional_str(payload.get("query"))
         if query is None:
-            raise ValueError("memory search query is required")
+            raise ValueError("recall search query is required")
         limit = int(payload.get("limit", 5))
         return APIResponse(
             200,
             _jsonable({
                 "episode_id": episode_id,
-                "memory": self.search_memory_surface(episode_id, query=query, limit=limit),
+                "recall": self.search_recall_evidence_surface(episode_id, query=query, limit=limit),
             }),
         )
-    if len(parts) == 3 and parts[1] == "memory":
-        memory_id = parts[2]
+    if len(parts) == 3 and parts[1] == "recall":
+        evidence_ref = parts[2]
         if method.upper() == "GET":
+            detail = self.inspect_recall_evidence(episode_id, evidence_ref)
             return APIResponse(
                 200,
                 _jsonable(
                     {
                         "episode_id": episode_id,
-                        "memory": MemoryOperatorDetail(
-                            memory=self.inspect_memory(episode_id, memory_id)["memory"],
-                            state=self.memory_runtime.store.state(memory_id),
-                            lineage=self.memory_runtime.store.lineage(memory_id),
+                        "evidence": RecallEvidenceOperatorDetail(
+                            evidence=detail["evidence"],
+                            state=detail["state"],
+                            lineage=detail["lineage"],
                         ),
                     }
                 ),
             )
-        payload = _read_json_bytes(body)
-        if method.upper() in {"PATCH", "POST"}:
-            if "corrected_content" in payload:
-                result = self.correct_memory(
-                    episode_id,
-                    memory_id,
-                    corrected_content=str(payload["corrected_content"]),
-                    reason=str(payload.get("reason", "")),
-                    actor=str(payload.get("actor", "user")),
-                )
-                return APIResponse(200, _jsonable(result))
-            if "pinned" in payload:
-                result = self.pin_memory(
-                    episode_id,
-                    memory_id,
-                    pinned=bool(payload.get("pinned")),
-                    reason=str(payload.get("reason", "")),
-                    actor=str(payload.get("actor", "user")),
-                )
-                return APIResponse(200, _jsonable(result))
-            raise ValueError("memory patch requires corrected_content or pinned")
-        if method.upper() == "DELETE":
-            result = self.delete_memory(
-                episode_id,
-                memory_id,
-                reason=str(payload.get("reason", "")),
-                actor=str(payload.get("actor", "user")),
-            )
-            return APIResponse(200, _jsonable(result))
-    if len(parts) == 3 and parts[1] == "memories":
-        memory_id = parts[2]
-        if method.upper() == "GET":
-            return APIResponse(200, _jsonable(self.inspect_memory(episode_id, memory_id)))
-        payload = _read_json_bytes(body)
-        if method.upper() in {"PATCH", "POST"}:
-            result = self.correct_memory(
-                episode_id,
-                memory_id,
-                corrected_content=str(payload["corrected_content"]),
-                reason=str(payload.get("reason", "")),
-                actor=str(payload.get("actor", "user")),
-            )
-            return APIResponse(200, _jsonable(result))
-        if method.upper() == "DELETE":
-            result = self.delete_memory(
-                episode_id,
-                memory_id,
-                reason=str(payload.get("reason", "")),
-                actor=str(payload.get("actor", "user")),
-            )
-            return APIResponse(200, _jsonable(result))
     return APIResponse(404, {"error": "not_found"})
 def _dispatch_states(self, method: str, parts: tuple[str, ...], body: bytes | None) -> APIResponse:
     if len(parts) != 2:
@@ -838,7 +788,7 @@ def _dispatch_personal_model(
             upsert_entry = getattr(self.repository, "upsert_semantic_index_entry", None)
             if callable(list_entries) and callable(upsert_entry):
                 for entry in list_entries(personal_model_id=personal_model_id, owner_scope="personal_model"):
-                    if getattr(entry, "source_record_id", "") != claim_id:
+                    if getattr(entry, "source_id", "") != claim_id:
                         continue
                     upsert_entry(
                         replace(

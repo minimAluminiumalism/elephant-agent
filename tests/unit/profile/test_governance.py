@@ -59,8 +59,8 @@ class UserProfileGovernanceTest(unittest.TestCase):
         parsed = parse_user_profile_text(rendered)
         parsed_content = parse_user_profile_content(rendered)
 
-        self.assertEqual(parsed["identity.name.preferred"], "Bit")
-        self.assertEqual(parsed["identity.work.current"], "Building Elephant Agent.")
+        self.assertEqual(parsed["preferred_name"], "Bit")
+        self.assertEqual(parsed["current_work"], "Building Elephant Agent.")
         self.assertEqual(parsed["current_city"], "Shanghai")
         self.assertEqual(parsed["dream"], "Build a durable AI companion.")
         self.assertEqual(parsed_content.durable_notes, ("Prefers direct updates over filler.",))
@@ -71,7 +71,7 @@ class UserProfileGovernanceTest(unittest.TestCase):
             required = missing_required_user_fields(loaded)
             optional = missing_optional_user_fields(loaded)
 
-        self.assertEqual(tuple(question.field_id for question in required), ("identity.name.preferred", "identity.work.current"))
+        self.assertEqual(tuple(question.field_id for question in required), ("preferred_name", "current_work"))
         self.assertEqual(tuple(question.field_id for question in optional[:2]), ("school", "current_city"))
 
     def test_user_profile_updates_normalize_loose_field_labels(self) -> None:
@@ -88,8 +88,8 @@ class UserProfileGovernanceTest(unittest.TestCase):
         self.assertEqual(
             updates,
             {
-                "identity.name.preferred": "Bit",
-                "identity.work.current": "Building Elephant Agent.",
+                "preferred_name": "Bit",
+                "current_work": "Building Elephant Agent.",
                 "movement_hobby": "Climbing",
             },
         )
@@ -129,8 +129,8 @@ class UserProfileGovernanceTest(unittest.TestCase):
             )
         )
 
-        self.assertEqual(parsed.field_values["identity.name.preferred"], "Bit")
-        self.assertEqual(parsed.field_values["identity.work.current"], "Building Elephant Agent.")
+        self.assertEqual(parsed.field_values["preferred_name"], "Bit")
+        self.assertEqual(parsed.field_values["current_work"], "Building Elephant Agent.")
         self.assertEqual(
             parsed.durable_notes,
             (

@@ -29,7 +29,7 @@ flowchart LR
 | First shape | `elephant init` | Creates identity, first elephant, provider posture, and curiosity defaults. |
 | Readiness | `elephant status` | Confirms model, provider, embedding, and active elephant readiness. |
 | Continue | `elephant wake` | Opens the durable chat surface for the current elephant. |
-| Inspect | `/status`, `/memory`, `/tools`, `/skills` | Keeps runtime state visible inside the TUI. |
+| Inspect | `/status`, `/recall`, `/tools`, `/skills` | Keeps runtime state visible inside the TUI. |
 
 :::tip
 Most days should start with `elephant wake`, not with a new setup flow. `wake`
@@ -52,13 +52,13 @@ enough shape to begin learning responsibly.
 
 ## Wake as the main surface
 
-Inside `wake`, the conversation is primary. Tools, skills, models, memory, and
+Inside `wake`, the conversation is primary. Tools, skills, models, recall, and
 providers stay close but do not become the product center.
 
 | Need | Slash command | Dashboard counterpart |
 | --- | --- | --- |
 | Check readiness | `/status` | Overview / Settings |
-| Inspect understanding | `/memory` | You, Diary, Why views |
+| Inspect understanding | `/recall` | You, Diary, Why views |
 | Inspect tools | `/tools` | Tools |
 | Inspect skills | `/skills` | Skills |
 | Change provider/model posture | `/providers`, `/models` | Models / Providers |
@@ -89,4 +89,3 @@ The TUI is designed around three promises:
 | `elephant wake --message "..."` | You want a single non-interactive turn. |
 | `elephant dashboard` | You want to inspect or correct understanding visually. |
 | `elephant gateway setup` | You want Elephant Agent to meet you in messaging apps. |
-

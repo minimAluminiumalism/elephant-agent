@@ -33,7 +33,7 @@ def test_unknown_language_uses_contextual_recall() -> None:
 
 
 def test_chinese_nearest_neighbor_is_not_recent_intent() -> None:
-    plan = plan_recall_query("最近邻算法 memory search")
+    plan = plan_recall_query("最近邻算法 recall search")
 
     assert plan.temporal_intent == "neutral"
     assert plan.recall_mode == "contextual_recall"

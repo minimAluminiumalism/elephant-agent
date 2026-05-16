@@ -51,7 +51,7 @@ class ProgressionRewardSummary:
 @dataclass(frozen=True, slots=True)
 class ProgressionProjection:
     profile_id: str
-    memory_checkpoint: int
+    understanding_checkpoint: int
     ring_index: int
     ring_level: int
     stage_title: str
@@ -78,7 +78,7 @@ class ProgressionProjection:
 
     @property
     def cycle_label(self) -> str:
-        return f"Memory {_roman_numeral(self.ring_index)}"
+        return f"Evidence {_roman_numeral(self.ring_index)}"
 
     @property
     def identity_line(self) -> str:
@@ -86,7 +86,7 @@ class ProgressionProjection:
 
     @property
     def level(self) -> int:
-        return self.memory_checkpoint
+        return self.understanding_checkpoint
 
     @property
     def progress_ratio(self) -> float:
@@ -156,15 +156,15 @@ class ProgressionProjectionBuilder:
         )
         experience_count = len(experiences) if experiences else max(0, power_state.total_experiences)
         power_score = max(0, power_state.growth_score)
-        memory_checkpoint = unbounded_level_for_score(power_score)
-        floor_score = unbounded_level_floor_score(memory_checkpoint)
-        next_cost = unbounded_xp_to_next_level(memory_checkpoint)
+        understanding_checkpoint = unbounded_level_for_score(power_score)
+        floor_score = unbounded_level_floor_score(understanding_checkpoint)
+        next_cost = unbounded_xp_to_next_level(understanding_checkpoint)
         next_level_score = floor_score + next_cost
         score_into_level = max(0, power_score - floor_score)
         progress_ratio = 1.0 if next_cost == 0 else min(1.0, score_into_level / next_cost)
 
-        ring_index = max(1, (memory_checkpoint // 10) + 1)
-        ring_level = memory_checkpoint % 10
+        ring_index = max(1, (understanding_checkpoint // 10) + 1)
+        ring_level = understanding_checkpoint % 10
         promoted_procedures = sum(
             1 for procedure in procedures if procedure.status.strip().lower() in _PROMOTED_PROCEDURE_STATUSES
         )
@@ -271,7 +271,7 @@ class ProgressionProjectionBuilder:
 
         return ProgressionProjection(
             profile_id=profile_id,
-            memory_checkpoint=memory_checkpoint,
+            understanding_checkpoint=understanding_checkpoint,
             ring_index=ring_index,
             ring_level=ring_level,
             stage_title=stage_title,
@@ -286,9 +286,9 @@ class ProgressionProjectionBuilder:
             anti_grind_flags=anti_grind_flags,
             updated_at=power_state.updated_at,
             growth_state=power_state,
-            brand_stage_id=_brand_stage_id_for_level(memory_checkpoint),
+            brand_stage_id=_brand_stage_id_for_level(understanding_checkpoint),
             next_milestone=_next_milestone_summary(
-                memory_checkpoint=memory_checkpoint,
+                understanding_checkpoint=understanding_checkpoint,
                 score_to_next_level=max(0, next_cost - score_into_level),
             ),
             lifetime_days=_lifetime_days_for(power_state),
@@ -580,7 +580,7 @@ def _anti_grind_flags(
 
 def _next_milestone_summary(
     *,
-    memory_checkpoint: int,
+    understanding_checkpoint: int,
     score_to_next_level: int,
 ) -> str:
-    return f"{score_to_next_level} memory signal until checkpoint {memory_checkpoint + 1}."
+    return f"{score_to_next_level} understanding signal until checkpoint {understanding_checkpoint + 1}."

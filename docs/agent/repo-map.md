@@ -44,7 +44,7 @@ Direction: apps → packages (never reversed). Packages integrate through `contr
 | Package | Purpose | Entry Module | Depends On |
 |---------|---------|-------------|------------|
 | `packages/contracts` | Shared records, schemas, IDs. Dependency-free foundation. | `contracts/inventory.py` | (none) |
-| `packages/kernel` | Runtime lifecycle: Record ingestion, State resolution, Episode/Loop/Step, Grounding, persistence, reflection triggers. | `kernel/runtime.py` | contracts, state, evidence, context, tools, storage |
+| `packages/kernel` | Runtime lifecycle: Source event ingestion, State resolution, Episode/Loop/Step, persistence, reflection triggers. | `kernel/runtime.py` | contracts, state, evidence, context, tools, storage |
 | `packages/state` | Elephant State management, canonical projection, policy. | `state/canonical.py` | contracts, storage |
 | `packages/evidence` | Unified recall, reflection, semantic indexing, personal model learning support. | `evidence/runtime.py` | contracts, storage, embeddings, semantic_index |
 | `packages/storage` | SQLite persistence, migrations, repository pattern. | `storage/repository.py` | contracts |

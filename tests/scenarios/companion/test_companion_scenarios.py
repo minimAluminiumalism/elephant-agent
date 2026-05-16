@@ -21,7 +21,7 @@ class CompanionScenarioFixturesTest(unittest.TestCase):
             self.assertTrue((SCENARIOS_PATH.with_name(scenario["file"])).exists(), scenario["file"])
 
     def test_governance_state_exposes_text_first_persona_state(self) -> None:
-        from packages.continuity import build_relationship_memory_policy
+        from packages.continuity import build_relationship_policy
         from packages.state import ProfileLoader, build_companion_governance_state, build_loaded_profile_from_state
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -60,7 +60,7 @@ class CompanionScenarioFixturesTest(unittest.TestCase):
                 elephant_identity_text="Steady, grounded, and direct.",
             )
             governance = build_companion_governance_state(loaded)
-            relationship_policy = build_relationship_memory_policy(
+            relationship_policy = build_relationship_policy(
                 loaded.state.mode,
                 text_first=loaded.companion.text_first if loaded.companion is not None else True,
                 preserve_relationship_timeline=(
@@ -149,7 +149,7 @@ class CompanionScenarioFixturesTest(unittest.TestCase):
         self.assertIn("normal turns", onboarded.onboarding.summary)
 
     def test_relationship_policy_hook_matches_companion_state(self) -> None:
-        from packages.continuity import build_relationship_memory_policy
+        from packages.continuity import build_relationship_policy
         from packages.state import ProfileLoader
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -172,7 +172,7 @@ class CompanionScenarioFixturesTest(unittest.TestCase):
             )
 
             loaded = ProfileLoader(profile_dir).load()
-            policy = build_relationship_memory_policy(
+            policy = build_relationship_policy(
                 loaded.state.mode,
                 text_first=loaded.companion.text_first if loaded.companion is not None else True,
                 preserve_relationship_timeline=(

@@ -91,7 +91,7 @@ class GrowthTurnSignals:
     active_work_item_present: bool = False
     plan_step_count: int = 0
     work_item_dependency_count: int = 0
-    memory_count: int = 0
+    recall_count: int = 0
     context_work_item_count: int = 0
     tool_call_count: int = 0
     model_turn_count: int = 0
@@ -576,7 +576,7 @@ def _understanding_grounding_reason(signals: GrowthTurnSignals) -> GrowthRewardR
         score = min(score, 6)
     return _reward_reason(
         "understanding-grounding",
-        "Understanding Grounding",
+        "Understanding Provenance",
         "Personal Model claims carry provenance instead of becoming unsupported profile text.",
         score,
         facts=(
@@ -686,9 +686,9 @@ def _continuity_reason(signals: GrowthTurnSignals) -> GrowthRewardReason | None:
     if signals.active_work_item_present:
         score += 2
         facts.append("active-state-focus")
-    if signals.memory_count:
-        score += min(3, signals.memory_count)
-        facts.append(f"memory-refs={signals.memory_count}")
+    if signals.recall_count:
+        score += min(3, signals.recall_count)
+        facts.append(f"recall-refs={signals.recall_count}")
     if signals.replay_evidence_refs:
         score += min(4, len(signals.replay_evidence_refs))
         facts.append(f"resume-evidence={len(signals.replay_evidence_refs)}")

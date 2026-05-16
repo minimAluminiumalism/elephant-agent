@@ -886,7 +886,7 @@ class SurfaceModelProviderCapability(ModelProviderCapability):
                 "token_budget": str(context.token_budget),
                 "instruction_refs": ",".join(context.instruction_refs),
                 "work_item_ids": ",".join(context.work_item_ids),
-                "memory_ids": ",".join(context.memory_ids),
+                "evidence_refs": ",".join(context.evidence_refs),
                 "artifact_ids": ",".join(context.artifact_ids),
                 "frozen_prefix_prompt": context.prompt_envelope.frozen_prefix,
                 "session_snapshot_prompt": context.prompt_envelope.session_snapshot,

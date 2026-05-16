@@ -22,7 +22,7 @@ governed update writes through the Personal Model.
 | **Personal Model** | Active, retired, and disputed claims across Identity, World, Pulse, Journey. | Dashboard You / Diary / Why views. |
 | **Elephant State** | Elephant identity and one current context note. | Herd, status, wake resume. |
 | **Episode / Loop / Step trail** | Inputs, replies, tool calls, results, updates, and provenance. | History, runtime trace, Why inspection. |
-| **Contextual recall** | Current-turn support retrieved from facts and Steps. | `/memory`, diagnostics, search result status. |
+| **Contextual recall** | Current-turn support retrieved from facts and Steps. | `/recall`, diagnostics, search result status. |
 | **Background learning** | Episode-close, diary, dream, grounding, and skill-affinity updates. | Reflect, jobs, learning results. |
 
 ```mermaid

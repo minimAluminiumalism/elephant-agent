@@ -3,7 +3,7 @@
 This test protects the invariant set in docs/system-design/system-layer-model.md
 (184): the foreground agent sees human-readable content, not runtime-owned
 identifiers that it cannot dereference. If a regression lands that embeds a
-`record:…`, `memory:…`, `work-…`, `grounding:…`, `loop:…`, `step:…`, or a
+`record:…`, `evidence:…`, `work-…`, `grounding:…`, `loop:…`, `step:…`, or a
 raw `session-…`/`episode:…` into the prompt render, this test will catch it.
 
 The assertion runs against a representative assembled prompt (one with all the
@@ -24,7 +24,7 @@ from packages.context import (
     MarkdownPromptRenderer,
 )
 from packages.contracts.layers import Episode
-from packages.contracts.runtime import MemoryRecord
+from packages.contracts.runtime import RecallEvidence
 
 
 _FORBIDDEN_ID_PATTERNS = (
@@ -70,24 +70,24 @@ def _work_items() -> tuple[SimpleNamespace, ...]:
     )
 
 
-def _memories() -> tuple[MemoryRecord, ...]:
+def _memories() -> tuple[RecallEvidence, ...]:
     ts = datetime(2026, 4, 29, tzinfo=timezone.utc)
     return (
-        MemoryRecord(
-            memory_id="memory-1",
+        RecallEvidence(
+            evidence_id="evidence-1",
             episode_id="session-xyz",
             kind="summary",
             content="The previous turn asked us to pause the deploy until a review finished.",
             created_at=ts,
-            work_item_refs=("work-42",),
+            work_item_ids=("work-42",),
         ),
-        MemoryRecord(
-            memory_id="memory-2",
+        RecallEvidence(
+            evidence_id="evidence-2",
             episode_id="session-xyz",
             kind="decision",
             content="Decide to keep the current deploy strategy with extra manual gates.",
             created_at=ts,
-            work_item_refs=("work-42",),
+            work_item_ids=("work-42",),
         ),
     )
 
@@ -133,5 +133,5 @@ class PromptPurityTest(unittest.TestCase):
         )
         prompt = detailed.rendered_prompt
         self.assertIn("Finish the release review", prompt)  # work title
-        self.assertIn("The previous turn asked us to pause the deploy", prompt)  # memory content
+        self.assertIn("The previous turn asked us to pause the deploy", prompt)  # evidence content
         self.assertIn("continue with the release review", prompt)  # loop content

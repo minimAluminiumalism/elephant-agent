@@ -2,16 +2,15 @@ from __future__ import annotations
 
 import unittest
 
-from packages.contracts import RelationshipMemoryRecord
 from packages.contracts.runtime import PersonalModelRuntimeState
 from packages.state import (
     CompanionSettings,
-    build_canonical_profile_state,
     build_loaded_profile_from_state,
-    canonical_profile_ids,
     render_user_profile_text,
 )
+from packages.state.canonical import build_canonical_profile_state, canonical_profile_ids
 from packages.state.persistence import _relationship_capture_content
+from packages.state.rendered_views import RenderedRelationshipView
 
 
 class CanonicalPersonalModelRuntimeStateTest(unittest.TestCase):
@@ -59,21 +58,13 @@ class CanonicalPersonalModelRuntimeStateTest(unittest.TestCase):
     def test_canonical_profile_ids_are_stable(self) -> None:
         ids = canonical_profile_ids("profile-companion")
 
-        self.assertEqual(ids.elephant_id, "you:elephant")
-        self.assertEqual(ids.user_card_id, "you:user-card")
-        self.assertEqual(ids.relationship_id, "you:relationship")
+        self.assertEqual(ids.elephant_id, "profile-companion:elephant")
+        self.assertEqual(ids.user_profile_id, "profile-companion:user-profile")
+        self.assertEqual(ids.relationship_id, "profile-companion:relationship")
 
     def test_build_canonical_profile_state_separates_user_and_relationship_truth(self) -> None:
         loaded = self._load_profile()
         bundle = build_canonical_profile_state(loaded)
-
-        self.assertEqual(bundle.personal_model_record_bundle.profile.profile_id, "you")
-        self.assertEqual(bundle.personal_model_record_bundle.elephant_identity.elephant_id, bundle.elephant_identity.elephant_id)
-        self.assertEqual(bundle.personal_model_record_bundle.user_card.user_card_id, bundle.user_card.user_card_id)
-        self.assertEqual(
-            bundle.personal_model_record_bundle.relationship_memory.relationship_id,
-            bundle.relationship_memory.relationship_id,
-        )
 
         self.assertEqual(bundle.elephant_identity.profile_id, "you")
         self.assertEqual(bundle.elephant_identity.display_name, "Aeon")
@@ -82,29 +73,29 @@ class CanonicalPersonalModelRuntimeStateTest(unittest.TestCase):
         self.assertIn("Protect continuity", bundle.elephant_identity.elephant_identity_text or "")
         self.assertIn("text-first", bundle.elephant_identity.governance_flags)
 
-        self.assertEqual(bundle.user_card.preferred_name, "Bit")
-        self.assertEqual(bundle.user_card.locale, "zh-CN")
-        self.assertEqual(bundle.user_card.timezone, "Asia/Shanghai")
-        self.assertEqual(bundle.user_card.communication_preferences, ("tone:steady", "verbosity:concise"))
-        self.assertEqual(bundle.user_card.shared_preferences, ("local-context:agentic-in/elephant",))
-        self.assertIn("current_work:Building durable agent systems.", bundle.user_card.biography_fragments)
-        self.assertIn("current_city:Shanghai", bundle.user_card.biography_fragments)
-        self.assertEqual(bundle.user_card.boundaries, ("Prefer directness over fluff.",))
-        self.assertEqual(bundle.user_card.durable_notes, ("Carries research context across weeks.",))
+        self.assertEqual(bundle.user_profile.preferred_name, "Bit")
+        self.assertEqual(bundle.user_profile.locale, "zh-CN")
+        self.assertEqual(bundle.user_profile.timezone, "Asia/Shanghai")
+        self.assertEqual(bundle.user_profile.communication_preferences, ("tone:steady", "verbosity:concise"))
+        self.assertEqual(bundle.user_profile.shared_preferences, ("local-context:agentic-in/elephant",))
+        self.assertIn("current_work:Building durable agent systems.", bundle.user_profile.biography_fragments)
+        self.assertIn("current_city:Shanghai", bundle.user_profile.biography_fragments)
+        self.assertEqual(bundle.user_profile.boundaries, ("Prefer directness over fluff.",))
+        self.assertEqual(bundle.user_profile.durable_notes, ("Carries research context across weeks.",))
 
-        self.assertEqual(bundle.relationship_memory.elephant_id, bundle.elephant_identity.elephant_id)
-        self.assertEqual(bundle.relationship_memory.user_card_id, bundle.user_card.user_card_id)
-        self.assertIn("initiative:proactive", bundle.relationship_memory.expectations)
-        self.assertIn("recover long arcs", bundle.relationship_memory.continuity_notes)
-        self.assertNotIn("current_work:Building durable agent systems.", bundle.relationship_memory.expectations)
-        self.assertNotIn("Prefer directness over fluff.", bundle.relationship_memory.continuity_notes)
+        self.assertEqual(bundle.relationship.elephant_id, bundle.elephant_identity.elephant_id)
+        self.assertEqual(bundle.relationship.user_profile_id, bundle.user_profile.user_profile_id)
+        self.assertIn("initiative:proactive", bundle.relationship.expectations)
+        self.assertIn("recover long arcs", bundle.relationship.continuity_notes)
+        self.assertNotIn("current_work:Building durable agent systems.", bundle.relationship.expectations)
+        self.assertNotIn("Prefer directness over fluff.", bundle.relationship.continuity_notes)
 
     def test_relationship_capture_excludes_system_governance_defaults(self) -> None:
-        record = RelationshipMemoryRecord(
+        record = RenderedRelationshipView(
             relationship_id="you:relationship",
             profile_id="you",
             elephant_id="you:elephant",
-            user_card_id="you:user-card",
+            user_profile_id="you:user-profile",
             interaction_preferences=(
                 "text-first",
                 "preserve-relationship-timeline",
@@ -121,11 +112,11 @@ class CanonicalPersonalModelRuntimeStateTest(unittest.TestCase):
 
         self.assertEqual(_relationship_capture_content(record), "")
 
-        with_note = RelationshipMemoryRecord(
+        with_note = RenderedRelationshipView(
             relationship_id="you:relationship",
             profile_id="you",
             elephant_id="you:elephant",
-            user_card_id="you:user-card",
+            user_profile_id="you:user-profile",
             interaction_preferences=record.interaction_preferences,
             expectations=record.expectations,
             continuity_notes=("Check in gently after intense work sessions.",),

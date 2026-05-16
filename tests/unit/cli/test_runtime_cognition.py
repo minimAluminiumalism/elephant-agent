@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from apps.cli.runtime import CliRuntime, _CliContextCapability, _DurableMemoryCapability
+from apps.cli.runtime import CliRuntime, _CliContextCapability, _DurableRecallCapability
 from apps.cli.runtime_snapshot import load_snapshot_session_context_epoch, restore_snapshot_state_focus
 from packages.contracts import (
     ContextBundle,
@@ -23,17 +23,18 @@ from packages.contracts import (
     EventEnvelope,
     ExecutionResult,
     Fact,
-    MemoryRecord,
+    Loop,
     PersonalModelGrowthState,
     PromptEnvelope,
     PromptMessage,
-    Record,
+    Step,
 )
 from packages.contracts.runtime import (
     EmbeddingIndexPolicy,
     EvidenceRetrievalRequest,
     EvidenceRetrievalResult,
     LoopState,
+    RecallEvidence,
     RecallReasons,
     StateFocusDecision,
 )
@@ -45,7 +46,6 @@ from packages.skills import (
     builtin_site_skill_catalog_entries,
     operator_prompt_skill_catalog_entries,
 )
-from packages.evidence import MemoryLedgerEntry
 
 
 class CliRuntimeCognitionTest(unittest.TestCase):
@@ -81,12 +81,11 @@ class CliRuntimeCognitionTest(unittest.TestCase):
         )
 
         stable_lines = capability._capability_stable_prefix_lines(session=session, loaded=object())  # type: ignore[arg-type]
-        artifacts = capability._capability_artifacts(session, object(), work_items=(), memories=())  # type: ignore[arg-type]
+        artifacts = capability._capability_artifacts(session, object(), work_items=(), recall_items=())  # type: ignore[arg-type]
         system_prompt = PromptEnvelope(frozen_prefix="\n".join(stable_lines)).system_prompt()
 
         self.assertIn("### Runtime paths", system_prompt)
         self.assertIn(f"startup_cwd={startup_cwd.resolve()}", system_prompt)
-        self.assertIn(f"workspaces_dir={workspaces_dir.resolve()}", system_prompt)
         self.assertIn(f"elephant_workspace={(workspaces_dir / 'miles').resolve()}", system_prompt)
         self.assertNotIn("runtime-paths:", "\n".join(artifacts))
 
@@ -165,6 +164,25 @@ class CliRuntimeCognitionTest(unittest.TestCase):
         self.assertNotIn("continue the launch plan", bundle.rendered_prompt)
         self.assertNotIn("recover the active launch work", bundle.rendered_prompt)
 
+    def test_start_fresh_episode_indexes_closed_episode_summary(self) -> None:
+        runtime = self._runtime()
+        session = runtime.start()
+        indexed: list[Episode] = []
+
+        class _Indexer:
+            def index_episode_exit(self, episode: Episode) -> None:
+                indexed.append(episode)
+
+        object.__setattr__(runtime, "_semantic_summary_indexer", _Indexer())
+
+        next_episode = runtime.start_fresh_episode(session.episode_id)
+
+        self.assertEqual(next_episode.parent_episode_id, session.episode_id)
+        self.assertEqual(len(indexed), 1)
+        self.assertEqual(indexed[0].episode_id, session.episode_id)
+        self.assertEqual(indexed[0].status, "closed")
+        self.assertEqual(indexed[0].exit_summary, "/clear requested a fresh Episode")
+
     def test_cli_context_capability_ignores_internal_startup_loops_in_recent_loop_context(self) -> None:
         runtime = self._runtime()
         session = runtime.start()
@@ -197,26 +215,6 @@ class CliRuntimeCognitionTest(unittest.TestCase):
     def test_cli_context_does_not_duplicate_active_personal_model_behavior_contract(self) -> None:
         runtime = self._runtime()
         session = runtime.start()
-        state = runtime.ensure_elephant_state(session)
-        runtime.repository.upsert_record(
-            Record(
-                record_id="record:personal-model:style:direct-status",
-                kind="layer",
-                schema_version="personal_model.personality_style/v1",
-                owner_scope="personal_model",
-                personal_model_id=state.personal_model_id,
-                state_id=state.state_id,
-                layer_type="personality_style_model",
-                payload={
-                    "behavioral_state": "active",
-                    "behavioral_effect": "Keep implementation progress direct and evidence-backed.",
-                },
-                metadata={
-                    "target_key": "style.direct.status",
-                    "behavioral_effect": "Keep implementation progress direct and evidence-backed.",
-                },
-            )
-        )
         capability = _CliContextCapability(
             profile_loader=runtime.profile_loader,
             repository=runtime.repository,
@@ -252,6 +250,11 @@ class CliRuntimeCognitionTest(unittest.TestCase):
         runtime = self._runtime()
         session = runtime.start()
         profile = runtime._load_profile(session.personal_model_id)
+        initial_epoch = load_snapshot_session_context_epoch(runtime, session_id=session.episode_id)
+        self.assertIsNotNone(initial_epoch)
+        assert initial_epoch is not None
+        self.assertTrue(initial_epoch.frozen)
+        initial_prefix = initial_epoch.frozen_prefix
 
         first_context = ContextBundle(
             bundle_id="bundle:first",
@@ -266,7 +269,7 @@ class CliRuntimeCognitionTest(unittest.TestCase):
             profile=profile.state,
             session=session,
             work_items=(),
-            memories=(),
+            recall_items=(),
             plan=None,
             execution=ExecutionResult(
                 execution_id="exec:first",
@@ -291,7 +294,7 @@ class CliRuntimeCognitionTest(unittest.TestCase):
             profile=profile.state,
             session=session,
             work_items=(),
-            memories=(),
+            recall_items=(),
             plan=None,
             execution=ExecutionResult(
                 execution_id="exec:second",
@@ -329,8 +332,9 @@ class CliRuntimeCognitionTest(unittest.TestCase):
         )
         bundle = capability.assemble(session, (), ())
 
-        self.assertEqual(bundle.prompt_envelope.frozen_prefix, "FIRST PREFIX")
-        self.assertEqual(bundle.prompt_envelope.session_snapshot, "FIRST SNAPSHOT")
+        self.assertEqual(bundle.prompt_envelope.frozen_prefix, initial_prefix)
+        self.assertIn("### Who you are", bundle.prompt_envelope.frozen_prefix)
+        self.assertEqual(bundle.prompt_envelope.session_snapshot, "")
         self.assertNotIn("FIRST INJECTIONS", bundle.prompt_envelope.loop_context)
         self.assertEqual(
             tuple((message.role, message.content) for message in bundle.prompt_envelope.messages),
@@ -341,6 +345,7 @@ class CliRuntimeCognitionTest(unittest.TestCase):
                 ("assistant", "second reply"),
             ),
         )
+        self.assertNotIn("FIRST PREFIX", bundle.prompt_envelope.combined_prompt())
         self.assertNotIn("SECOND PREFIX", bundle.prompt_envelope.combined_prompt())
         self.assertNotIn("SECOND INJECTIONS", bundle.prompt_envelope.loop_context)
         frozen_epoch = load_snapshot_session_context_epoch(runtime, session_id=session.episode_id)
@@ -349,7 +354,7 @@ class CliRuntimeCognitionTest(unittest.TestCase):
         self.assertTrue(frozen_epoch.frozen)
         self.assertEqual(frozen_epoch.base_loop_context, "")
         self.assertEqual(frozen_epoch.thread_focus, "No durable elephant focus is available yet.")
-        self.assertTrue(len(frozen_epoch.frozen_skill_ids) > 0)
+        self.assertEqual(frozen_epoch.frozen_skill_ids, ())
         self.assertEqual(len(frozen_epoch.frozen_skill_index), frozen_epoch.frozen_skill_count)
         self.assertTrue(len(frozen_epoch.frozen_tool_ids) > 0)
         self.assertEqual(
@@ -358,21 +363,15 @@ class CliRuntimeCognitionTest(unittest.TestCase):
         )
         self.assertEqual(
             frozen_epoch.frozen_skill_count,
-            len(operator_prompt_skill_catalog_entries(limit=10_000)),
+            0,
         )
         self.assertEqual(
             frozen_epoch.frozen_skill_ids,
-            tuple(entry.skill_id for entry in operator_prompt_skill_catalog_entries(limit=10_000)),
+            (),
         )
-        self.assertIn("ascii-art", frozen_epoch.frozen_skill_ids)
-        self.assertIn("minecraft-modpack-server", frozen_epoch.frozen_skill_ids)
+        self.assertNotIn("ascii-art", frozen_epoch.frozen_skill_ids)
         self.assertNotIn("docker-management", frozen_epoch.frozen_skill_ids)
-        ascii_art = next(entry for entry in frozen_epoch.frozen_skill_index if entry.skill_id == "ascii-art")
-        self.assertEqual(ascii_art.display_name, "ASCII Art")
-        self.assertEqual(ascii_art.category, "creative")
-        self.assertEqual(ascii_art.source_id, "builtin")
-        self.assertEqual(ascii_art.storage_tier, "builtin")
-        self.assertEqual(ascii_art.slash_command, "ascii-art")
+        self.assertEqual(frozen_epoch.frozen_skill_index, ())
         self.assertEqual(frozen_epoch.frozen_skill_disclosures, ())
         self.assertEqual(frozen_epoch.latest_skill_disclosures, ())
 
@@ -385,7 +384,7 @@ class CliRuntimeCognitionTest(unittest.TestCase):
             profile=profile.state,
             session=session,
             work_items=(),
-            memories=(),
+            recall_items=(),
             plan=None,
             execution=ExecutionResult(
                 execution_id="exec:first",
@@ -425,7 +424,7 @@ class CliRuntimeCognitionTest(unittest.TestCase):
 
         self.assertIsNotNone(frozen_epoch)
         assert frozen_epoch is not None
-        self.assertEqual(frozen_epoch.base_loop_context, "- source_ref: turn:1\nrefs: artifact:1")
+        self.assertEqual(frozen_epoch.base_loop_context, "- source_ref: turn:1")
         self.assertNotIn("do not keep this body", frozen_epoch.base_loop_context)
 
     def test_frozen_skill_index_honors_profile_skill_disable_overrides(self) -> None:
@@ -438,7 +437,7 @@ class CliRuntimeCognitionTest(unittest.TestCase):
             profile=profile.state,
             session=session,
             work_items=(),
-            memories=(),
+            recall_items=(),
             plan=None,
             execution=ExecutionResult(
                 execution_id="exec:first",
@@ -467,15 +466,8 @@ class CliRuntimeCognitionTest(unittest.TestCase):
         frozen_epoch = load_snapshot_session_context_epoch(runtime, session_id=session.episode_id)
         self.assertIsNotNone(frozen_epoch)
         assert frozen_epoch is not None
-        expected = tuple(
-            entry.skill_id
-            for entry in operator_prompt_skill_catalog_entries(
-                {"ascii-art": False},
-                limit=10_000,
-            )
-        )
         self.assertNotIn("ascii-art", frozen_epoch.frozen_skill_ids)
-        self.assertEqual(frozen_epoch.frozen_skill_ids, expected)
+        self.assertEqual(frozen_epoch.frozen_skill_ids, ())
 
     def test_frozen_session_history_compacts_explicitly_without_rewriting_epoch_truth(self) -> None:
         runtime = self._runtime()
@@ -485,7 +477,7 @@ class CliRuntimeCognitionTest(unittest.TestCase):
             profile=profile.state,
             session=session,
             work_items=(),
-            memories=(),
+            recall_items=(),
             plan=None,
             execution=ExecutionResult(
                 execution_id="exec:first",
@@ -547,7 +539,7 @@ class CliRuntimeCognitionTest(unittest.TestCase):
         assert result is not None
         self.assertTrue(result.compacted)
         rendered_messages = "\n".join(message.content for message in bundle.prompt_envelope.messages)
-        self.assertIn("CONTEXT COMPACTION - REFERENCE ONLY", rendered_messages)
+        self.assertNotIn("CONTEXT COMPACTION - REFERENCE ONLY", rendered_messages)
         self.assertIn("topic marker 42", rendered_messages)
         frozen_epoch = load_snapshot_session_context_epoch(runtime, session_id=session.episode_id)
         self.assertIsNotNone(frozen_epoch)
@@ -566,7 +558,7 @@ class CliRuntimeCognitionTest(unittest.TestCase):
         runtime = self._runtime()
         session = runtime.start()
         embedding_service = object()
-        runtime.memory_runtime.retriever.evidence_retriever.embedding_service = embedding_service
+        runtime.recall_runtime.retriever.evidence_retriever.embedding_service = embedding_service
         captured: dict[str, object] = {}
 
         class RecordingContextCapability:
@@ -584,7 +576,7 @@ class CliRuntimeCognitionTest(unittest.TestCase):
         self.assertIs(captured["embedding_service"], embedding_service)
         self.assertEqual(captured["compact_kwargs"], {"session_id": session.episode_id, "reason": "usage", "force": True})
 
-    def test_projection_relevance_scorer_never_blocks(self) -> None:
+    def test_projection_relevance_scorer_was_removed_from_context_public_contract(self) -> None:
         runtime = self._runtime()
         capability = _CliContextCapability(
             profile_loader=runtime.profile_loader,
@@ -594,17 +586,7 @@ class CliRuntimeCognitionTest(unittest.TestCase):
             embedding_service=object(),
         )
 
-        usage_scorer = capability._projection_relevance_scorer(reason="usage")
-        preflight_scorer = capability._projection_relevance_scorer(reason="preflight")
-
-        self.assertIsNotNone(usage_scorer)
-        self.assertIsNotNone(preflight_scorer)
-        assert usage_scorer is not None
-        assert preflight_scorer is not None
-        # Cache-first: neither scorer has a blocking wait. They both read the
-        # shared embedding cache, enqueue a backfill on miss, and return.
-        self.assertFalse(hasattr(usage_scorer, "wait_timeout_ms"))
-        self.assertFalse(hasattr(preflight_scorer, "wait_timeout_ms"))
+        self.assertFalse(hasattr(capability, "_projection_relevance_scorer"))
 
     def test_snapshot_history_messages_use_actual_turn_transcript_without_legacy_lines(self) -> None:
         runtime = self._runtime()
@@ -636,7 +618,7 @@ class CliRuntimeCognitionTest(unittest.TestCase):
             profile=profile.state,
             session=session,
             work_items=(),
-            memories=(),
+            recall_items=(),
             plan=None,
             execution=ExecutionResult(
                 execution_id="exec:tool-trace",
@@ -679,6 +661,7 @@ class CliRuntimeCognitionTest(unittest.TestCase):
         observed_events: list[dict[str, object]] = []
         runtime.set_kernel_event_observer(observed_events.append)
         huge_prompt = "oversized completed request " + ("payload " * 5000)
+        captured_compress_metadata: dict[str, str] = {}
 
         def generate_response(*, profile, session, context, prompt, model_role="strong"):
             if "Create a compact structured handoff summary" in prompt:
@@ -701,9 +684,16 @@ class CliRuntimeCognitionTest(unittest.TestCase):
                 total_tokens=920,
             )
 
+        def run_reflect_agent(_runtime, job, *, explicit_features, persist_result):
+            self.assertEqual(explicit_features, ("compress",))
+            self.assertFalse(persist_result)
+            captured_compress_metadata.update(dict(job.metadata))
+            return mock.Mock(summary="oversized completed request was handled; continue from the completed answer.")
+
         with (
             mock.patch.object(type(runtime), "active_provider_context_window", return_value=1024),
             mock.patch.object(type(runtime.model_provider), "generate", side_effect=generate_response),
+            mock.patch("apps.reflect.runner.run_reflect_agent", side_effect=run_reflect_agent),
         ):
             outcome = runtime.explain_next_step(
                 session_id=session.episode_id,
@@ -711,21 +701,19 @@ class CliRuntimeCognitionTest(unittest.TestCase):
             )
 
         compact_stages = [stage for stage in outcome.stages if stage.stage == "context-compact"]
-        self.assertTrue(compact_stages)
-        self.assertIn("reason=usage", compact_stages[-1].detail)
-        self.assertTrue(
-            any(
-                isinstance(event.get("payload"), dict)
-                and event["payload"].get("stage") == "context-compact"
-                for event in observed_events
-            )
-        )
+        self.assertEqual(len(compact_stages), 1)
+        self.assertIn("reason=usage", compact_stages[0].detail)
+        self.assertTrue(observed_events)
         frozen_epoch = load_snapshot_session_context_epoch(runtime, session_id=session.episode_id)
         self.assertIsNotNone(frozen_epoch)
         assert frozen_epoch is not None
         self.assertEqual(frozen_epoch.compaction_count, 1)
-        self.assertEqual(tuple(message.content for message in frozen_epoch.history_messages), ("completed answer",))
-        self.assertIn("CONTEXT COMPACTION - REFERENCE ONLY", frozen_epoch.compacted_history_summary)
+        self.assertIn("Reference summary:", frozen_epoch.frozen_prefix)
+        self.assertIn("oversized completed request", frozen_epoch.compacted_history_summary)
+        self.assertIn("oversized completed request", captured_compress_metadata["compressed_messages"])
+        history = tuple(message.content for message in frozen_epoch.history_messages)
+        self.assertIn("completed answer", history)
+        self.assertNotIn(huge_prompt, history)
 
     def test_frozen_session_context_epoch_tracks_latest_skill_disclosure_reason(self) -> None:
         runtime = self._runtime()
@@ -736,7 +724,7 @@ class CliRuntimeCognitionTest(unittest.TestCase):
             profile=profile.state,
             session=session,
             work_items=(),
-            memories=(),
+            recall_items=(),
             plan=None,
             execution=ExecutionResult(
                 execution_id="exec:skill-disclosure",
@@ -773,13 +761,13 @@ class CliRuntimeCognitionTest(unittest.TestCase):
         frozen_epoch = load_snapshot_session_context_epoch(runtime, session_id=session.episode_id)
         self.assertIsNotNone(frozen_epoch)
         assert frozen_epoch is not None
-        self.assertEqual(len(frozen_epoch.frozen_skill_disclosures), 1)
-        self.assertEqual(frozen_epoch.frozen_skill_disclosures[0].skill_id, "ascii-art")
+        self.assertEqual(frozen_epoch.frozen_skill_disclosures, ())
+        self.assertEqual(len(frozen_epoch.latest_skill_disclosures), 1)
+        self.assertEqual(frozen_epoch.latest_skill_disclosures[0].skill_id, "ascii-art")
         self.assertIn(
             "explicit skill overlay",
-            frozen_epoch.frozen_skill_disclosures[0].reason,
+            frozen_epoch.latest_skill_disclosures[0].reason,
         )
-        self.assertEqual(frozen_epoch.latest_skill_disclosures, frozen_epoch.frozen_skill_disclosures)
 
     def test_snapshot_state_focus_restore_rejects_legacy_skill_candidate_scores(self) -> None:
         snapshot = {
@@ -800,37 +788,69 @@ class CliRuntimeCognitionTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             restore_snapshot_state_focus(snapshot)
 
-    def test_durable_memory_capability_prefers_work_item_aware_continuity_retrieval(self) -> None:
+    def test_durable_recall_capability_prefers_work_item_aware_continuity_retrieval(self) -> None:
         runtime = self._runtime()
         session = runtime.start()
-        runtime.memory_runtime.store.upsert(
-            MemoryRecord(
-                memory_id="memory-work",
+        runtime.repository.upsert_loop(
+            Loop(
+                loop_id="loop:test",
                 episode_id=session.episode_id,
-                kind="procedural",
-                content="The next step is to continue by publishing the release artifacts.",
-                work_item_refs=("state-release",),
-                tags=("continuity",),
+                state_id=session.state_id,
+                personal_model_id=session.personal_model_id,
+                trigger_type="test",
+                status="completed",
+                started_at=datetime.now(timezone.utc),
+            )
+        )
+        runtime.repository.upsert_step(
+            Step(
+                step_id="evidence-work",
+                loop_id="loop:test",
+                episode_id=session.episode_id,
+                state_id=session.state_id,
+                personal_model_id=session.personal_model_id,
+                phase="acting",
+                action="procedural",
+                status="completed",
+                sequence=1,
+                summary="The next step is to continue by publishing the release artifacts.",
+                metadata={"work_item_ids": "state-release"},
                 created_at=datetime.now(timezone.utc),
             )
         )
-        runtime.memory_runtime.store.upsert(
-            MemoryRecord(
-                memory_id="memory-noise",
+        runtime.repository.upsert_step(
+            Step(
+                step_id="evidence-noise",
+                loop_id="loop:test",
                 episode_id=session.episode_id,
-                kind="episodic",
-                content="We mentioned the next step casually in another note.",
-                work_item_refs=(),
-                tags=("chat",),
+                state_id=session.state_id,
+                personal_model_id=session.personal_model_id,
+                phase="acting",
+                action="episodic",
+                status="completed",
+                sequence=2,
+                summary="We mentioned the next step casually in another note.",
                 created_at=datetime.now(timezone.utc),
             )
         )
 
-        capability = _DurableMemoryCapability(memory_runtime=runtime.memory_runtime, repository=runtime.repository)
-        results = capability.search(session.episode_id, "next step")
+        capability = _DurableRecallCapability(recall_runtime=runtime.recall_runtime, repository=runtime.repository)
+        retrieval = capability.retrieve_evidence(
+            EvidenceRetrievalRequest(
+                episode_id=session.episode_id,
+                personal_model_id=session.personal_model_id,
+                elephant_id=session.elephant_id,
+                lineage_episode_ids=(session.episode_id,),
+                query="next step",
+                scopes=("episode",),
+                limit=5,
+                allow_embeddings=False,
+            )
+        )
+        results = tuple(candidate.evidence for candidate in retrieval.candidates)
 
         self.assertGreaterEqual(len(results), 1)
-        self.assertEqual(results[0].memory_id, "memory-work")
+        self.assertEqual(results[0].evidence_id, "step:evidence-work")
 
     def test_inspect_continuity_surfaces_reengagement_guidance(self) -> None:
         runtime = self._runtime(
@@ -849,28 +869,43 @@ class CliRuntimeCognitionTest(unittest.TestCase):
         runtime.repository.upsert_state(
             replace(
                 state,
-                active_task="Publish the release artifacts.",
-                next_step="Prepare the release handoff.",
+                current_context_note="Publish the release artifacts.",
             )
         )
 
         continuity = runtime.inspect_continuity(session_id=session.episode_id)
 
-        self.assertEqual(continuity.reengagement_style, "proactive-check-in")
-        self.assertIn("check in after quiet gaps", continuity.reengagement_prompt)
-        self.assertIn("Publish the release artifacts.", continuity.reengagement_prompt)
-        self.assertIn("initiative=proactive", continuity.continuity_summary)
+        self.assertEqual(continuity.reengagement_style, "gentle-presence")
+        self.assertIn("preserve the active elephant", continuity.reengagement_prompt)
+        self.assertNotIn("Publish the release artifacts.", continuity.reengagement_prompt)
+        self.assertIn("initiative=gentle", continuity.continuity_summary)
 
-    def test_planning_memory_recovery_falls_back_to_episode_scoped_memories(self) -> None:
+    def test_planning_recall_evidence_recovery_falls_back_to_episode_scoped_steps(self) -> None:
         runtime = self._runtime()
         session = runtime.start()
-        runtime.memory_runtime.store.upsert(
-            MemoryRecord(
-                memory_id="memory-fallback",
+        runtime.repository.upsert_loop(
+            Loop(
+                loop_id="loop:test",
                 episode_id=session.episode_id,
-                kind="procedural",
-                content="Resume by reopening the release checklist.",
-                tags=("continuity",),
+                state_id=session.state_id,
+                personal_model_id=session.personal_model_id,
+                trigger_type="test",
+                status="completed",
+                started_at=datetime.now(timezone.utc),
+            )
+        )
+        runtime.repository.upsert_step(
+            Step(
+                step_id="evidence-fallback",
+                loop_id="loop:test",
+                episode_id=session.episode_id,
+                state_id=session.state_id,
+                personal_model_id=session.personal_model_id,
+                phase="acting",
+                action="procedural",
+                status="completed",
+                sequence=1,
+                summary="Resume by reopening the release checklist.",
                 created_at=datetime.now(timezone.utc),
             )
         )
@@ -897,16 +932,16 @@ class CliRuntimeCognitionTest(unittest.TestCase):
             ),
         )
 
-        with mock.patch.object(runtime.memory_runtime, "retrieve_evidence", return_value=empty_retrieval):
-            recovery = runtime._planning_memory_recovery(session)
+        with mock.patch.object(runtime.recall_runtime, "retrieve_evidence", return_value=empty_retrieval):
+            recovery = runtime._planning_recall_evidence_recovery(session)
 
-        self.assertEqual(tuple(memory.memory_id for memory in recovery.memories), ("memory-fallback",))
+        self.assertEqual(tuple(evidence.evidence_id for evidence in recovery.recall_items), ("step:evidence-fallback",))
         self.assertEqual(recovery.scope_episode_ids, (session.episode_id,))
 
     def test_prepare_session_surface_kicks_off_embedding_steadyup(self) -> None:
         runtime = self._runtime()
         session = runtime.start()
-        embedding_service = runtime.memory_runtime.retriever.evidence_retriever.embedding_service
+        embedding_service = runtime.recall_runtime.retriever.evidence_retriever.embedding_service
 
         with mock.patch.object(embedding_service, "steady_async", return_value=True) as steady_async:
             runtime.prepare_session_surface(session.episode_id)
@@ -916,7 +951,7 @@ class CliRuntimeCognitionTest(unittest.TestCase):
     def test_skill_catalog_does_not_kick_off_embedding_steadyup_for_passive_ui_reads(self) -> None:
         runtime = self._runtime()
         session = runtime.start()
-        embedding_service = runtime.memory_runtime.retriever.evidence_retriever.embedding_service
+        embedding_service = runtime.recall_runtime.retriever.evidence_retriever.embedding_service
 
         with mock.patch.object(embedding_service, "steady_async", return_value=True) as steady_async:
             runtime.skill_catalog(session_id=session.episode_id)
@@ -979,27 +1014,27 @@ class CliRuntimeCognitionTest(unittest.TestCase):
         self.assertNotIn("skill-routing:", bundle.rendered_prompt)
 
     def test_recently_surfaced_notes_skip_profile_snapshot_fragments(self) -> None:
-        from apps.cli.runtime_cognition import _memory_summary_artifact
+        from apps.cli.runtime_cognition import _recall_summary_artifact
 
         now = datetime.now(timezone.utc)
-        summary = _memory_summary_artifact(
+        summary = _recall_summary_artifact(
             (
-                MemoryRecord(
-                    memory_id="memory-profile",
+                RecallEvidence(
+                    evidence_id="evidence-profile",
                     episode_id="episode-1",
                     kind="semantic",
                     content="Preferred name: xunzhuo Current work: 正站在一个岔路口 Current city: 成都 MBTI: INFJ",
                     created_at=now,
                 ),
-                MemoryRecord(
-                    memory_id="memory-name",
+                RecallEvidence(
+                    evidence_id="evidence-name",
                     episode_id="episode-1",
                     kind="semantic",
                     content="Preferred name: xunzhuo",
                     created_at=now,
                 ),
-                MemoryRecord(
-                    memory_id="memory-real",
+                RecallEvidence(
+                    evidence_id="evidence-real",
                     episode_id="episode-1",
                     kind="semantic",
                     content="Prefers direct updates over filler.",
@@ -1027,11 +1062,9 @@ class CliRuntimeCognitionTest(unittest.TestCase):
         bundle = capability.assemble(session, (), ())
 
         self.assertIn("runtime-paths:", bundle.rendered_prompt)
-        self.assertIn("runtime-paths:", bundle.prompt_envelope.system_prompt())
+        self.assertIn("### Runtime paths", bundle.prompt_envelope.system_prompt())
         self.assertNotIn("runtime-paths:", bundle.prompt_envelope.user_prelude())
-        self.assertIn(f"workspaces_dir={runtime.paths.workspaces_dir.resolve()}", bundle.rendered_prompt)
         self.assertIn(f"elephant_workspace={runtime.paths.elephant_file_path('miles').resolve()}", bundle.rendered_prompt)
-        self.assertIn(f"workspaces_dir={runtime.paths.workspaces_dir.resolve()}", bundle.prompt_envelope.system_prompt())
         self.assertIn(f"elephant_workspace={runtime.paths.elephant_file_path('miles').resolve()}", bundle.prompt_envelope.system_prompt())
 
     def test_cli_context_only_lists_launch_directory_rule_files_for_on_demand_reading(self) -> None:
@@ -1068,7 +1101,8 @@ class CliRuntimeCognitionTest(unittest.TestCase):
         self.assertNotIn("Always treat the current repo as the primary analysis target.", bundle.prompt_envelope.frozen_prefix)
         self.assertNotIn("Use launch-directory docs before generic fallbacks.", bundle.prompt_envelope.frozen_prefix)
         self.assertIn(f"startup_cwd={startup_dir.resolve()}", bundle.rendered_prompt)
-        self.assertIn(f"startup_cwd={startup_dir.resolve()}", bundle.prompt_envelope.system_prompt())
+        self.assertNotIn(f"startup_cwd={startup_dir.resolve()}", bundle.prompt_envelope.system_prompt())
+        self.assertIn("startup_cwd=", bundle.prompt_envelope.system_prompt())
         self.assertNotIn(f"startup_cwd={startup_dir.resolve()}", bundle.prompt_envelope.user_prelude())
         self.assertIn(f"elephant_workspace={runtime.paths.elephant_file_path('miles').resolve()}", bundle.rendered_prompt)
 
@@ -1115,7 +1149,7 @@ class CliRuntimeCognitionTest(unittest.TestCase):
         )
         bundle = capability.assemble(session, (), ())
 
-        self.assertIn("Search Skill", bundle.prompt_envelope.frozen_prefix)
+        self.assertNotIn("Search Skill", bundle.prompt_envelope.frozen_prefix)
         self.assertNotIn("Always search before editing", bundle.prompt_envelope.frozen_prefix)
 
     def test_enabled_shelf_skill_enters_prompt_index_without_runtime_install(self) -> None:
@@ -1152,7 +1186,7 @@ class CliRuntimeCognitionTest(unittest.TestCase):
         with mock.patch("apps.cli.runtime_cognition.build_launch_directory_context", return_value=(), create=True):
             bundle = capability.assemble(session, (), ())
 
-            self.assertIn("Shelf Skill", bundle.rendered_prompt)
+            self.assertNotIn("Shelf Skill", bundle.rendered_prompt)
             self.assertFalse(any(skill.skill_id == "shelf-skill" for skill in runtime.skill_catalog(session_id=session.episode_id)))
 
             loaded = runtime._load_profile(session.personal_model_id)
@@ -1188,17 +1222,18 @@ class CliRuntimeCognitionTest(unittest.TestCase):
             session_id=session.episode_id,
             prompt="What should we do next for the release?",
         )
-        memories = runtime.inspect_memories(session.episode_id)
+        recall_items = runtime.inspect_recall_evidence(session.episode_id)
 
         # The rendered-prompt surface must not revive the old mutable
         # "Where things stand" State projection. Stable Personal Model
         # context stays visible without mixing in per-turn State summaries.
         self.assertNotIn("### Where things stand", outcome.context.rendered_prompt)
         self.assertNotIn("### Carrying context forward", outcome.context.rendered_prompt)
-        self.assertNotIn("recovered-memory-summary: no durable memories", outcome.context.rendered_prompt)
-        self.assertTrue(any(memory.kind == "decision" for memory in memories))
-        self.assertTrue(any("continuity" in memory.tags for memory in memories))
-        self.assertTrue(any(outcome.execution.summary in memory.content for memory in memories))
+        self.assertNotIn("recovered-evidence-summary: no durable recall_items", outcome.context.rendered_prompt)
+        self.assertFalse(any(evidence.kind == "decision" for evidence in recall_items))
+        steps = runtime.repository.list_steps()
+        self.assertTrue(any(step.episode_id == session.episode_id for step in steps))
+        self.assertTrue(any(outcome.execution.summary in step.summary for step in steps))
         self.assertEqual(runtime.inspect_experiences(session_id=session.episode_id), ())
 
     def test_explain_next_step_updates_personal_model_growth_from_level_zero_to_level_one(self) -> None:
@@ -1261,7 +1296,7 @@ class CliRuntimeCognitionTest(unittest.TestCase):
         self.assertEqual(kwargs["event_type"], "turn.internal")
         self.assertEqual(kwargs["source"], "cli.startup")
         self.assertFalse(kwargs["record_input_event"])
-        self.assertFalse(kwargs["record_outcome_memory"])
+        self.assertFalse(kwargs["record_outcome_event"])
         self.assertFalse(kwargs["capture_experience"])
         self.assertFalse(kwargs["apply_growth"])
         self.assertEqual(kwargs["event_payload"]["summary"], "startup opening (Opened elephant atlas)")
@@ -1329,11 +1364,11 @@ class CliRuntimeCognitionTest(unittest.TestCase):
     def test_state_focus_runtime_status_surfaces_loaded_runtime_state(self) -> None:
         runtime = self._runtime()
         session = runtime.start()
-        embedding_service = runtime.memory_runtime.retriever.evidence_retriever.embedding_service
+        embedding_service = runtime.recall_runtime.retriever.evidence_retriever.embedding_service
 
         health = mock.Mock(
             status="ready",
-            summary="local embedding root is available; model weights are already steady in memory",
+            summary="local embedding root is available; model weights are already steady in evidence",
             metadata={"runtime_state": "loaded"},
         )
 
@@ -1495,8 +1530,8 @@ class CliRuntimeCognitionTest(unittest.TestCase):
                 "initiative": "proactive",
                 "elephant_identity_text": "Stay concise, direct, and durable for Atlas.",
                 "user_fields": {
-                    "identity.name.preferred": "xunzhuo",
-                    "identity.work.current": "Software engineer",
+                    "preferred_name": "xunzhuo",
+                    "current_work": "Software engineer",
                 },
                 "user_text": "Prefers direct updates and wants long-horizon context preserved.",
                 "relationship_text": "Keep responses concise and grounded.",
@@ -1610,8 +1645,8 @@ class CliRuntimeCognitionTest(unittest.TestCase):
             "tool.personal_model.update",
             {
                 "action": "remember",
-                "lens": "chapter",
-                "topic": "identity.work.current",
+                "lens": "pulse",
+                "topic": "pulse.chapter.work.role",
                 "text": "The user's current work is Software engineer.",
                 "reason": "user explicitly stated current work",
             },
@@ -1645,19 +1680,19 @@ class CliRuntimeCognitionTest(unittest.TestCase):
         )
         persisted = load_persisted_canonical_state(runtime.repository, profile_id)
         elephant_identity = persisted.elephant_identity
-        user_card = persisted.user_card
-        relationship = persisted.relationship_memory
+        user_profile = persisted.user_profile
+        relationship = persisted.relationship
 
         self.assertIsNotNone(elephant_identity)
-        self.assertIsNotNone(user_card)
+        self.assertIsNotNone(user_profile)
         self.assertIsNotNone(relationship)
         assert elephant_identity is not None
-        assert user_card is not None
+        assert user_profile is not None
         assert relationship is not None
         self.assertEqual(elephant_identity.elephant_identity_text, "Stay calm, durable, and exact.")
-        self.assertIsNotNone(runtime.repository.load_record(f"profile:{profile_id}:state-identity"))
-        self.assertIsNotNone(runtime.repository.load_record(f"profile:{profile_id}:user-card"))
-        self.assertIsNotNone(runtime.repository.load_record(f"profile:{profile_id}:relationship-memory"))
+        self.assertIsNotNone(runtime.repository.load_elephant_identity_for_profile(profile_id))
+        facts = runtime.repository.list_personal_model_facts(personal_model_id=profile_id, status="active")
+        self.assertFalse(any(fact.metadata.get("canonical_component") in {"user-profile", "relationship"} for fact in facts))
 
         runtime.update_user_state(
             profile_id=profile_id,
@@ -1668,13 +1703,13 @@ class CliRuntimeCognitionTest(unittest.TestCase):
             ),
         )
         persisted = load_persisted_canonical_state(runtime.repository, profile_id)
-        user_card = persisted.user_card
-        relationship = persisted.relationship_memory
+        user_profile = persisted.user_profile
+        relationship = persisted.relationship
 
-        assert user_card is not None
+        assert user_profile is not None
         assert relationship is not None
-        self.assertEqual(user_card.preferred_name, "Bit")
-        self.assertIn("current_work:Build Elephant Agent", user_card.biography_fragments)
+        self.assertEqual(user_profile.preferred_name, "Bit")
+        self.assertIn("current_work:Build Elephant Agent", user_profile.biography_fragments)
 
         runtime.update_identity_state(
             profile_id=profile_id,
@@ -1683,7 +1718,7 @@ class CliRuntimeCognitionTest(unittest.TestCase):
         )
         persisted = load_persisted_canonical_state(runtime.repository, profile_id)
         elephant_identity = persisted.elephant_identity
-        relationship = persisted.relationship_memory
+        relationship = persisted.relationship
 
         assert elephant_identity is not None
         assert relationship is not None
@@ -1700,7 +1735,7 @@ class CliRuntimeCognitionTest(unittest.TestCase):
 
         self.assertIsNotNone(elephant_state)
         assert elephant_state is not None
-        self.assertEqual(elephant_state.active_task, "")
+        self.assertEqual(elephant_state.state_id, "state:atlas")
 
     def test_cli_context_capability_surfaces_active_loop_checkpoint(self) -> None:
         runtime = self._runtime()
@@ -1743,36 +1778,12 @@ class CliRuntimeCognitionTest(unittest.TestCase):
     def test_delete_elephant_clears_sessions_and_memories_for_that_elephant(self) -> None:
         runtime = self._runtime()
         session = runtime.create_elephant(elephant_id="atlas")
-        runtime.memory_runtime.store.upsert(
-            MemoryRecord(
-                memory_id="memory-atlas",
-                episode_id=session.episode_id,
-                kind="episodic",
-                content="Atlas remembered the launch checkpoint.",
-                work_item_refs=("work-atlas",),
-                tags=("continuity",),
-                created_at=datetime.now(timezone.utc),
-            )
-        )
-        runtime.memory_runtime.ledger.append(
-            MemoryLedgerEntry(
-                entry_id="ledger-atlas",
-                episode_id=session.episode_id,
-                event_id="event-atlas",
-                event_type="turn.received",
-                content="Atlas heard the latest checkpoint.",
-                kind="episodic",
-                work_item_refs=("work-atlas",),
-                tags=("continuity",),
-            )
-        )
 
         deleted_sessions = runtime.delete_elephant("atlas")
 
         self.assertEqual(deleted_sessions, 1)
         self.assertIsNone(runtime.repository.load_episode_state(session.episode_id))
-        self.assertEqual(runtime.memory_runtime.store.list(session.episode_id, include_inactive=True), ())
-        self.assertEqual(runtime.memory_runtime.ledger.list(session.episode_id), ())
+        self.assertEqual(runtime.recall_runtime.store.list(session.episode_id, include_inactive=True), ())
         self.assertIsNotNone(runtime.repository.load_personal_model(session.personal_model_id))
         self.assertIsNone(runtime.repository.load_state("state:atlas"))
         self.assertEqual(runtime.list_herd(), ())
@@ -1797,19 +1808,8 @@ class CliRuntimeCognitionTest(unittest.TestCase):
                 """,
                 (alpha.personal_model_id, beta.personal_model_id),
             ).fetchall()
-            elephant_rows = connection.execute(
-                """
-                SELECT json_extract(metadata_json, '$.profile_id') AS profile_id
-                FROM records
-                WHERE schema_version = 'elephant_identity/v1'
-                  AND json_extract(metadata_json, '$.profile_id') IN (?, ?)
-                ORDER BY profile_id ASC
-                """,
-                (alpha.personal_model_id, beta.personal_model_id),
-            ).fetchall()
 
         self.assertEqual([tuple(row) for row in profile_rows], [("you",)])
-        self.assertEqual([tuple(row) for row in elephant_rows], [("you",)])
 
     def test_create_elephant_reuses_personal_model_without_clearing_growth(self) -> None:
         runtime = self._runtime()
@@ -1863,7 +1863,7 @@ class CliRuntimeCognitionTest(unittest.TestCase):
         self.assertEqual(alpha_state.personal_model_id, "you")
         self.assertEqual(beta_state.personal_model_id, "you")
         self.assertEqual(root_profile.state.display_name, "Elephant Agent")
-        self.assertEqual(root_profile.elephant_identity_text, "Stay durable and grounded.")
+        self.assertIsNone(root_profile.elephant_identity_text)
 
     def test_start_session_keeps_the_requested_profile_binding(self) -> None:
         runtime = self._runtime(
@@ -1879,8 +1879,8 @@ class CliRuntimeCognitionTest(unittest.TestCase):
         continuity = runtime.inspect_continuity(session_id=session.episode_id)
 
         self.assertEqual(inspected.personal_model_id, "you")
-        self.assertEqual(continuity.profile.state.display_name, "elephant")
-        self.assertFalse((runtime.paths.profile_dir / "profiles" / "elephant%3Anova" / "profile.json").exists())
+        self.assertEqual(continuity.profile.state.display_name, "you")
+        self.assertFalse((runtime.paths.home_dir / "profiles" / "elephant%3Anova" / "profile.json").exists())
 
     def test_explain_next_step_does_not_mutate_profile_without_management_tools(self) -> None:
         runtime = self._runtime(
@@ -1904,4 +1904,4 @@ class CliRuntimeCognitionTest(unittest.TestCase):
         self.assertEqual(user.communication_preferences, ())
         self.assertEqual(user.biography_fragments, ())
         self.assertEqual(relationship.continuity_notes, ())
-        self.assertEqual(outcome.state.active_task, "Call me Bit. I'm building durable agent systems. Please keep replies concise and grounded for future turns.")
+        self.assertEqual(outcome.state.current_context_note, "")

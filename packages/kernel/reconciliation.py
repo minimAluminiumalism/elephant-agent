@@ -1,4 +1,4 @@
-"""Runtime-owned observation and reconciliation helpers."""
+"""Runtime-owned reconciliation signal helpers."""
 
 from __future__ import annotations
 
@@ -9,20 +9,15 @@ from typing import Mapping, Protocol
 from uuid import uuid4
 
 from packages.contracts.runtime import (
-    ArtifactRecord,
     EventEnvelope,
     ExecutionResult,
-    MemoryRecord,
     PromptMessage,
-    StructuredTurnRecord,
-    StructuredTurnSlot,
 )
-from packages.evidence import build_structured_turn_memory
 
 
 class _EventAppender(Protocol):
     def append_event(self, event: EventEnvelope):
-        """Append a durable event or memory envelope."""
+        """Append a durable event envelope."""
 
 
 def merge_preference_updates(existing: tuple[str, ...], updates: tuple[str, ...]) -> tuple[str, ...]:
@@ -42,7 +37,7 @@ def merge_preference_updates(existing: tuple[str, ...], updates: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
-class WakeObservation:
+class WakeSignal:
     session_id: str
     source: str
     durable_events: tuple[EventEnvelope, ...]
@@ -73,13 +68,11 @@ class TurnProfileDelta:
 
 
 @dataclass(frozen=True, slots=True)
-class TurnObservation:
+class TurnSignal:
     session_id: str
     source: str
     inbound_event: EventEnvelope
     durable_events: tuple[EventEnvelope, ...]
-    evidence_memories: tuple[MemoryRecord, ...]
-    evidence_artifacts: tuple[ArtifactRecord, ...]
     profile_delta: TurnProfileDelta
     decision_summary: str
     observed_state_delta: bool
@@ -92,14 +85,12 @@ class TurnReconciliationReport:
     observed_state_delta: bool
     observed_profile_delta: bool
     appended_event_types: tuple[str, ...]
-    persisted_memory_ids: tuple[str, ...] = ()
-    persisted_artifact_ids: tuple[str, ...] = ()
     summary: str = ""
     ignored_reason: str | None = None
 
 
-class ObservationPipeline:
-    """Build durable observations from runtime execution."""
+class ReconciliationPipeline:
+    """Build durable reconciliation signals from runtime execution."""
 
     def observe_wake(
         self,
@@ -109,13 +100,13 @@ class ObservationPipeline:
         decision_summary: str,
         observed_delta: bool = False,
         source: str = "cli.wake",
-    ) -> WakeObservation:
+    ) -> WakeSignal:
         summary = (
             "Observed a wake-owned State continuity delta."
             if observed_delta
             else "Observed wake rationale without a durable elephant delta."
         )
-        return WakeObservation(
+        return WakeSignal(
             session_id=session_id,
             source=source,
             durable_events=durable_events,
@@ -137,7 +128,7 @@ class ObservationPipeline:
         elephant_id: str | None = None,
         turn_messages: tuple[PromptMessage, ...] = (),
         observed_state_delta: bool = False,
-    ) -> TurnObservation:
+    ) -> TurnSignal:
         resolved_source = source or inbound_event.source
         prompt_text = _event_text(inbound_event)
         profile_delta = _extract_turn_profile_delta(prompt_text)
@@ -154,40 +145,20 @@ class ObservationPipeline:
             )
             if outcome_event is not None:
                 durable_events.append(outcome_event)
-        evidence_memories = (
-            _structured_turn_memory_from_turn(
-                inbound_event=inbound_event,
-                execution=execution,
-                decision_summary=decision_summary,
-                source=resolved_source,
-                profile_id=profile_id,
-                elephant_id=elephant_id,
-                turn_messages=turn_messages,
-            ),
-        )
-        evidence_artifacts = _artifact_records_from_execution(
-            session_id=inbound_event.episode_id,
-            execution=execution,
-        )
+        del profile_id, elephant_id, turn_messages
         observed_parts: list[str] = []
         if observed_state_delta:
             observed_parts.append("a durable elephant delta")
         if profile_delta.observed:
             observed_parts.append(profile_delta.summary or "profile and relationship deltas")
-        if evidence_memories:
-            observed_parts.append(f"{len(evidence_memories)} structured turn evidence record")
-        if evidence_artifacts:
-            observed_parts.append(f"{len(evidence_artifacts)} execution artifacts")
         if not observed_parts:
-            observed_parts.append("no durable owner delta beyond runtime memory envelopes")
+            observed_parts.append("no durable owner delta beyond Step records")
         summary = "Observed a turn-owned reconciliation candidate with " + ", ".join(observed_parts) + "."
-        return TurnObservation(
+        return TurnSignal(
             session_id=inbound_event.episode_id,
             source=resolved_source,
             inbound_event=inbound_event,
             durable_events=tuple(durable_events),
-            evidence_memories=evidence_memories,
-            evidence_artifacts=evidence_artifacts,
             profile_delta=profile_delta,
             decision_summary=(decision_summary or execution.summary).strip(),
             observed_state_delta=observed_state_delta,
@@ -196,14 +167,14 @@ class ObservationPipeline:
 
 
 class StateReconciler:
-    """Apply runtime observations to durable owners."""
+    """Apply runtime reconciliation signals to durable owners."""
 
     def reconcile_wake(
         self,
         *,
         repository,
-        memory_runtime: _EventAppender,
-        observation: WakeObservation,
+        recall_runtime: _EventAppender,
+        observation: WakeSignal,
         inspect_only: bool = False,
     ) -> WakeReconciliationReport:
         if inspect_only:
@@ -217,7 +188,7 @@ class StateReconciler:
 
         appended_event_types: list[str] = []
         for event in observation.durable_events:
-            memory_runtime.append_event(event)
+            recall_runtime.append_event(event)
             appended_event_types.append(event.event_type)
 
         return WakeReconciliationReport(
@@ -231,8 +202,8 @@ class StateReconciler:
         self,
         *,
         repository,
-        memory_runtime: _EventAppender,
-        observation: TurnObservation,
+        recall_runtime: _EventAppender,
+        observation: TurnSignal,
         inspect_only: bool = False,
     ) -> TurnReconciliationReport:
         if inspect_only:
@@ -241,38 +212,22 @@ class StateReconciler:
                 observed_state_delta=observation.observed_state_delta,
                 observed_profile_delta=observation.profile_delta.observed,
                 appended_event_types=(),
-                persisted_memory_ids=(),
-                persisted_artifact_ids=(),
                 summary="Ignored the turn-owned durable delta because inspect-only mode requested no writes.",
                 ignored_reason="inspect_only",
             )
 
         appended_event_types: list[str] = []
         for event in observation.durable_events:
-            memory_runtime.append_event(event)
+            recall_runtime.append_event(event)
             appended_event_types.append(event.event_type)
-
-        persisted_memory_ids: list[str] = []
-        record_memory = getattr(memory_runtime, "record_memory", None)
-        if callable(record_memory):
-            for record in observation.evidence_memories:
-                decision = record_memory(record)
-                if getattr(decision, "allowed", False):
-                    persisted_memory_ids.append(record.memory_id)
-
-        persisted_artifact_ids: tuple[str, ...] = ()
 
         summary_parts: list[str] = []
         if observation.observed_state_delta:
             summary_parts.append("observed a elephant delta")
         else:
-            summary_parts.append("kept State reconciliation observation-only")
+            summary_parts.append("kept State reconciliation signal-only")
         if appended_event_types:
             summary_parts.append(f"recorded {len(appended_event_types)} durable events")
-        if persisted_memory_ids:
-            summary_parts.append(f"persisted {len(persisted_memory_ids)} structured turn evidence record(s)")
-        if persisted_artifact_ids:
-            summary_parts.append(f"persisted {len(persisted_artifact_ids)} evidence artifacts")
         if observation.profile_delta.observed:
             summary_parts.append("extracted profile and relationship deltas for the calling surface")
         summary = "Turn reconciliation " + ", ".join(summary_parts) + "."
@@ -282,8 +237,6 @@ class StateReconciler:
             observed_state_delta=observation.observed_state_delta,
             observed_profile_delta=observation.profile_delta.observed,
             appended_event_types=tuple(appended_event_types),
-            persisted_memory_ids=tuple(dict.fromkeys(persisted_memory_ids)),
-            persisted_artifact_ids=persisted_artifact_ids,
             summary=summary,
         )
 
@@ -297,7 +250,7 @@ def _extract_turn_profile_delta(text: str) -> TurnProfileDelta:
     relationship_notes = _extract_relationship_notes(normalized)
     summary_parts: list[str] = []
     if user_fields:
-        summary_parts.append("user-card fields")
+        summary_parts.append("user profile fields")
     if preference_updates:
         summary_parts.append("communication preferences")
     if relationship_notes:
@@ -419,139 +372,13 @@ def _turn_outcome_event(
         payload={
             "content": content,
             "summary": content.splitlines()[0],
-            "memory_kind": "decision",
+            "signal_kind": "decision",
             "tags": "continuity,assistant,turn-outcome",
             "source_event_id": inbound_event.event_id,
             "execution_id": execution.execution_id,
             "execution_outcome": execution.outcome,
         },
     )
-
-
-def _artifact_records_from_execution(
-    *,
-    session_id: str,
-    execution: ExecutionResult,
-) -> tuple[ArtifactRecord, ...]:
-    created_at = datetime.now(timezone.utc)
-    artifacts = []
-    for artifact_id in execution.produced_artifact_ids:
-        resolved = artifact_id.strip()
-        if not resolved:
-            continue
-        artifacts.append(
-            ArtifactRecord(
-                artifact_id=resolved,
-                session_id=session_id,
-                kind="execution-artifact",
-                name=resolved,
-                uri=f"artifact://{resolved}",
-                created_at=created_at,
-            )
-        )
-    return tuple(artifacts)
-
-
-def _structured_turn_memory_from_turn(
-    *,
-    inbound_event: EventEnvelope,
-    execution: ExecutionResult,
-    decision_summary: str | None,
-    source: str,
-    profile_id: str | None,
-    elephant_id: str | None,
-    turn_messages: tuple[PromptMessage, ...] = (),
-) -> MemoryRecord:
-    provider_reasoning = execution.reasoning.strip()
-    reasoning_trace = _payload_text(inbound_event, "reasoning_trace", "raw_reasoning_trace") or provider_reasoning
-    reasoning_summary = _payload_text(inbound_event, "reasoning_summary") or (
-        _compact_text(reasoning_trace, limit=220) if reasoning_trace else (decision_summary or execution.summary).strip()
-    )
-    reasoning_availability = "raw_trace" if reasoning_trace else ("structured_summary" if reasoning_summary else "unavailable")
-    reasoning_provenance = _payload_text(inbound_event, "reasoning_provenance") or (
-        "provider.raw_trace" if reasoning_trace else "runtime.decision_summary"
-    )
-    work_item_ids: tuple[str, ...] = ()
-    user_message = _transcript_user_message(turn_messages) or _event_text(inbound_event)
-    tool_result_observations = _transcript_tool_result_details(turn_messages)
-    transcript_actions = _transcript_action_details(turn_messages)
-    action_detail = transcript_actions or _tool_call_details(execution)
-    final_response = _transcript_final_assistant_response(turn_messages)
-    observation_detail = tuple(
-        item
-        for item in (
-            f"user_message:{_compact_text(user_message, limit=640)}" if user_message else "",
-            *tool_result_observations,
-        )
-        if item
-    )
-    artifact_ids = tuple(artifact_id for artifact_id in execution.produced_artifact_ids if artifact_id.strip())
-    turn_id = f"{inbound_event.event_id}:structured-turn"
-    record = StructuredTurnRecord(
-        turn_id=turn_id,
-        episode_id=inbound_event.episode_id,
-        source=source,
-        observation=StructuredTurnSlot(
-            summary=_compact_text(user_message, limit=180),
-            detail=observation_detail,
-            compression="structured_transcript",
-            provenance="runtime.turn_transcript",
-            source_refs=(inbound_event.event_id,),
-            linkage_refs=work_item_ids,
-        ),
-        reasoning=StructuredTurnSlot(
-            summary=reasoning_summary,
-            detail=((reasoning_trace,) if reasoning_trace else ((reasoning_summary,) if reasoning_summary else ())),
-            compression="raw_trace" if reasoning_trace else ("structured_summary" if reasoning_summary else "none"),
-            provenance=reasoning_provenance,
-            source_refs=(inbound_event.event_id, execution.execution_id),
-            linkage_refs=work_item_ids,
-        ),
-        action=StructuredTurnSlot(
-            summary=(
-                f"executed {len(action_detail)} recorded action(s)"
-                if action_detail
-                else ("responded without tool calls" if final_response else "no tool action detail was recorded")
-            ),
-            detail=action_detail,
-            compression="structured_transcript" if transcript_actions else "structured",
-            provenance="runtime.turn_transcript" if transcript_actions else "runtime.execution",
-            source_refs=(execution.execution_id,),
-            linkage_refs=work_item_ids + artifact_ids,
-        ),
-        outcome=StructuredTurnSlot(
-            summary=(
-                _compact_text(final_response, limit=220)
-                if final_response
-                else (execution.summary.strip() or f"turn outcome: {execution.outcome}")
-            ),
-            detail=tuple(
-                item
-                for item in (
-                    f"outcome:{execution.outcome}",
-                    f"assistant_response:{_compact_text(final_response, limit=640)}" if final_response else "",
-                    *(f"artifact:{artifact_id}" for artifact_id in artifact_ids),
-                    *execution.side_effects,
-                )
-                if item
-            ),
-            compression="structured",
-            provenance="runtime.execution",
-            source_refs=(execution.execution_id,),
-            linkage_refs=artifact_ids or work_item_ids,
-        ),
-        personal_model_id=profile_id,
-        elephant_id=elephant_id,
-        source_event_id=inbound_event.event_id,
-        reasoning_availability=reasoning_availability,
-        reasoning_provenance=reasoning_provenance,
-        compression_tier="raw_turn",
-        work_item_ids=work_item_ids,
-        source_turn_ids=(turn_id,),
-        artifact_ids=artifact_ids,
-        created_at=datetime.now(timezone.utc),
-    )
-    return build_structured_turn_memory(record)
 
 
 def _transcript_user_message(messages: tuple[PromptMessage, ...]) -> str:

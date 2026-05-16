@@ -20,14 +20,14 @@ from packages.contracts.runtime import (
     ExecutionResult,
     ExperienceRecord,
     StateFocusDecision,
-    MemoryRecord,
+    RecallEvidence,
     PlanDraft,
     PromptMessage,
     PersonalModelGrowthState,
     PersonalModelRuntimeState,
 )
 from packages.cron import CronRuntime
-from packages.evidence import MemoryRuntime, SemanticSummaryIndexer, build_semantic_index_bundle
+from packages.evidence import RecallRuntime, SemanticSummaryIndexer, build_semantic_index_bundle
 from packages.gateway_core import FileGatewayIdentityStore, GatewayOutboundQueue, default_outbound_queue_path
 from packages.gateway_core.outbound_delivery import GatewayMessageDeliverySurface
 from packages.growth import GrowthUpdate
@@ -55,7 +55,7 @@ from packages.understanding import PersonalModelUnderstandingSurface
 
 from .runtime_cognition import (
     _CliContextCapability,
-    _DurableMemoryCapability,
+    _DurableRecallCapability,
     _PreviewDeliveryCapability,
     _PreviewModelProviderCapability,
 )
@@ -74,7 +74,7 @@ from .runtime_records import CliRuntimeRecordsMixin
 from .runtime_snapshot import (
     append_outcome_experience as _append_runtime_outcome_experience,
     append_outcome_growth as _append_runtime_outcome_growth,
-    append_outcome_memory as _append_runtime_outcome_memory,
+    append_outcome_recall_event as _append_runtime_outcome_recall_event,
     load_snapshot as _load_runtime_snapshot,
     write_snapshot as _write_runtime_snapshot,
 )
@@ -97,7 +97,7 @@ class CliRuntime(CliRuntimeProfileMixin, CliRuntimeProviderMixin, CliRuntimeExte
     repository: RuntimeStorageRepository
     profile_loader: ProfileLoader
     snapshot_path: Path
-    memory_runtime: MemoryRuntime
+    recall_runtime: RecallRuntime
     cron_runtime: CronRuntime
     model_provider: SurfaceModelProviderCapability
     tool_runtime: ToolRuntime
@@ -198,15 +198,15 @@ class CliRuntime(CliRuntimeProfileMixin, CliRuntimeProviderMixin, CliRuntimeExte
         browser_thread.start()
         semantic_thread.start()
 
-        # Wait for semantic bundle (needed for memory_runtime + tool dependencies)
+        # Wait for semantic bundle (needed for recall_runtime + tool dependencies)
         semantic_thread.join()
         semantic_index_bundle = semantic_holder.get("bundle")
 
-        memory_runtime = MemoryRuntime.from_repository(
+        recall_runtime = RecallRuntime.from_repository(
             repository,
-            semantic_bundle=semantic_index_bundle,
+            semantic_index_bundle=semantic_index_bundle,
         )
-        _embedding_service = memory_runtime.retriever.evidence_retriever.embedding_service
+        _embedding_service = recall_runtime.evidence_retriever.embedding_service
         semantic_summary_indexer = (
             SemanticSummaryIndexer(
                 semantic_index=semantic_index_bundle.service,
@@ -282,7 +282,7 @@ class CliRuntime(CliRuntimeProfileMixin, CliRuntimeProviderMixin, CliRuntimeExte
             repository=repository,
             profile_loader=profile_loader,
             snapshot_path=paths.snapshot_path,
-            memory_runtime=memory_runtime,
+            recall_runtime=recall_runtime,
             cron_runtime=cron_runtime,
             model_provider=SurfaceModelProviderCapability(
                 repository=repository,
@@ -389,6 +389,7 @@ class CliRuntime(CliRuntimeProfileMixin, CliRuntimeProviderMixin, CliRuntimeExte
             reason="shell_clear",
             summary=(previous.exit_summary or "").strip() or "/clear requested a fresh Episode",
             current=now,
+            semantic_summary_indexer=getattr(self, "_semantic_summary_indexer", None),
         )
         # close_episode only enqueues; an explicit worker start is needed to consume the job
         self._ensure_learning_worker_if_needed()
@@ -413,7 +414,7 @@ class CliRuntime(CliRuntimeProfileMixin, CliRuntimeProviderMixin, CliRuntimeExte
             profile=profile_state,
             session=new_episode,
             work_items=(),
-            memories=(),
+            recall_items=(),
             plan=None,
             execution=None,
             delivery=None,
@@ -466,7 +467,7 @@ class CliRuntime(CliRuntimeProfileMixin, CliRuntimeProviderMixin, CliRuntimeExte
             install_root=self.paths.home_dir,
             workspaces_dir=self.paths.workspaces_dir,
             summary_model_provider=self.model_provider,
-            embedding_service=self.memory_runtime.retriever.evidence_retriever.embedding_service,
+            embedding_service=self.recall_runtime.retriever.evidence_retriever.embedding_service,
         )
         return capability.compact_session_projection(
             session_id=session.episode_id,
@@ -501,7 +502,7 @@ class CliRuntime(CliRuntimeProfileMixin, CliRuntimeProviderMixin, CliRuntimeExte
         source: str = "cli",
         event_payload: Mapping[str, str] | None = None,
         record_input_event: bool = True,
-        record_outcome_memory: bool = True,
+        record_outcome_event: bool = True,
         capture_experience: bool = True,
         apply_growth: bool = True,
     ) -> KernelOutcome:
@@ -517,7 +518,7 @@ class CliRuntime(CliRuntimeProfileMixin, CliRuntimeProviderMixin, CliRuntimeExte
             source=source,
             event_payload=event_payload,
             record_input_event=record_input_event,
-            record_outcome_memory=record_outcome_memory,
+            record_outcome_event=record_outcome_event,
             capture_experience=capture_experience,
             apply_growth=apply_growth,
         )
@@ -535,7 +536,7 @@ class CliRuntime(CliRuntimeProfileMixin, CliRuntimeProviderMixin, CliRuntimeExte
             self,
             session,
             profile,
-            memory_capability_cls=_DurableMemoryCapability,
+            recall_capability_cls=_DurableRecallCapability,
             context_capability_cls=_CliContextCapability,
             telemetry_cls=_PreviewTelemetrySink,
             delivery_capability_cls=_PreviewDeliveryCapability,
@@ -547,8 +548,8 @@ class CliRuntime(CliRuntimeProfileMixin, CliRuntimeProviderMixin, CliRuntimeExte
     def _load_snapshot(self) -> dict[str, Any] | None:
         return _load_runtime_snapshot(self)
 
-    def _append_outcome_memory(self, outcome: KernelOutcome) -> None:
-        _append_runtime_outcome_memory(self, outcome)
+    def _append_outcome_recall_event(self, outcome: KernelOutcome) -> None:
+        _append_runtime_outcome_recall_event(self, outcome)
 
     def _append_outcome_experience(self, outcome: KernelOutcome) -> ExperienceRecord | None:
         return _append_runtime_outcome_experience(self, outcome)
@@ -571,7 +572,7 @@ class CliRuntime(CliRuntimeProfileMixin, CliRuntimeProviderMixin, CliRuntimeExte
         profile: PersonalModelRuntimeState,
         session: Episode,
         work_items: tuple[object, ...],
-        memories: tuple[MemoryRecord, ...],
+        recall_items: tuple[RecallEvidence, ...],
         plan: PlanDraft | None,
         execution: ExecutionResult | None,
         delivery: ExecutionResult | None,
@@ -587,7 +588,7 @@ class CliRuntime(CliRuntimeProfileMixin, CliRuntimeProviderMixin, CliRuntimeExte
             profile=profile,
             session=session,
             work_items=work_items,
-            memories=memories,
+            recall_items=recall_items,
             plan=plan,
             execution=execution,
             delivery=delivery,

@@ -751,8 +751,8 @@ def _run_embedding_birth_wizard(
     language: str = "en",
 ) -> tuple[str, str, str, str, int | None, str | None] | _WizardBackSignal:
     provider = _wizard_choice_prompt(
-        _init_text(language, "Choose Embedding Memory", "选择记忆嵌入方式"),
-        _init_text(language, "How should Elephant Agent's memory grow to know you?", "Elephant Agent 应该怎样建立可检索的记忆来了解你？"),
+        _init_text(language, "Choose Embedding Recall", "选择记忆嵌入方式"),
+        _init_text(language, "How should Elephant Agent's evidence grow to know you?", "Elephant Agent 应该怎样建立可检索的记忆来了解你？"),
         (
             WizardChoice(
                 value="local",
@@ -1033,7 +1033,7 @@ def _run_interactive_birth_wizard(
                 state.first_language,
                 "What should I call you?",
                 "我怎么称呼你比较自然？",
-                "A name or nickname is enough. I'll use it in greetings and memory.",
+                "A name or nickname is enough. I'll use it in greetings and evidence.",
                 "名字、昵称都可以。之后我会用这个称呼你。",
                 default=state.preferred_name,
                 allow_back=True,
@@ -1332,7 +1332,7 @@ def _init_profile_learning_metadata(
     return metadata
 
 
-def _bootstrap_user_card_from_init(runtime: CliRuntime, *, personal_model_id: str, bootstrap_state: object) -> None:
+def _bootstrap_user_profile_from_init(runtime: CliRuntime, *, personal_model_id: str, bootstrap_state: object) -> None:
     """Mirror init anchors into the canonical user card used by dashboard + prompt."""
     language = _normalize_first_language(getattr(bootstrap_state, "first_language", "en"))
     fields = {
@@ -1363,7 +1363,7 @@ def _bootstrap_personal_model_from_init(runtime: CliRuntime, session, bootstrap_
     personal_model_id = str(getattr(session, "personal_model_id", "") or "").strip()
     if not personal_model_id:
         return
-    _bootstrap_user_card_from_init(runtime, personal_model_id=personal_model_id, bootstrap_state=bootstrap_state)
+    _bootstrap_user_profile_from_init(runtime, personal_model_id=personal_model_id, bootstrap_state=bootstrap_state)
     language = _normalize_first_language(getattr(bootstrap_state, "first_language", "en"))
     try:
         from dataclasses import replace as _dc_replace
@@ -1391,7 +1391,7 @@ def _bootstrap_personal_model_from_init(runtime: CliRuntime, session, bootstrap_
     except Exception:
         return
     semantic_summary_indexer = None
-    embedding_service = runtime.memory_runtime.retriever.evidence_retriever.embedding_service
+    embedding_service = runtime.recall_runtime.retriever.evidence_retriever.embedding_service
     if runtime.semantic_index_bundle is not None and embedding_service is not None:
         try:
             from packages.evidence import SemanticSummaryIndexer
@@ -1457,7 +1457,7 @@ def _bootstrap_personal_model_from_init(runtime: CliRuntime, session, bootstrap_
             profile=refreshed_profile.state,
             session=session,
             work_items=(),
-            memories=(),
+            recall_items=(),
             plan=None,
             execution=None,
             delivery=None,
@@ -2102,7 +2102,7 @@ def _run_herd(runtime: CliRuntime, args: argparse.Namespace) -> int:
     return 0
 
 
-def _personal_memory_preview(text: str, *, limit: int = 88) -> str:
+def _personal_fact_preview(text: str, *, limit: int = 88) -> str:
     compact = " ".join(str(text).split())
     if not compact:
         return "<empty>"
@@ -2111,7 +2111,7 @@ def _personal_memory_preview(text: str, *, limit: int = 88) -> str:
     return f"{compact[: max(0, limit - 1)].rstrip()}…"
 
 
-def _resolve_memory_target(runtime: CliRuntime, *, elephant_id: str | None = None):
+def _resolve_fact_target(runtime: CliRuntime, *, elephant_id: str | None = None):
     resolved_elephant_id = str(elephant_id or "").strip()
     if resolved_elephant_id:
         session = runtime.latest_session_for_elephant(resolved_elephant_id)
@@ -2124,7 +2124,7 @@ def _resolve_memory_target(runtime: CliRuntime, *, elephant_id: str | None = Non
             if not herd:
                 raise ValueError("no elephant is available yet")
             if len(herd) > 1:
-                raise ValueError("elephant memory requires --elephant-id when no current elephant is set")
+                raise ValueError("elephant evidence requires --elephant-id when no current elephant is set")
             resolved_elephant_id = herd[0].elephant_id
             session = runtime.latest_session_for_elephant(resolved_elephant_id)
             if session is None:
@@ -2137,14 +2137,14 @@ def _resolve_memory_target(runtime: CliRuntime, *, elephant_id: str | None = Non
     return session, state, resolved_elephant_id
 
 
-def _memory_owner_id(session, state) -> str:
+def _fact_owner_id(session, state) -> str:
     owner_id = str(getattr(session, "personal_model_id", "") or getattr(state, "personal_model_id", "") or "").strip()
     if not owner_id:
         raise ValueError("Personal Model target is missing a personal_model_id")
     return owner_id
 
 
-def _memory_status_breakdown(entries) -> tuple[str, ...]:
+def _fact_status_breakdown(entries) -> tuple[str, ...]:
     counts: dict[str, int] = {}
     for entry in entries:
         key = str(getattr(entry, "status", "") or "unknown").strip().lower() or "unknown"
@@ -2155,21 +2155,29 @@ def _memory_status_breakdown(entries) -> tuple[str, ...]:
     return tuple(f"{status}={counts[status]}" for status in ordered)
 
 
-def _list_personal_memory_entries(runtime: CliRuntime, owner_id: str):
-    return tuple(reversed(runtime.list_personal_model_memories(owner_id)))
+def _list_personal_fact_entries(runtime: CliRuntime, owner_id: str):
+    list_facts = getattr(runtime.repository, "list_personal_model_facts", None)
+    if not callable(list_facts):
+        return ()
+    try:
+        return tuple(reversed(tuple(list_facts(personal_model_id=owner_id, status="active"))))
+    except Exception:
+        return ()
 
 
-def _print_memory_list(runtime: CliRuntime, *, elephant_id: str | None = None) -> None:
-    session, state, resolved_elephant_id = _resolve_memory_target(runtime, elephant_id=elephant_id)
-    owner_id = _memory_owner_id(session, state)
-    entries = _list_personal_memory_entries(runtime, owner_id)
-    status_breakdown = ", ".join(_memory_status_breakdown(entries)) or "<empty>"
-    memory_line_list: list[str] = []
+def _print_fact_list(runtime: CliRuntime, *, elephant_id: str | None = None) -> None:
+    session, state, resolved_elephant_id = _resolve_fact_target(runtime, elephant_id=elephant_id)
+    owner_id = _fact_owner_id(session, state)
+    entries = _list_personal_fact_entries(runtime, owner_id)
+    status_breakdown = ", ".join(_fact_status_breakdown(entries)) or "<empty>"
+    fact_line_list: list[str] = []
     for entry in entries[:10]:
-        timestamp = (entry.updated_at or entry.created_at).isoformat(timespec="seconds") if (entry.updated_at or entry.created_at) is not None else "<time?>"
-        memory_line_list.append(f"{entry.memory_entry_id} · {entry.kind} · status={entry.status} · {timestamp}")
-        memory_line_list.append(entry.content.strip() or "<empty>")
-    memory_lines = tuple(memory_line_list) or ("<no Personal Model entries>",)
+        timestamp = entry.committed_at.isoformat(timespec="seconds") if getattr(entry, "committed_at", None) is not None else "<time?>"
+        metadata = dict(getattr(entry, "metadata", {}) or {})
+        facet = str(metadata.get("facet") or metadata.get("topic") or "claim").strip()
+        fact_line_list.append(f"{entry.fact_id} · {entry.lens}.{facet} · status={entry.status} · {timestamp}")
+        fact_line_list.append(entry.text.strip() or "<empty>")
+    fact_lines = tuple(fact_line_list) or ("<no Personal Model facts>",)
     _print_cli_card(
         "Elephant Agent understanding",
         "Personal Model entries attached to the current elephant.",
@@ -2181,33 +2189,42 @@ def _print_memory_list(runtime: CliRuntime, *, elephant_id: str | None = None) -
                     f"state_id · {state.state_id}",
                     f"personal_model_id · {owner_id}",
                     f"episode_id · {session.episode_id}",
-                    f"memory_entries · {len(entries)}",
+                    f"facts · {len(entries)}",
                     f"status_breakdown · {status_breakdown}",
                 ),
             ),
-            CliCardSection("Personal Model entries", memory_lines),
+            CliCardSection("Personal Model facts", fact_lines),
         ),
         next_commands=(
-            "elephant memory",
-            "elephant memory delete <memory-id>",
+            "elephant evidence",
+            "elephant evidence delete <fact-id>",
             "elephant wake",
         ),
     )
 
 
-def _delete_memory_entry(runtime: CliRuntime, *, elephant_id: str | None, memory_id: str, reason: str | None) -> None:
-    session, state, resolved_elephant_id = _resolve_memory_target(runtime, elephant_id=elephant_id)
-    owner_id = _memory_owner_id(session, state)
-    deletion_reason = reason or "entry retired from elephant memory command"
-    try:
-        updated = runtime.delete_personal_model_memory(
-            session_id=session.episode_id,
-            personal_model_id=owner_id,
-            memory_id=memory_id,
-            reason=deletion_reason,
-        )
-    except KeyError as error:
-        raise ValueError(f"unknown Personal Model entry: {memory_id}") from error
+def _delete_personal_model_fact(runtime: CliRuntime, *, elephant_id: str | None, fact_id: str, reason: str | None) -> None:
+    session, state, resolved_elephant_id = _resolve_fact_target(runtime, elephant_id=elephant_id)
+    owner_id = _fact_owner_id(session, state)
+    deletion_reason = reason or "fact retired from elephant evidence command"
+    facts = tuple(runtime.repository.list_personal_model_facts(personal_model_id=owner_id, status=("active", "retired", "disputed")))
+    current = next((fact for fact in facts if getattr(fact, "fact_id", "") == fact_id), None)
+    if current is None:
+        raise ValueError(f"unknown Personal Model entry: {fact_id}")
+    from dataclasses import replace as _dc_replace
+    from datetime import datetime, timezone
+    updated = _dc_replace(
+        current,
+        status="deleted",
+        metadata={
+            **dict(getattr(current, "metadata", {}) or {}),
+            "retired_by": "elephant evidence delete",
+            "retired_reason": deletion_reason,
+            "retired_at": datetime.now(timezone.utc).isoformat(),
+            "understanding_status": "deleted",
+        },
+    )
+    runtime.repository.upsert_personal_model_fact(updated)
     _print_cli_card(
         "Understanding retired",
         "A Personal Model entry was marked retired.",
@@ -2216,43 +2233,43 @@ def _delete_memory_entry(runtime: CliRuntime, *, elephant_id: str | None, memory
                 "Deleted entry",
                 (
                     f"elephant_id · {resolved_elephant_id}",
-                    f"memory_owner_id · {owner_id}",
-                    f"memory_id · {updated.memory_entry_id}",
-                    f"kind · {updated.kind}",
+                    f"personal_model_id · {owner_id}",
+                    f"fact_id · {updated.fact_id}",
+                    f"lens · {updated.lens}",
                     f"status · {updated.status}",
                     f"reason · {deletion_reason}",
-                    f"content · {_personal_memory_preview(updated.content, limit=120)}",
+                    f"content · {_personal_fact_preview(updated.text, limit=120)}",
                 ),
             ),
         ),
         next_commands=(
-            "elephant memory",
+            "elephant evidence",
             "elephant wake",
         ),
     )
 
 
-def _run_memory(runtime: CliRuntime, args: argparse.Namespace) -> int:
+def _run_facts(runtime: CliRuntime, args: argparse.Namespace) -> int:
     if not runtime.list_herd(limit=1):
         _print_cli_card(
-            "Elephant Agent memory",
+            "Elephant Agent evidence",
             "No elephant is available yet.",
             next_commands=("elephant init", "elephant herd new <name>", "elephant wake"),
         )
         return 1
-    command = args.memory_command or "list"
+    command = args.facts_command or "list"
     if command == "list":
-        _print_memory_list(runtime, elephant_id=getattr(args, "elephant_id", None))
+        _print_fact_list(runtime, elephant_id=getattr(args, "elephant_id", None))
         return 0
     if command == "delete":
-        _delete_memory_entry(
+        _delete_personal_model_fact(
             runtime,
             elephant_id=getattr(args, "elephant_id", None),
-            memory_id=args.memory_id,
+            fact_id=args.fact_id,
             reason=getattr(args, "reason", None),
         )
         return 0
-    raise ValueError(f"unknown memory command: {command}")
+    raise ValueError(f"unknown evidence command: {command}")
 
 
 def _learning_time(value: object) -> str:
@@ -2285,9 +2302,9 @@ def _learning_job_lines(jobs: Iterable[object], *, runtime: CliRuntime | None = 
         if result_status or result_summary:
             suffix += f" · result={result_status or 'written'}"
             if result_summary:
-                suffix += f" · {_personal_memory_preview(result_summary, limit=96)}"
+                suffix += f" · {_personal_fact_preview(result_summary, limit=96)}"
         elif detail and detail != progress:
-            suffix += f" · {_personal_memory_preview(detail, limit=96)}"
+            suffix += f" · {_personal_fact_preview(detail, limit=96)}"
         lines.append(
             " · ".join(
                 (
@@ -2334,7 +2351,7 @@ def _print_learning_status(runtime: CliRuntime, *, elephant_id: str | None, limi
     if not runtime.list_herd(limit=1):
         _print_learning_history(runtime, limit=limit)
         return
-    session, state, resolved_elephant_id = _resolve_memory_target(runtime, elephant_id=elephant_id)
+    session, state, resolved_elephant_id = _resolve_fact_target(runtime, elephant_id=elephant_id)
     status = runtime.learning_runtime_status(session_id=session.episode_id, limit=max(1, limit))
     job_rows = tuple(status.get("jobs") or ()) if isinstance(status, dict) else ()
     lines = [
@@ -2351,7 +2368,7 @@ def _print_learning_status(runtime: CliRuntime, *, elephant_id: str | None, limi
         detail = result_summary or str(job.get("progress_detail") or "").strip()
         result_status = str(job.get("result_status") or "").strip()
         result_suffix = f" · result={result_status}" if result_status else ""
-        suffix = f" · {_personal_memory_preview(detail, limit=96)}" if detail else ""
+        suffix = f" · {_personal_fact_preview(detail, limit=96)}" if detail else ""
         job_lines.append(
             f"{job.get('status', 'unknown')} · {job.get('job_type', 'learning')} · trigger={job.get('trigger', '<none>')} · {job.get('job_id', '<job?>')}{result_suffix}{suffix}"
         )
@@ -2387,7 +2404,7 @@ def _queue_learning_job(
     start_worker: bool = True,
     extra_metadata: dict[str, str] | None = None,
 ):
-    session, _state, _resolved_elephant_id = _resolve_memory_target(runtime, elephant_id=elephant_id)
+    session, _state, _resolved_elephant_id = _resolve_fact_target(runtime, elephant_id=elephant_id)
     metadata = {"source": source}
     if extra_metadata:
         metadata.update(extra_metadata)
@@ -2652,9 +2669,9 @@ def build_typer_app() -> typer.Typer:
         rich_markup_mode="rich",
         add_completion=False,
     )
-    memory_app = typer.Typer(
-        name="memory",
-        help="Inspect or retire Personal Model understanding without entering wake.",
+    facts_app = typer.Typer(
+        name="facts",
+        help="Inspect or retire Personal Model facts without entering wake.",
         rich_markup_mode="rich",
         add_completion=False,
     )
@@ -2673,7 +2690,7 @@ def build_typer_app() -> typer.Typer:
 
     app.add_typer(provider_app, name="provider")
     app.add_typer(herd_app, name="herd")
-    app.add_typer(memory_app, name="memory")
+    app.add_typer(facts_app, name="facts")
     app.add_typer(reflect_app, name="reflect")
     provider_app.add_typer(provider_embeddings_app, name="embeddings")
 
@@ -2981,36 +2998,36 @@ def build_typer_app() -> typer.Typer:
         except ValueError as error:
             raise typer.BadParameter(str(error)) from error
 
-    @memory_app.callback(invoke_without_command=True)
-    def memory_callback(ctx: typer.Context) -> None:
+    @facts_app.callback(invoke_without_command=True)
+    def facts_callback(ctx: typer.Context) -> None:
         if ctx.invoked_subcommand is None:
             params = ctx.parent.params if ctx.parent is not None else ctx.params
             runtime = _cli_runtime(params["state_dir"])
-            raise typer.Exit(_run_memory(runtime, _namespace(memory_command=None, elephant_id=None)))
+            raise typer.Exit(_run_facts(runtime, _namespace(facts_command=None, elephant_id=None)))
 
-    @memory_app.command("list")
-    def memory_list_command(
+    @facts_app.command("list")
+    def facts_list_command(
         ctx: typer.Context,
-        elephant_id: str | None = typer.Option(None, "--elephant-id", help="Resolve Personal Model understanding through a named elephant."),
+        elephant_id: str | None = typer.Option(None, "--elephant-id", help="Resolve Personal Model facts through a named elephant."),
     ) -> None:
         params = ctx.parent.parent.params if ctx.parent and ctx.parent.parent else ctx.params
         runtime = _cli_runtime(params["state_dir"])
-        raise typer.Exit(_run_memory(runtime, _namespace(memory_command="list", elephant_id=elephant_id)))
+        raise typer.Exit(_run_facts(runtime, _namespace(facts_command="list", elephant_id=elephant_id)))
 
-    @memory_app.command("delete")
-    def memory_delete_command(
+    @facts_app.command("delete")
+    def facts_delete_command(
         ctx: typer.Context,
-        memory_id: str = typer.Argument(..., help="Name the Personal Model entry to retire."),
-        elephant_id: str | None = typer.Option(None, "--elephant-id", help="Resolve Personal Model understanding through a named elephant."),
+        fact_id: str = typer.Argument(..., help="Name the Personal Model entry to retire."),
+        elephant_id: str | None = typer.Option(None, "--elephant-id", help="Resolve Personal Model facts through a named elephant."),
         reason: str | None = typer.Option(None, "--reason", help="Record why this Personal Model entry is being retired."),
     ) -> None:
         params = ctx.parent.parent.params if ctx.parent and ctx.parent.parent else ctx.params
         runtime = _cli_runtime(params["state_dir"])
         try:
             raise typer.Exit(
-                _run_memory(
+                _run_facts(
                     runtime,
-                    _namespace(memory_command="delete", elephant_id=elephant_id, memory_id=memory_id, reason=reason),
+                    _namespace(facts_command="delete", elephant_id=elephant_id, fact_id=fact_id, reason=reason),
                 )
             )
         except ValueError as error:

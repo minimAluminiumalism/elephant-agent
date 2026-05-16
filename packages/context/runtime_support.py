@@ -10,8 +10,7 @@ from typing import Any, Mapping, Protocol, runtime_checkable
 
 from packages.capabilities.runtime import CapabilityDescriptor, ContextCapability
 from packages.contracts.layers import Episode
-from packages.contracts.runtime import ContextBundle, StateFocusDecision, MemoryRecord, StructuredTurnSlot
-from packages.evidence import parse_structured_turn_memory
+from packages.contracts.runtime import ContextBundle, StateFocusDecision, RecallEvidence, StructuredTurnSlot
 
 
 
@@ -21,7 +20,7 @@ from .runtime_types import (
     ContextLayerSnapshot,
     ContextRetrievalRequest,
     ContextSourceTrace,
-    MemoryRecord,
+    RecallEvidence,
     EpisodeReplay,
     EpisodeFrame,
     StateSnapshot,
@@ -42,22 +41,22 @@ def _work_item_line(work_item: object) -> str:
     """
     return f"{work_item.title} [{work_item.status}/{work_item.priority}]"
 
-def _memory_line(memory: MemoryRecord) -> str:
-    """Human-readable memory line for prompt injection.
+def _evidence_line(evidence: RecallEvidence) -> str:
+    """Human-readable evidence line for prompt injection.
 
-    Drops memory_id / work_item_refs / tag set. Kind is rendered as a
-    short natural label prefix via ``_memory_kind_prose`` so the reader
-    can tell a "decision" from an "observation" without seeing raw
+    Drops evidence_ref / work_item_ids / tag set. Kind is rendered as a
+    short natural label prefix via ``_evidence_kind_prose`` so the reader
+    can tell a "decision" from a runtime signal without seeing raw
     ``[kind]`` taxonomic labels.
     """
-    kind_label = _memory_kind_prose(str(getattr(memory, "kind", "") or ""))
+    kind_label = _evidence_kind_prose(str(getattr(evidence, "kind", "") or ""))
     if kind_label:
-        return f"{kind_label}: {memory.content}"
-    return str(memory.content)
+        return f"{kind_label}: {evidence.content}"
+    return str(evidence.content)
 
 
 _MEMORY_KIND_PROSE = {
-    "decision": "Decision", "observation": "Observation", "correction": "Correction",
+    "decision": "Decision", "observation": "Runtime signal", "correction": "Correction",
     "preference": "Preference", "knowledge": "What you know", "relationship": "Relationship note",
     "procedural": "Procedure", "style": "Style note", "core": "Core identity note",
     "episodic_index": "Episode note", "episodic": "Episode note",
@@ -65,7 +64,7 @@ _MEMORY_KIND_PROSE = {
 }
 
 
-def _memory_kind_prose(kind: str) -> str:
+def _evidence_kind_prose(kind: str) -> str:
     cleaned = str(kind or "").strip().lower()
     if not cleaned:
         return ""
@@ -74,7 +73,7 @@ def _memory_kind_prose(kind: str) -> str:
     return cleaned.replace("_", " ").replace("-", " ").capitalize()
 
 
-def _looks_like_profile_memory_line(line: str) -> bool:
+def _looks_like_profile_evidence_line(line: str) -> bool:
     normalized = " ".join(str(line or "").casefold().split())
     if not normalized:
         return False
@@ -90,7 +89,7 @@ def _looks_like_profile_memory_line(line: str) -> bool:
 def _content_dedup_key(text: str) -> str:
     """Normalize content for cross-section dedup.
 
-    Prevents same memory showing under Still-steady / Pulled-up-just-now /
+    Prevents same evidence showing under Still-steady / Pulled-up-just-now /
     generation_context all at once.
     """
     from hashlib import blake2b as _blake2b
@@ -141,44 +140,44 @@ def _state_focus_budget_multiplier(state_focus: StateFocusDecision | None) -> fl
         return 1.35
     return 1.0
 
-def _select_steady_memories(
-    memories: tuple[MemoryRecord, ...],
+def _select_steady_recall_items(
+    recall_items: tuple[RecallEvidence, ...],
     *,
     session: Episode,
     work_items: tuple[...],
     state_focus: StateFocusDecision | None = None,
     limit: int = 3,
-) -> tuple[MemoryRecord, ...]:
-    if not memories:
+) -> tuple[RecallEvidence, ...]:
+    if not recall_items:
         return ()
     scored = sorted(
-        memories,
-        key=lambda memory: (
-            -_context_memory_score(memory, session=session, work_items=work_items, state_focus=state_focus, layer_name="steady"),
-            -(memory.created_at.timestamp() if memory.created_at is not None else 0.0),
-            memory.memory_id,
+        recall_items,
+        key=lambda evidence: (
+            -_context_evidence_score(evidence, session=session, work_items=work_items, state_focus=state_focus, layer_name="steady"),
+            -(evidence.created_at.timestamp() if evidence.created_at is not None else 0.0),
+            evidence.evidence_id,
         ),
     )
     selected = scored[:limit]
     return tuple(
         sorted(
             selected,
-            key=lambda memory: (
-                memory.created_at.timestamp() if memory.created_at is not None else 0.0,
-                memory.memory_id,
+            key=lambda evidence: (
+                evidence.created_at.timestamp() if evidence.created_at is not None else 0.0,
+                evidence.evidence_id,
             ),
         )
     )
 
-def _steady_memory_refs(
-    memories: tuple[MemoryRecord, ...],
+def _steady_recall_refs(
+    recall_items: tuple[RecallEvidence, ...],
     *,
     session: Episode,
     work_items: tuple[...],
     state_focus: StateFocusDecision | None = None,
 ) -> tuple[str, ...]:
     return tuple(
-        memory.memory_id for memory in _select_steady_memories(memories, session=session, work_items=work_items, state_focus=state_focus)
+        evidence.evidence_id for evidence in _select_steady_recall_items(recall_items, session=session, work_items=work_items, state_focus=state_focus)
     )
 
 def _work_item_trace_reason(work_items: tuple[...]) -> str:
@@ -208,40 +207,40 @@ def _loop_context_trace_reason(session: Episode, recent_loop_context: tuple[str,
 def _session_snapshot_trace_reason(
     session: Episode,
     work_items: tuple[...],
-    memories: tuple[MemoryRecord, ...],
+    recall_items: tuple[RecallEvidence, ...],
     *,
     state_focus: StateFocusDecision | None,
     profile_snapshot_refs: tuple[str, ...],
-    steady_memories: tuple[MemoryRecord, ...],
+    steady_recall_items: tuple[RecallEvidence, ...],
     retrieval_requests: tuple[ContextRetrievalRequest, ...],
     summary_requests: tuple[ContextSummaryRequest, ...],
 ) -> str:
     """Build the rationale text for the session-snapshot source trace.
 
-    Counts are fine; concrete ids (memory_id, work_item_id, focus ids) are
+    Counts are fine; concrete ids (evidence_ref, work_item_id, focus ids) are
     intentionally omitted so the rationale stays safe to ship anywhere,
     including into audit logs that may later be rendered near the prompt.
     """
     snapshot_work_items = _snapshot_work_items(work_items, state_focus=state_focus)
     work_item_count = len(snapshot_work_items)
-    retrieved_count = sum(len(request.memory_ids) for request in retrieval_requests)
+    retrieved_count = sum(len(request.evidence_refs) for request in retrieval_requests)
     pieces = [
         f"profile slice kept {len(profile_snapshot_refs) or 1} durable projection(s)",
         f"work slice kept {work_item_count} active elephant work item(s)",
-        f"evidence slice kept {retrieved_count} retrieved memory record(s)",
+        f"evidence slice kept {retrieved_count} retrieved evidence record(s)",
     ]
     if session.interruption_state:
         pieces.append(f"continuity recovery stayed explicit via {session.interruption_state}")
-    if steady_memories:
-        pieces.append(f"steady continuity carried {len(steady_memories)} memory record(s)")
+    if steady_recall_items:
+        pieces.append(f"steady continuity carried {len(steady_recall_items)} evidence record(s)")
     if summary_requests:
         pieces.append("the session snapshot was compacted instead of expanding into a blind recency slice")
     if state_focus is not None:
         pieces.append(f"elephant focus scope={state_focus.focus_scope} budget={state_focus.context_budget}")
         if state_focus.focus_scope == "personal_model" and work_item_count == 0:
             pieces.append("personal_model scope suppressed unrelated work items")
-    if not memories:
-        pieces.append("no durable memory records were available")
+    if not recall_items:
+        pieces.append("no durable evidence records were available")
     return "; ".join(pieces)
 
 def _request_attachment_trace_reason(artifacts: tuple[str, ...]) -> str:
@@ -254,19 +253,19 @@ def _session_snapshot_lines(
     session: Episode,
     profile_snapshot_refs: tuple[str, ...],
     work_items: tuple[...],
-    steady_memories: tuple[MemoryRecord, ...],
+    steady_recall_items: tuple[RecallEvidence, ...],
     retrieval_requests: tuple[ContextRetrievalRequest, ...],
-    memory_index: Mapping[str, MemoryRecord],
+    evidence_index: Mapping[str, RecallEvidence],
     request_attachments: tuple[str, ...] = (),
     state_focus: StateFocusDecision | None = None,
 ) -> tuple[str, ...]:
     """Build the human-readable State snapshot content lines.
 
-    IDs (work_item_ids, memory_ids, profile refs) are NEVER rendered here:
+    IDs (work_item_ids, evidence_refs, profile refs) are NEVER rendered here:
     - profile slice shows selected profile fields and summary only
     - work slice shows title + status/priority only (via _work_item_line)
-    - continuity slice shows kind + content (via _memory_line)
-    - evidence slice shows retrieved memory content + reason (not id)
+    - continuity slice shows kind + content (via _evidence_line)
+    - evidence slice shows retrieved evidence content + reason (not id)
 
     Runtime bookkeeping (ids) travels separately on audit_refs / telemetry.
     """
@@ -283,33 +282,33 @@ def _session_snapshot_lines(
     if snapshot_work_items:
         lines.append("work:")
         lines.extend(_work_item_line(work_item) for work_item in snapshot_work_items)
-    if steady_memories:
+    if steady_recall_items:
         lines.append("path in view:")
-        lines.extend(_memory_line(memory) for memory in steady_memories)
-    retrieval_lines = _retrieval_lines(retrieval_requests, memory_index)
+        lines.extend(_evidence_line(evidence) for evidence in steady_recall_items)
+    retrieval_lines = _retrieval_lines(retrieval_requests, evidence_index)
     if retrieval_lines:
         lines.append("evidence:")
         lines.extend(retrieval_lines)
     return tuple(lines)
 
 def _build_retrieval_query(
-    memory: MemoryRecord,
+    evidence: RecallEvidence,
     work_items: tuple[...],
     *,
     state_focus: StateFocusDecision | None = None,
 ) -> str:
-    work_item_titles = " ".join(work_item.title for work_item in work_items if work_item.work_item_id in memory.work_item_refs)
+    work_item_titles = " ".join(work_item.title for work_item in work_items if work_item.work_item_id in evidence.work_item_ids)
     focus_titles = ""
     state_focus_terms = ""
     if state_focus is not None:
         focus_ids = _state_focus_focus_work_item_ids(work_items, state_focus=state_focus)
         focus_titles = " ".join(work_item.title for work_item in work_items if work_item.work_item_id in focus_ids)
         state_focus_terms = " ".join((state_focus.focus_family, state_focus.focus_scope, state_focus.context_budget))
-    query = " ".join(part for part in (state_focus_terms, focus_titles, memory.kind, memory.content, work_item_titles) if part)
+    query = " ".join(part for part in (state_focus_terms, focus_titles, evidence.kind, evidence.content, work_item_titles) if part)
     return query[:240]
 
 def _build_retrieval_reason(
-    memory: MemoryRecord,
+    evidence: RecallEvidence,
     work_items: tuple[...],
     reasons: tuple[str, ...] = (),
     *,
@@ -319,7 +318,7 @@ def _build_retrieval_reason(
     matched_titles = [
         work_item.title.strip() or "active work"
         for work_item in work_items
-        if work_item.work_item_id in memory.work_item_refs
+        if work_item.work_item_id in evidence.work_item_ids
     ]
     pieces: list[str] = []
     if state_focus is not None:
@@ -328,20 +327,20 @@ def _build_retrieval_reason(
             work_item.title.strip() or "active work"
             for work_item in work_items
             if work_item.work_item_id in focus_ids
-            and work_item.work_item_id in memory.work_item_refs
+            and work_item.work_item_id in evidence.work_item_ids
         ]
         if focus_titles:
             pieces.append(f"elephant focus kept {', '.join(focus_titles)} ahead of generic recall")
     if matched_titles:
-        pieces.append(f"active elephant work-linked memory for {', '.join(matched_titles)}")
+        pieces.append(f"active elephant work-linked evidence for {', '.join(matched_titles)}")
     pieces.extend(reason for reason in reasons if reason not in pieces)
     if state_focus is not None:
         pieces.append(f"elephant focus scope={state_focus.focus_scope} budget={state_focus.context_budget}")
     if not pieces:
-        if memory.kind in {"summary", "decision", "lesson"}:
-            pieces.append("high-value historical memory")
+        if evidence.kind in {"summary", "decision", "lesson"}:
+            pieces.append("high-value historical evidence")
         else:
-            pieces.append("supporting continuity memory")
+            pieces.append("supporting continuity evidence")
     return "; ".join(pieces[:4])
 
 def _estimate_tokens(content: str) -> int:
@@ -379,11 +378,11 @@ def _summary_content_for_layer(
     layer_name: str,
     session: Episode,
     work_items: tuple[...],
-    memories: tuple[MemoryRecord, ...],
+    recall_items: tuple[RecallEvidence, ...],
     recent_loop_context: tuple[str, ...],
     *,
     profile_snapshot_refs: tuple[str, ...] = (),
-    steady_memories: tuple[MemoryRecord, ...],
+    steady_recall_items: tuple[RecallEvidence, ...],
     retrieval_requests: tuple[ContextRetrievalRequest, ...],
     replay_requests: tuple[ContextRetrievalRequest, ...] = (),
     request_attachments: tuple[str, ...] = (),
@@ -393,7 +392,7 @@ def _summary_content_for_layer(
     layer is displayed as a summary rather than raw content).
 
     Design rule (enforced by tests): never emit raw ids here. Runtime
-    bookkeeping (memory_id, work_item_id, grounding_id, record_id, etc.)
+    bookkeeping (evidence_ref, work_item_id, grounding_id, record_id, etc.)
     stays on audit_refs, not in model-visible prompt text.
     """
     if layer_name == "session_snapshot":
@@ -419,32 +418,32 @@ def _summary_content_for_layer(
                 )
             )
         # Dedup by content hash across steady / retrieved snippets and against
-        # the generation_context memory projection. Same fact used to appear
+        # the generation_context evidence projection. Same fact used to appear
         # under multiple headings simultaneously.
-        seen_memory_keys: set[str] = set()
+        seen_evidence_keys: set[str] = set()
         steady_lines: list[str] = []
-        for memory in steady_memories:
-            key = _content_dedup_key(str(getattr(memory, "content", "") or ""))
-            if not key or key in seen_memory_keys:
+        for evidence in steady_recall_items:
+            key = _content_dedup_key(str(getattr(evidence, "content", "") or ""))
+            if not key or key in seen_evidence_keys:
                 continue
-            seen_memory_keys.add(key)
-            steady_lines.append(_memory_line(memory))
+            seen_evidence_keys.add(key)
+            steady_lines.append(_evidence_line(evidence))
         if steady_lines:
             lines.append("steady: " + " · ".join(steady_lines))
         retrieval_snippets: list[str] = []
         for request in retrieval_requests:
-            for memory_id in request.memory_ids:
-                memory = next((m for m in memories if m.memory_id == memory_id), None)
-                if memory is None:
+            for evidence_ref in request.evidence_refs:
+                evidence = next((m for m in recall_items if m.evidence_id == evidence_ref), None)
+                if evidence is None:
                     continue
-                key = _content_dedup_key(str(getattr(memory, "content", "") or ""))
-                if not key or key in seen_memory_keys:
+                key = _content_dedup_key(str(getattr(evidence, "content", "") or ""))
+                if not key or key in seen_evidence_keys:
                     continue
-                memory_line = _memory_line(memory)
-                if _looks_like_profile_memory_line(memory_line):
+                evidence_line = _evidence_line(evidence)
+                if _looks_like_profile_evidence_line(evidence_line):
                     continue
-                seen_memory_keys.add(key)
-                retrieval_snippets.append(f"{memory_line} (why: {request.reason})")
+                seen_evidence_keys.add(key)
+                retrieval_snippets.append(f"{evidence_line} (why: {request.reason})")
         if retrieval_snippets:
             lines.append("Pulled up just now: " + " · ".join(retrieval_snippets))
         # Intentionally do NOT echo request_attachments here — they
@@ -454,7 +453,7 @@ def _summary_content_for_layer(
         # lines appear twice in the prompt.
         return tuple(lines)
     if layer_name == "replay_packet":
-        lines = list(_replay_summary_lines(replay_requests, memories))
+        lines = list(_replay_summary_lines(replay_requests, recall_items))
         return tuple(lines)
     if layer_name == "request_attachments":
         return request_attachments
@@ -514,15 +513,15 @@ def _profile_snapshot_summary_lines(
 
 def _retrieval_lines(
     retrieval_requests: tuple[ContextRetrievalRequest, ...],
-    memory_index: Mapping[str, MemoryRecord],
+    evidence_index: Mapping[str, RecallEvidence],
 ) -> tuple[str, ...]:
     lines: list[str] = []
     for request in retrieval_requests:
-        for memory_id in request.memory_ids:
-            memory = memory_index.get(memory_id)
-            if memory is None:
+        for evidence_ref in request.evidence_refs:
+            evidence = evidence_index.get(evidence_ref)
+            if evidence is None:
                 continue
-            lines.append(f"{_memory_line(memory)} | why: {request.reason}")
+            lines.append(f"{_evidence_line(evidence)} | why: {request.reason}")
     return tuple(lines)
 
 @dataclass(frozen=True, slots=True)
@@ -637,7 +636,7 @@ def _schedule_replay_requests(
     *,
     session: Episode,
     work_items: tuple[...],
-    memories: tuple[MemoryRecord, ...],
+    recall_items: tuple[RecallEvidence, ...],
     recent_loop_context: tuple[str, ...],
     token_budget: int,
     state_focus: StateFocusDecision | None = None,
@@ -648,10 +647,10 @@ def _schedule_replay_requests(
     remaining = token_budget
     requests: list[ContextRetrievalRequest] = []
     for index, replay_intent in enumerate(replay_specs):
-        candidate = _select_replay_memory(
+        candidate = _select_replay_evidence(
             session=session,
             work_items=work_items,
-            memories=memories,
+            recall_items=recall_items,
             recent_loop_context=recent_loop_context,
             slot_name=replay_intent.slot_name,
             replay_mode=replay_intent.replay_mode,
@@ -664,15 +663,15 @@ def _schedule_replay_requests(
         if selected_tokens <= 0:
             break
         remaining -= selected_tokens
-        memory, detail_reason = candidate
+        evidence, detail_reason = candidate
         requests.append(
             ContextRetrievalRequest(
                 request_id=f"{session.episode_id}:replay:{index}",
                 layer_name="replay_packet",
                 session_id=session.episode_id,
                 query=" ".join(recent_loop_context)[:240],
-                memory_ids=(memory.memory_id,),
-                work_item_ids=tuple(work_item.work_item_id for work_item in work_items if work_item.work_item_id in memory.work_item_refs),
+                evidence_refs=(evidence.evidence_id,),
+                work_item_ids=tuple(work_item.work_item_id for work_item in work_items if work_item.work_item_id in evidence.work_item_ids),
                 token_budget=selected_tokens,
                 priority=max(0, 120 - index * 10),
                 reason=f"{replay_intent.reason}; {detail_reason}",
@@ -683,62 +682,19 @@ def _schedule_replay_requests(
         )
     return tuple(requests)
 
-def _select_replay_memory(
+def _select_replay_evidence(
     *,
     session: Episode,
     work_items: tuple[...],
-    memories: tuple[MemoryRecord, ...],
+    recall_items: tuple[RecallEvidence, ...],
     recent_loop_context: tuple[str, ...],
     slot_name: str,
     replay_mode: str,
     max_compression: str,
     state_focus: StateFocusDecision | None = None,
-) -> tuple[MemoryRecord, str] | None:
-    loop_text = " ".join(recent_loop_context)
-    loop_tokens = _tokenize(loop_text)
-    best: tuple[float, MemoryRecord, str] | None = None
-    for memory in memories:
-        turn = parse_structured_turn_memory(memory)
-        if turn is None:
-            continue
-        slot = getattr(turn, slot_name)
-        if not slot.summary and not slot.detail:
-            continue
-        base_score = float(
-            _context_memory_score(
-                memory,
-                session=session,
-                work_items=work_items,
-                state_focus=state_focus,
-                layer_name="replay",
-                recent_loop_context=recent_loop_context,
-            )
-        )
-        slot_tokens = _tokenize(" ".join((slot.summary, *slot.detail, slot.provenance)))
-        overlap = tuple(sorted(slot_tokens & loop_tokens))
-        score = base_score + float(len(overlap)) * 2.5
-        if work_item_overlap := tuple(work_item.work_item_id for work_item in work_items if work_item.work_item_id in memory.work_item_refs):
-            score += float(len(work_item_overlap)) * 1.5
-        if replay_mode == "episode":
-            if turn.compression_tier == "episode_summary" or len(turn.source_turn_ids) > 1:
-                score += 3.0
-            else:
-                score += 0.5
-        elif turn.compression_tier == "raw_turn":
-            score += 1.5
-        if _replay_rank(slot.compression) <= _replay_rank(max_compression):
-            score += 1.25
-        if "corrected" in memory.tags:
-            score += 1.0
-        detail_reason = (
-            f"selected {slot_name} replay candidate"
-            f" with overlap={','.join(overlap[:4]) or 'active elephant work-linked continuity'}"
-        )
-        if best is None or score > best[0]:
-            best = (score, memory, detail_reason)
-    if best is None:
-        return None
-    return best[1], best[2]
+) -> tuple[RecallEvidence, str] | None:
+    del session, work_items, recall_items, recent_loop_context, slot_name, replay_mode, max_compression, state_focus
+    return None
 
 def _replay_rank(compression: str) -> int:
     return _REPLAY_COMPRESSION_RANK.get(compression.strip().lower(), _REPLAY_COMPRESSION_RANK["structured_summary"])
@@ -760,41 +716,20 @@ def _project_replay_slot(slot: StructuredTurnSlot, *, max_compression: str) -> t
 
 def _replay_lines(
     replay_requests: tuple[ContextRetrievalRequest, ...],
-    memory_index: Mapping[str, MemoryRecord],
+    evidence_index: Mapping[str, RecallEvidence],
 ) -> tuple[str, ...]:
     """Render replay slots as human-readable content.
 
-    Drops memory_ids and artifact_ids from the output. The replay mode,
+    Drops evidence_refs and artifact_ids from the output. The replay mode,
     slot name, and projected summary/detail are enough for the model to use
     the replay content; ids are runtime bookkeeping only.
     """
-    lines: list[str] = []
-    for request in replay_requests:
-        for memory_id in request.memory_ids:
-            memory = memory_index.get(memory_id)
-            turn = parse_structured_turn_memory(memory)
-            if turn is None:
-                continue
-            for slot_name in request.target_slots or ("reasoning",):
-                slot = getattr(turn, slot_name)
-                projected, degraded = _project_replay_slot(slot, max_compression=request.max_compression)
-                lines.append(
-                    f"replay {request.replay_mode}/{slot_name}"
-                )
-                if projected.summary:
-                    lines.append(f"{slot_name}-summary: {projected.summary}")
-                for detail in projected.detail:
-                    lines.append(f"{slot_name}-detail: {detail}")
-                if degraded:
-                    lines.append(
-                        f"{slot_name}-fallback: compression degraded to {request.max_compression}"
-                    )
-                lines.append(f"why: {request.reason}")
-    return tuple(lines)
+    del replay_requests, evidence_index
+    return ()
 
 def _replay_summary_lines(
     replay_requests: tuple[ContextRetrievalRequest, ...],
-    memories: tuple[MemoryRecord, ...],
+    recall_items: tuple[RecallEvidence, ...],
 ) -> tuple[str, ...]:
     """Compact replay summary lines for the prompt. IDs are omitted."""
     lines: list[str] = []
@@ -842,8 +777,8 @@ def _continuity_marker_tokens(session: Episode) -> set[str]:
         return set()
     return _tokenize(session.interruption_state) | {"resume", "recovery", "continuity", "interruption", "gap"}
 
-def _context_memory_score(
-    memory: MemoryRecord,
+def _context_evidence_score(
+    evidence: RecallEvidence,
     *,
     session: Episode,
     work_items: tuple[...],
@@ -858,17 +793,17 @@ def _context_memory_score(
     continuity_markers = _continuity_marker_tokens(session)
     reasons: list[str] = []
     score = 0.0
-    if memory.episode_id == session.episode_id:
+    if evidence.episode_id == session.episode_id:
         score += 4.0
-        reasons.append("current-session memory")
-    overlap = work_item_ids.intersection(memory.work_item_refs)
+        reasons.append("current-session evidence")
+    overlap = work_item_ids.intersection(evidence.work_item_ids)
     score += float(len(overlap)) * 5.0
     if overlap:
         # R1: reason strings must cite human-readable titles, not work ids.
         reasons.append(
             f"active elephant work-linked: {', '.join(sorted(work_titles_by_id.get(wid, 'active work') for wid in overlap))}"
         )
-    focus_overlap = set(_state_focus_focus_work_item_ids(work_items, state_focus=state_focus)).intersection(memory.work_item_refs)
+    focus_overlap = set(_state_focus_focus_work_item_ids(work_items, state_focus=state_focus)).intersection(evidence.work_item_ids)
     score += float(len(focus_overlap)) * 6.0
     if focus_overlap:
         reasons.append(
@@ -882,37 +817,37 @@ def _context_memory_score(
         "procedural": 2.5,
         "artifact": 1.0,
     }
-    score += kind_bonus.get(memory.kind, 0.0)
-    if memory.kind in {"summary", "decision", "lesson"}:
-        reasons.append(f"high-value kind: {memory.kind}")
-    elif memory.kind in {"semantic", "procedural"}:
-        reasons.append(f"durable kind: {memory.kind}")
-    elif memory.kind == "artifact":
+    score += kind_bonus.get(evidence.kind, 0.0)
+    if evidence.kind in {"summary", "decision", "lesson"}:
+        reasons.append(f"high-value kind: {evidence.kind}")
+    elif evidence.kind in {"semantic", "procedural"}:
+        reasons.append(f"durable kind: {evidence.kind}")
+    elif evidence.kind == "artifact":
         reasons.append("artifact support")
-    tags = set(memory.tags)
+    tags = set(evidence.tags)
     if "corrected" in tags:
         score += 2.0
-        reasons.append("corrected memory")
+        reasons.append("corrected evidence")
     if "consolidated" in tags:
         score += 1.0
-        reasons.append("consolidated memory")
+        reasons.append("consolidated evidence")
     if "filler" in tags:
         score -= 4.0
     if "continuity" in tags or "recovery" in tags:
         score += 1.0
     if state_focus is not None:
-        if state_focus.focus_scope == "personal_model" and memory.kind in {"summary", "decision", "semantic"}:
+        if state_focus.focus_scope == "personal_model" and evidence.kind in {"summary", "decision", "semantic"}:
             score += 1.5
             reasons.append("personal-model recall")
-        if state_focus.focus_scope == "state" and memory.kind in {"artifact", "procedural"}:
+        if state_focus.focus_scope == "state" and evidence.kind in {"artifact", "procedural"}:
             score += 1.0
             reasons.append("elephant-scoped recall")
-        if state_focus.continuity_signal != "none" and memory.kind in {"summary", "decision", "semantic", "procedural"}:
+        if state_focus.continuity_signal != "none" and evidence.kind in {"summary", "decision", "semantic", "procedural"}:
             score += 1.0
             reasons.append("elephant focus resume recovery")
         if state_focus.context_budget == "narrow" and state_focus.focus_work_item_ids and not focus_overlap and not overlap:
             score -= 1.5
-    text_tokens = _tokenize(memory.content) | _tokenize(" ".join(memory.tags))
+    text_tokens = _tokenize(evidence.content) | _tokenize(" ".join(evidence.tags))
     thematic_overlap = tuple(sorted(text_tokens & thematic_tokens))
     if thematic_overlap:
         score += float(len(thematic_overlap)) * 1.75
@@ -920,22 +855,22 @@ def _context_memory_score(
     if continuity_markers and (
         continuity_markers.intersection(text_tokens)
         or overlap
-        or memory.kind in {"summary", "decision", "lesson", "semantic", "procedural"}
+        or evidence.kind in {"summary", "decision", "lesson", "semantic", "procedural"}
     ):
         score += 2.0
         reasons.append("continuity recovery support")
     if layer_name == "steady" and session.interruption_state:
         score += 1.5
-    if memory.created_at is not None:
-        score += memory.created_at.timestamp() / 10_000_000
-    score += min(len(memory.tags), 4) * 0.001
+    if evidence.created_at is not None:
+        score += evidence.created_at.timestamp() / 10_000_000
+    score += min(len(evidence.tags), 4) * 0.001
     reason_tuple = tuple(dict.fromkeys(reasons))
     if return_reasons:
         return score, reason_tuple
     return score
 
 def _retrieval_priority_bucket(
-    memory: MemoryRecord,
+    evidence: RecallEvidence,
     *,
     session: Episode,
     work_items: tuple[...],
@@ -943,21 +878,21 @@ def _retrieval_priority_bucket(
     state_focus: StateFocusDecision | None = None,
 ) -> int:
     work_item_ids = {work_item.work_item_id for work_item in work_items}
-    text_tokens = _tokenize(memory.content) | _tokenize(" ".join(memory.tags))
-    if set(_state_focus_focus_work_item_ids(work_items, state_focus=state_focus)).intersection(memory.work_item_refs):
+    text_tokens = _tokenize(evidence.content) | _tokenize(" ".join(evidence.tags))
+    if set(_state_focus_focus_work_item_ids(work_items, state_focus=state_focus)).intersection(evidence.work_item_ids):
         return 4
-    if work_item_ids.intersection(memory.work_item_refs):
+    if work_item_ids.intersection(evidence.work_item_ids):
         return 3
     if _thematic_tokens(session, work_items, recent_loop_context).intersection(text_tokens):
         return 2
-    if memory.episode_id == session.episode_id and memory.kind in {"summary", "decision", "lesson", "semantic", "procedural"}:
+    if evidence.episode_id == session.episode_id and evidence.kind in {"summary", "decision", "lesson", "semantic", "procedural"}:
         return 1
     return 0
 
 def _plan_rationale(
     session: Episode,
     work_items: tuple[...],
-    memories: tuple[MemoryRecord, ...],
+    recall_items: tuple[RecallEvidence, ...],
     budgets: ContextBudgetPlan,
     retrieval_requests: tuple[ContextRetrievalRequest, ...],
     *,
@@ -988,7 +923,7 @@ def _plan_rationale(
             f"continuity recovery is prioritized because the session resumed from {session.interruption_state}; "
             "steady history is compacted and durable retrieval is reintroduced"
         )
-    if len(memories) > 5 and budgets.overflow_tokens > 0:
+    if len(recall_items) > 5 and budgets.overflow_tokens > 0:
         return (
             "long-running session overflow pushes the planner to summarize steady history "
             "and schedule active elephant work-linked retrieval"

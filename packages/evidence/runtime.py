@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Mapping
 
-from packages.contracts import MemoryEntry
 from packages.contracts.runtime import (
     EmbeddingIndexInvalidation,
     EmbeddingIndexPolicy,
@@ -16,10 +15,10 @@ from packages.contracts.runtime import (
     EvidenceCandidate,
     EvidenceRetrievalRequest,
     EvidenceRetrievalResult,
-    MemoryRecord,
+    RecallEvidence,
     RecallReason,
     RecallReasons,
-    StructuredTurnRecord,
+    StepReplayRecord,
     StructuredTurnSlot,
 )
 from packages.embeddings import (
@@ -38,11 +37,11 @@ from packages.storage import RuntimeStorageRepository
 from .state_focus_support import build_resume_packet, focus_work_item_ids, state_focus_scope_hints, state_focus_score_adjustments
 
 if TYPE_CHECKING:
-    from .memory_runtime import MemoryStore
+    from .recall_runtime import StepEvidenceStore
     from .semantic_index_factory import SemanticIndexBundle
 
 
-_LEXICAL_INDEX_VERSION = "fts5-memory-v1"
+_LEXICAL_INDEX_VERSION = "fts5-evidence-v1"
 _EMBEDDING_INDEX_VERSION = f"{ELEPHANT_EMBED_MODEL_ID}@2026-04"
 _EVIDENCE_EMBED_TEXT_LIMIT = 8_192
 _EVIDENCE_BACKFILL_TOP_K = 8
@@ -148,14 +147,14 @@ def _tuple_from_metadata(value: object) -> tuple[str, ...]:
         return ()
     cleaned = str(value).strip()
     return (cleaned,) if cleaned else ()
-def _record_search_text(record: MemoryRecord, *, structured_text: str = "") -> str:
+def _record_search_text(record: RecallEvidence, *, structured_text: str = "") -> str:
     return "\n".join(part for part in (record.content, structured_text) if part)
 def _embedding_text(value: str, *, max_chars: int = _EVIDENCE_EMBED_TEXT_LIMIT) -> str:
     normalized = re.sub(r"\s+", " ", value).strip()
     if len(normalized) <= max_chars:
         return normalized
     return normalized[:max_chars].rstrip()
-def _record_embedding_text(record: MemoryRecord, *, structured_text: str | None = None) -> str:
+def _record_embedding_text(record: RecallEvidence, *, structured_text: str | None = None) -> str:
     if structured_text is None:
         structured_turn = _structured_turn_from_record(record)
         structured_text = (
@@ -165,18 +164,18 @@ def _record_embedding_text(record: MemoryRecord, *, structured_text: str | None 
         )
     search_text = _record_search_text(record, structured_text=structured_text) or record.content
     return _embedding_text(search_text)
-def _evidence_cache_key(record: MemoryRecord, *, search_text: str) -> str:
+def _evidence_cache_key(record: RecallEvidence, *, search_text: str) -> str:
     created_at = record.created_at.isoformat() if record.created_at is not None else ""
     digest = hashlib.sha256(search_text.encode("utf-8")).hexdigest()[:16]
-    return f"{record.memory_id}:{created_at}:{digest}"
-def _evidence_preload_entry(record: MemoryRecord, *, structured_text: str = "") -> EmbeddingPreloadEntry:
+    return f"{record.evidence_id}:{created_at}:{digest}"
+def _evidence_preload_entry(record: RecallEvidence, *, structured_text: str = "") -> EmbeddingPreloadEntry:
     search_text = _record_embedding_text(record, structured_text=structured_text or None)
     return EmbeddingPreloadEntry(
         cache_key=_evidence_cache_key(record, search_text=search_text),
         text=search_text or record.content,
         metadata={
-            "memory_id": record.memory_id,
-            "memory_kind": record.kind,
+            "evidence_id": record.evidence_id,
+            "evidence_kind": record.kind,
             "episode_id": record.episode_id,
         },
     )
@@ -193,14 +192,14 @@ def _structured_slot_from_metadata(value: object) -> StructuredTurnSlot:
         source_refs=_tuple_from_metadata(value.get("source_refs")),
         linkage_refs=_tuple_from_metadata(value.get("linkage_refs")),
     )
-def _structured_turn_from_record(record: MemoryRecord) -> StructuredTurnRecord | None:
+def _structured_turn_from_record(record: RecallEvidence) -> StepReplayRecord | None:
     if record.kind != "structured_turn":
         return None
     payload = record.metadata.get("structured_turn")
     if not isinstance(payload, dict):
         return None
-    return StructuredTurnRecord(
-        turn_id=str(payload.get("turn_id", record.memory_id)),
+    return StepReplayRecord(
+        turn_id=str(payload.get("turn_id", record.evidence_id)),
         episode_id=str(payload.get("episode_id", record.episode_id)),
         source=str(payload.get("source", "runtime")),
         observation=_structured_slot_from_metadata(payload.get("observation")),
@@ -213,16 +212,22 @@ def _structured_turn_from_record(record: MemoryRecord) -> StructuredTurnRecord |
             else None
         ),
         elephant_id=str(payload.get("elephant_id")) if payload.get("elephant_id") is not None else None,
-        source_event_id=str(payload.get("source_event_id")) if payload.get("source_event_id") is not None else record.source_event_id,
+        source_event_id=str(payload.get("source_event_id")) if payload.get("source_event_id") is not None else record.source_id,
         reasoning_availability=str(payload.get("reasoning_availability", "summary_only")),
         reasoning_provenance=str(payload.get("reasoning_provenance", "runtime.decision_summary")),
         compression_tier=str(payload.get("compression_tier", "raw_turn")),
-        work_item_ids=_tuple_from_metadata(payload.get("work_item_ids") or record.work_item_refs),
+        work_item_ids=_tuple_from_metadata(payload.get("work_item_ids") or record.work_item_ids),
         source_turn_ids=_tuple_from_metadata(payload.get("source_turn_ids")),
-        correction_memory_ids=_tuple_from_metadata(payload.get("correction_memory_ids")),
+        correction_evidence_ids=_tuple_from_metadata(payload.get("correction_evidence_ids")),
         artifact_ids=_tuple_from_metadata(payload.get("artifact_ids")),
         created_at=record.created_at,
     )
+
+
+def parse_step_replay_record(record: RecallEvidence) -> StepReplayRecord | None:
+    """Parse Step replay metadata from a recall evidence record."""
+
+    return _structured_turn_from_record(record)
 def _normalize_target_slots(target_slots: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(
         dict.fromkeys(
@@ -264,7 +269,7 @@ def _project_slot(
 
 def _selected_replay_slots(
     request: EvidenceRetrievalRequest,
-    turn: StructuredTurnRecord | None,
+    turn: StepReplayRecord | None,
 ) -> tuple[str, ...]:
     explicit = _normalize_target_slots(request.target_slots)
     if explicit:
@@ -280,11 +285,11 @@ def _selected_replay_slots(
 
 
 def _project_replay_record(
-    turn: StructuredTurnRecord,
+    turn: StepReplayRecord,
     *,
     selected_slots: tuple[str, ...],
     max_compression: str,
-) -> tuple[StructuredTurnRecord, tuple[str, ...]]:
+) -> tuple[StepReplayRecord, tuple[str, ...]]:
     slots = set(selected_slots)
     degraded_slots: list[str] = []
 
@@ -298,7 +303,7 @@ def _project_replay_record(
         return projected
 
     return (
-        StructuredTurnRecord(
+        StepReplayRecord(
             turn_id=turn.turn_id,
             episode_id=turn.episode_id,
             source=turn.source,
@@ -314,7 +319,7 @@ def _project_replay_record(
             compression_tier=turn.compression_tier,
             work_item_ids=turn.work_item_ids,
             source_turn_ids=turn.source_turn_ids,
-            correction_memory_ids=turn.correction_memory_ids,
+            correction_evidence_ids=turn.correction_evidence_ids,
             artifact_ids=turn.artifact_ids,
             created_at=turn.created_at,
         ),
@@ -333,7 +338,7 @@ def _slot_text(slot_name: str, slot: StructuredTurnSlot) -> tuple[str, ...]:
 
 
 
-def _replay_text(turn: StructuredTurnRecord, *, selected_slots: tuple[str, ...]) -> str:
+def _replay_text(turn: StepReplayRecord, *, selected_slots: tuple[str, ...]) -> str:
     lines: list[str] = []
     for slot_name in selected_slots:
         lines.extend(_slot_text(slot_name, getattr(turn, slot_name)))
@@ -341,7 +346,7 @@ def _replay_text(turn: StructuredTurnRecord, *, selected_slots: tuple[str, ...])
 
 
 
-def _replay_summary(turn: StructuredTurnRecord, *, selected_slots: tuple[str, ...]) -> str:
+def _replay_summary(turn: StepReplayRecord, *, selected_slots: tuple[str, ...]) -> str:
     slot_summary = ", ".join(selected_slots) or "structured evidence"
     work_summary = ", ".join(turn.work_item_ids[:2]) or "the active thread"
     if turn.compression_tier == "episode_summary" or len(turn.source_turn_ids) > 1:
@@ -380,7 +385,7 @@ class DefaultEvidenceRetriever:
 
     def __init__(
         self,
-        store: "MemoryStore",
+        store: "StepEvidenceStore",
         repository: RuntimeStorageRepository | None = None,
         *,
         embedding_service: EmbeddingService | None = None,
@@ -401,14 +406,10 @@ class DefaultEvidenceRetriever:
             for record in self.store.list(include_inactive=request.include_inactive)
             if record.episode_id in scope_set
         )
-        durable_scope_records = self._durable_memory_records(request)
         scope_records = tuple(
             {
-                record.memory_id: record
-                for record in (
-                    *episode_scope_records,
-                    *durable_scope_records,
-                )
+                record.evidence_id: record
+                for record in episode_scope_records
             }.values()
         )
         query_vector: tuple[float, ...] = ()
@@ -438,7 +439,7 @@ class DefaultEvidenceRetriever:
                 request,
                 dims=dims,
             )
-        legacy_candidates: list[EvidenceCandidate] = []
+        lexical_candidates: list[EvidenceCandidate] = []
         for record in scope_records:
             candidate = self._candidate_for_record(
                 request,
@@ -449,7 +450,7 @@ class DefaultEvidenceRetriever:
                 dims=dims,
             )
             if candidate is not None:
-                legacy_candidates.append(candidate)
+                lexical_candidates.append(candidate)
         semantic_candidates = self._semantic_candidates(
             request,
             scope_records=episode_scope_records,
@@ -459,7 +460,7 @@ class DefaultEvidenceRetriever:
         )
         candidates = self._merge_candidate_sets(
             semantic_candidates=semantic_candidates,
-            legacy_candidates=tuple(legacy_candidates),
+            lexical_candidates=tuple(lexical_candidates),
         )
         selected = tuple(candidates[: request.limit])
         self._queue_candidate_backfill(
@@ -638,7 +639,7 @@ class DefaultEvidenceRetriever:
         try:
             queue_backfill(
                 target=EVIDENCE_CORPUS_TARGET,
-                entries=tuple(_evidence_preload_entry(candidate.memory) for candidate in candidates),
+                entries=tuple(_evidence_preload_entry(candidate.evidence) for candidate in candidates),
                 latency_mode=request.latency_mode,
             )
         except Exception:
@@ -648,7 +649,7 @@ class DefaultEvidenceRetriever:
         self,
         request: EvidenceRetrievalRequest,
         *,
-        scope_records: tuple[MemoryRecord, ...],
+        scope_records: tuple[RecallEvidence, ...],
         dims: int,
         query_vector: tuple[float, ...],
         embeddings_allowed: bool,
@@ -674,18 +675,10 @@ class DefaultEvidenceRetriever:
             return ()
 
         state_scope_id = self._semantic_state_scope_id(request)
-        state_records: dict[str, MemoryRecord] = {}
-        personal_model_records: dict[str, MemoryRecord] = {}
-        for memory in scope_records:
-            state_records[memory.memory_id] = memory
-        for entry in self._durable_memory_entries(request, state_scope_id=state_scope_id):
-            memory = self._memory_record_from_entry(request, entry)
-            if entry.owner_scope == "personal_model":
-                personal_model_records[memory.memory_id] = memory
-            else:
-                state_records[memory.memory_id] = memory
-        if not state_records and not personal_model_records:
-            return ()
+        state_records: dict[str, RecallEvidence] = {}
+        personal_model_records: dict[str, RecallEvidence] = {}
+        for evidence in scope_records:
+            state_records[evidence.evidence_id] = evidence
 
         searcher = self.semantic_bundle.searcher
         candidates: list[EvidenceCandidate] = []
@@ -696,28 +689,27 @@ class DefaultEvidenceRetriever:
                     owner_scope="state",
                     state_scope_id=state_scope_id,
                     personal_model_id=request.personal_model_id,
-                    memory_by_record_id=state_records,
+                    recall_evidence_by_source_id=state_records,
                     dims=dims,
                     query_vector=query_vector,
                     searcher=searcher,
                 )
             )
-        if personal_model_records:
-            candidates.extend(
-                self._semantic_scope_candidates(
-                    request,
-                    owner_scope="personal_model",
-                    state_scope_id=state_scope_id,
-                    personal_model_id=request.personal_model_id,
-                    memory_by_record_id=personal_model_records,
-                    dims=dims,
-                    query_vector=query_vector,
-                    searcher=searcher,
-                )
+        candidates.extend(
+            self._semantic_scope_candidates(
+                request,
+                owner_scope="personal_model",
+                state_scope_id=state_scope_id,
+                personal_model_id=request.personal_model_id,
+                recall_evidence_by_source_id=personal_model_records,
+                dims=dims,
+                query_vector=query_vector,
+                searcher=searcher,
             )
+        )
         return self._merge_candidate_sets(
             semantic_candidates=tuple(candidates),
-            legacy_candidates=(),
+            lexical_candidates=(),
         )
 
     def _semantic_scope_candidates(
@@ -727,17 +719,15 @@ class DefaultEvidenceRetriever:
         owner_scope: str,
         state_scope_id: str,
         personal_model_id: str,
-        memory_by_record_id: Mapping[str, MemoryRecord],
+        recall_evidence_by_source_id: Mapping[str, RecallEvidence],
         dims: int,
         query_vector: tuple[float, ...],
         searcher: HybridSemanticSearcher,
     ) -> tuple[EvidenceCandidate, ...]:
-        if not memory_by_record_id:
-            return ()
         query_kwargs: dict[str, object] = {
             "text": request.query,
             "owner_scope": owner_scope,
-            "limit": max(request.limit * 3, len(memory_by_record_id)),
+            "limit": max(request.limit * 3, len(recall_evidence_by_source_id), 1),
         }
         if query_vector:
             query_kwargs["vector"] = query_vector
@@ -752,12 +742,37 @@ class DefaultEvidenceRetriever:
             return ()
         return tuple(
             self._semantic_candidate_from_match(
-                memory=memory_by_record_id[match.record.record_id],
+                evidence=recall_evidence_by_source_id.get(match.document.source_id)
+                or self._recall_evidence_from_semantic_match(request, match),
                 match=match,
                 owner_scope=owner_scope,
             )
             for match in matches
-            if match.record.record_id in memory_by_record_id
+        )
+
+    def _recall_evidence_from_semantic_match(self, request: EvidenceRetrievalRequest, match) -> RecallEvidence:
+        document = match.document
+        metadata = {str(key): str(value) for key, value in dict(getattr(document, "metadata", {}) or {}).items()}
+        source_id = str(getattr(document, "source_id", "") or match.semantic_index_entry.source_id)
+        content = str(getattr(document, "payload", {}).get("text") or "").strip()
+        if not content:
+            content = str(metadata.get("indexed_text") or metadata.get("text") or source_id)
+        layer_type = str(getattr(document, "layer_type", "") or metadata.get("kind") or getattr(document, "kind", "") or "semantic")
+        episode_id = str(metadata.get("episode_id") or request.episode_id)
+        step_id = metadata.get("step_id") if source_id.startswith("step:") or metadata.get("step_id") else None
+        loop_id = metadata.get("loop_id") or None
+        return RecallEvidence(
+            evidence_id=f"semantic:{match.semantic_index_entry.semantic_index_entry_id}",
+            episode_id=episode_id,
+            kind=layer_type,
+            content=content,
+            source_id=source_id,
+            source_kind="semantic_index",
+            semantic_index_entry_id=match.semantic_index_entry.semantic_index_entry_id,
+            step_id=step_id,
+            loop_id=loop_id,
+            created_at=getattr(document, "created_at", None) or match.semantic_index_entry.created_at,
+            metadata=metadata,
         )
 
     def _semantic_state_scope_id(self, request: EvidenceRetrievalRequest) -> str:
@@ -772,60 +787,10 @@ class DefaultEvidenceRetriever:
             return current_state.state_id
         return f"episode-scope:{request.episode_id}"
 
-    def _durable_memory_entries(
-        self,
-        request: EvidenceRetrievalRequest,
-        *,
-        state_scope_id: str,
-    ) -> tuple[MemoryEntry, ...]:
-        assert self.repository is not None
-        entries = [
-            *self.repository.list_memory_entries(owner_scope="state", state_id=state_scope_id),
-            *self.repository.list_memory_entries(owner_scope="personal_model", personal_model_id=request.personal_model_id),
-        ]
-        deduped: dict[str, MemoryEntry] = {}
-        for entry in entries:
-            if entry.status.lower() in _SEMANTIC_MEMORY_ENTRY_INACTIVE_STATES:
-                continue
-            deduped[entry.memory_entry_id] = entry
-        return tuple(deduped.values())
-
-    def _durable_memory_records(
-        self,
-        request: EvidenceRetrievalRequest,
-    ) -> tuple[MemoryRecord, ...]:
-        if self.repository is None:
-            return ()
-        state_scope_id = self._semantic_state_scope_id(request)
-        return tuple(
-            self._memory_record_from_entry(request, entry)
-            for entry in self._durable_memory_entries(request, state_scope_id=state_scope_id)
-        )
-
-    def _memory_record_from_entry(
-        self,
-        request: EvidenceRetrievalRequest,
-        entry: MemoryEntry,
-    ) -> MemoryRecord:
-        return MemoryRecord(
-            memory_id=entry.memory_entry_id,
-            episode_id=request.episode_id,
-            kind=entry.kind,
-            content=entry.content,
-            tags=tuple(dict.fromkeys((entry.owner_scope, entry.status, *tuple(entry.metadata.get("tags", () if not isinstance(entry.metadata.get("tags"), tuple) else entry.metadata.get("tags")))))) if entry.metadata else (entry.owner_scope, entry.status),
-            created_at=entry.created_at,
-            metadata={
-                "owner_scope": entry.owner_scope,
-                "state_id": entry.state_id or "",
-                "personal_model_id": entry.personal_model_id or "",
-                **dict(entry.metadata),
-            },
-        )
-
     def _semantic_candidate_from_match(
         self,
         *,
-        memory: MemoryRecord,
+        evidence: RecallEvidence,
         match,
         owner_scope: str,
     ) -> EvidenceCandidate:
@@ -848,13 +813,13 @@ class DefaultEvidenceRetriever:
             0,
             RecallReason(
                 f"semantic.scope.{owner_scope}",
-                f"{owner_scope.replace('_', ' ')} durable memory scope",
+                f"{owner_scope.replace('_', ' ')} semantic evidence scope",
                 0.0,
             ),
         )
         return EvidenceCandidate(
-            evidence_id=memory.memory_id,
-            memory=memory,
+            evidence_id=evidence.evidence_id,
+            evidence=evidence,
             score=sum(scaled_signal_scores.values()),
             lexical_score=lexical_score,
             vector_score=vector_score,
@@ -866,10 +831,10 @@ class DefaultEvidenceRetriever:
         self,
         *,
         semantic_candidates: tuple[EvidenceCandidate, ...],
-        legacy_candidates: tuple[EvidenceCandidate, ...],
+        lexical_candidates: tuple[EvidenceCandidate, ...],
     ) -> tuple[EvidenceCandidate, ...]:
         merged: dict[str, EvidenceCandidate] = {}
-        for candidate in (*semantic_candidates, *legacy_candidates):
+        for candidate in (*semantic_candidates, *lexical_candidates):
             existing = merged.get(candidate.evidence_id)
             if existing is None:
                 merged[candidate.evidence_id] = candidate
@@ -879,7 +844,7 @@ class DefaultEvidenceRetriever:
             }
             merged[candidate.evidence_id] = EvidenceCandidate(
                 evidence_id=existing.evidence_id,
-                memory=existing.memory if existing.score >= candidate.score else candidate.memory,
+                evidence=existing.evidence if existing.score >= candidate.score else candidate.evidence,
                 score=existing.score + candidate.score,
                 lexical_score=existing.lexical_score + candidate.lexical_score,
                 vector_score=existing.vector_score + candidate.vector_score,
@@ -897,8 +862,8 @@ class DefaultEvidenceRetriever:
                 key=lambda item: (
                     -item.score,
                     -(
-                        item.memory.created_at.timestamp()
-                        if item.memory.created_at is not None
+                        item.evidence.created_at.timestamp()
+                        if item.evidence.created_at is not None
                         else 0.0
                     ),
                     item.evidence_id,
@@ -955,7 +920,7 @@ class DefaultEvidenceRetriever:
     def _candidate_for_record(
         self,
         request: EvidenceRetrievalRequest,
-        record: MemoryRecord,
+        record: RecallEvidence,
         *,
         resolved_scope: _ResolvedScope,
         query_tokens: set[str],
@@ -981,7 +946,7 @@ class DefaultEvidenceRetriever:
 
         structured_turn = _structured_turn_from_record(record)
         selected_slots = _selected_replay_slots(request, structured_turn)
-        replay_record: StructuredTurnRecord | None = None
+        replay_record: StepReplayRecord | None = None
         replay_summary = ""
         degraded_slots: tuple[str, ...] = ()
         replay_text = ""
@@ -1041,7 +1006,7 @@ class DefaultEvidenceRetriever:
                     )
 
         graph_score = 0.0
-        work_item_overlap = tuple(work_item_id for work_item_id in focus_ids if work_item_id in record.work_item_refs)
+        work_item_overlap = tuple(work_item_id for work_item_id in focus_ids if work_item_id in record.work_item_ids)
         if work_item_overlap:
             graph_score += float(len(work_item_overlap)) * 3.5
             reasons.append(
@@ -1051,7 +1016,7 @@ class DefaultEvidenceRetriever:
                     graph_score,
                 )
             )
-        elif focus_ids and not record.work_item_refs:
+        elif focus_ids and not record.work_item_ids:
             graph_score -= 0.5
             reasons.append(
                 RecallReason(
@@ -1092,7 +1057,7 @@ class DefaultEvidenceRetriever:
                         continuity_score,
                     )
                 )
-            if record.work_item_refs:
+            if record.work_item_ids:
                 continuity_score += 0.4
                 reasons.append(
                     RecallReason(
@@ -1208,7 +1173,7 @@ class DefaultEvidenceRetriever:
             reasons.append(
                 RecallReason(
                     "replay.generic-fallback",
-                    "generic evidence stayed eligible because no structured turn record was available",
+                    "generic evidence stayed eligible because no step replay record was available",
                     -0.5,
                 )
             )
@@ -1216,7 +1181,7 @@ class DefaultEvidenceRetriever:
         lifecycle_score = 0.0
         if "corrected" in record.tags:
             lifecycle_score += 1.4
-            reasons.append(RecallReason("lifecycle.corrected", "corrected memory", 1.4))
+            reasons.append(RecallReason("lifecycle.corrected", "corrected evidence", 1.4))
 
         recency_score = 0.0
         if record.created_at is not None:
@@ -1238,8 +1203,8 @@ class DefaultEvidenceRetriever:
         if total_score <= 0.0 and not matched_scopes:
             return None
         return EvidenceCandidate(
-            evidence_id=record.memory_id,
-            memory=record,
+            evidence_id=record.evidence_id,
+            evidence=record,
             score=total_score,
             lexical_score=lexical_score,
             vector_score=vector_score,
@@ -1252,7 +1217,7 @@ class DefaultEvidenceRetriever:
             replay_summary=replay_summary,
         )
 
-    def _matched_scopes(self, record: MemoryRecord, *, resolved_scope: _ResolvedScope) -> tuple[str, ...]:
+    def _matched_scopes(self, record: RecallEvidence, *, resolved_scope: _ResolvedScope) -> tuple[str, ...]:
         scopes: list[str] = []
         if record.episode_id in resolved_scope.episode_ids:
             scopes.append("episode")
@@ -1273,10 +1238,10 @@ class DefaultEvidenceRetriever:
         return f"top evidence {top.evidence_id} survived rerank via {reasons}{replay}"
 
 
-def _memory_sort_key(record: MemoryRecord) -> tuple[datetime, str]:
+def _evidence_sort_key(record: RecallEvidence) -> tuple[datetime, str]:
     return (
         record.created_at or datetime.min.replace(tzinfo=timezone.utc),
-        record.memory_id,
+        record.evidence_id,
     )
 
 
@@ -1298,18 +1263,19 @@ def _index_invalidation_reason(*, lifecycle_state: str, replacement_evidence_id:
     return f"{lifecycle_state} evidence must refresh derived lexical and vector views from canonical rows"
 
 
-def _embedding_index_invalidations(store: "MemoryStore") -> tuple[EmbeddingIndexInvalidation, ...]:
+def _embedding_index_invalidations(store: "StepEvidenceStore") -> tuple[EmbeddingIndexInvalidation, ...]:
     invalidations: list[EmbeddingIndexInvalidation] = []
-    ordered_records = tuple(sorted(store.list(include_inactive=True), key=_memory_sort_key))
+    ordered_records = tuple(sorted(store.list(include_inactive=True), key=_evidence_sort_key))
     for record in ordered_records:
-        lifecycle_state = store.state(record.memory_id)
+        state_payload = store.state(record.evidence_id)
+        lifecycle_state = str(state_payload.get("status") or "active")
         if lifecycle_state in {None, "active"}:
             continue
-        replacement_evidence_id = store.lineage(record.memory_id)
+        replacement_evidence_id = None
         preload_entry = _evidence_preload_entry(record)
         invalidations.append(
             EmbeddingIndexInvalidation(
-                evidence_id=record.memory_id,
+                evidence_id=record.evidence_id,
                 lifecycle_state=lifecycle_state,
                 stale_cache_key=preload_entry.cache_key,
                 replacement_evidence_id=replacement_evidence_id,
@@ -1326,12 +1292,12 @@ def _embedding_index_invalidations(store: "MemoryStore") -> tuple[EmbeddingIndex
     return tuple(invalidations)
 
 
-def build_embedding_index_rebuild_plan(store: "MemoryStore") -> EmbeddingIndexRebuildPlan:
-    ordered_records = tuple(sorted(store.list(include_inactive=True), key=_memory_sort_key))
+def build_embedding_index_rebuild_plan(store: "StepEvidenceStore") -> EmbeddingIndexRebuildPlan:
+    ordered_records = tuple(sorted(store.list(include_inactive=True), key=_evidence_sort_key))
     active_records = tuple(
         record
         for record in ordered_records
-        if store.state(record.memory_id) in {None, "active"}
+        if str(store.state(record.evidence_id).get("status") or "active") == "active"
     )
     invalidations = _embedding_index_invalidations(store)
     active_entries = tuple(_evidence_preload_entry(record) for record in active_records)
@@ -1346,7 +1312,7 @@ def build_embedding_index_rebuild_plan(store: "MemoryStore") -> EmbeddingIndexRe
         return EmbeddingIndexRebuildPlan(
             target="evidence",
             refresh_scope="noop",
-            active_evidence_ids=tuple(record.memory_id for record in active_records),
+            active_evidence_ids=tuple(record.evidence_id for record in active_records),
             active_cache_keys=tuple(entry.cache_key for entry in active_entries),
             stale_cache_keys=(),
             replacement_evidence_ids=(),
@@ -1373,7 +1339,7 @@ def build_embedding_index_rebuild_plan(store: "MemoryStore") -> EmbeddingIndexRe
     return EmbeddingIndexRebuildPlan(
         target="evidence",
         refresh_scope="full",
-        active_evidence_ids=tuple(record.memory_id for record in active_records),
+        active_evidence_ids=tuple(record.evidence_id for record in active_records),
         active_cache_keys=tuple(entry.cache_key for entry in active_entries),
         stale_cache_keys=stale_cache_keys,
         replacement_evidence_ids=replacement_evidence_ids,
@@ -1386,7 +1352,7 @@ def build_embedding_index_rebuild_plan(store: "MemoryStore") -> EmbeddingIndexRe
     )
 
 
-def build_embedding_index_policy(store: "MemoryStore") -> EmbeddingIndexPolicy:
+def build_embedding_index_policy(store: "StepEvidenceStore") -> EmbeddingIndexPolicy:
     invalidations = _embedding_index_invalidations(store)
     rebuild_plan = build_embedding_index_rebuild_plan(store)
     invalidation_reason = (

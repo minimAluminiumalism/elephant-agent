@@ -26,8 +26,8 @@ _ELEPHANT_IDENTITY_META_LINE_PATTERNS = (
     re.compile(r"Canonical containment", re.IGNORECASE),
     re.compile(r"active elephant identity for one durable elephant", re.IGNORECASE),
     re.compile(r"named Elephant Agent elephant on one long-lived continuity line", re.IGNORECASE),
-    re.compile(r"Treat durable Personal Model and Elephant updates as governed memory", re.IGNORECASE),
-    re.compile(r"Keep memory, capability, certainty, intimacy, and identity claims truthful", re.IGNORECASE),
+    re.compile(r"Treat durable Personal Model and Elephant updates as governed understanding", re.IGNORECASE),
+    re.compile(r"Keep recall, capability, certainty, intimacy, and identity claims truthful", re.IGNORECASE),
     # HTML comments are never shown to the model (the new template uses
     # them to hide human-facing metadata like elephant id + mode).
     re.compile(r"^\s*<!--.*-->\s*$"),
@@ -131,7 +131,7 @@ def build_system_layer_contract_section(
         f"- You are {display_name}, the companion this person keeps coming back to.",
         "- Stay one continuous person across sessions: remember what you promised, what you learned, and what's still open.",
         "- Be steady when the moment invites warmth and exact when the work needs exactness.",
-        "- Do not invent memories, abilities, or certainty you don't have. If you don't know, say so and offer the next concrete step.",
+        "- Do not invent recall, abilities, or certainty you don't have. If you don't know, say so and offer the next concrete step.",
     ]
     return tuple(lines)
 
@@ -158,10 +158,10 @@ def build_elephant_identity_section(profile: LoadedProfile) -> tuple[str, ...]:
     return tuple(lines)
 
 
-def build_memory_and_tool_policy_section(profile: LoadedProfile) -> tuple[str, ...]:
+def build_understanding_tool_policy_section(profile: LoadedProfile) -> tuple[str, ...]:
     del profile
     return (
-        "### Memory tools",
+        "### Understanding tools",
         "- Use tools quietly; do not narrate storage or routing unless asked.",
         "- Use `tool.personal_model.search` for durable claims and `tool.personal_model.update` for user-stated changes.",
         "- If the user explicitly asks you to remember, save, note, or keep a durable personal fact, call `tool.personal_model.update` before replying; do not say it was remembered unless the update tool succeeded.",
@@ -191,7 +191,7 @@ def build_prompt_contract(
     stable_sections: list[tuple[str, tuple[str, ...]]] = [
         ("system-layer-contract", build_system_layer_contract_section(profile, prompt_mode=prompt_mode)),
         ("elephant-identity", build_elephant_identity_section(profile)),
-        ("memory-and-tool-policy", build_memory_and_tool_policy_section(profile)),
+        ("understanding-tool-policy", build_understanding_tool_policy_section(profile)),
     ]
     profile_snapshot_sections: list[tuple[str, tuple[str, ...]]] = []
     sections = stable_sections
@@ -205,4 +205,3 @@ def build_prompt_contract(
         stable_prefix_refs=stable_prefix_refs,
         profile_snapshot_refs=profile_snapshot_refs,
     )
-

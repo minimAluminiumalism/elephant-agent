@@ -12,7 +12,7 @@ from packages.auth import AuthProfile
 from packages.capabilities.runtime import (
     CapabilityDescriptor,
     ContextCapability,
-    MemoryCapability,
+    RecallCapability,
     ModelProviderCapability,
     TelemetrySinkCapability,
 )
@@ -24,10 +24,10 @@ from packages.contracts.runtime import (
     EvidenceRetrievalResult,
     ExecutionResult,
     StateFocusDecision,
-    MemoryRecord,
+    RecallEvidence,
     PersonalModelRuntimeState,
 )
-from packages.evidence import MemoryRuntime
+from packages.evidence import RecallRuntime
 from packages.state import LoadedProfile, build_prompt_contract
 from packages.storage import RuntimeStorageRepository
 
@@ -50,40 +50,18 @@ class GatewayTelemetrySink(TelemetrySinkCapability):
         self._events.append(dict(event))
 
 
-class GatewayMemoryCapability(MemoryCapability):
-    def __init__(self, runtime: MemoryRuntime) -> None:
+class GatewayRecallCapability(RecallCapability):
+    def __init__(self, runtime: RecallRuntime) -> None:
         self.descriptor = CapabilityDescriptor(
-            capability_id="gateway.memory",
-            kind="memory",
+            capability_id="gateway.recall",
+            kind="recall",
             version="1.0.0",
-            metadata={"description": "Shared memory adapter for gateway turns."},
+            metadata={"description": "Shared evidence recall adapter for gateway turns."},
         )
         self.runtime = runtime
 
-    def record(self, memory: MemoryRecord) -> None:
-        self.runtime.store.upsert(memory)
-
     def retrieve_evidence(self, request: EvidenceRetrievalRequest) -> EvidenceRetrievalResult:
         return self.runtime.retrieve_evidence(request)
-
-    def search(
-        self,
-        session_id: str,
-        query: str,
-        *,
-        work_item_ids: tuple[str, ...] = (),
-        scope_session_ids: tuple[str, ...] = (),
-        scope_episode_ids: tuple[str, ...] = (),
-        scope_reason: str = "",
-    ) -> tuple[MemoryRecord, ...]:
-        result = self.runtime.retrieve(
-            session_id,
-            query,
-            work_item_ids=work_item_ids,
-            scope_episode_ids=scope_episode_ids or scope_session_ids,
-            scope_reason=scope_reason,
-        )
-        return tuple(candidate.record for candidate in result.candidates)
 
 
 class GatewayContextCapability(ContextCapability):
@@ -104,14 +82,14 @@ class GatewayContextCapability(ContextCapability):
         self,
         session: Episode,
         work_items: tuple[object, ...],
-        memories: tuple[MemoryRecord, ...],
+        recall_items: tuple[RecallEvidence, ...],
         *,
         state_focus: StateFocusDecision | None = None,
     ) -> ContextBundle:
-        bundle = self.runtime.assemble(session, work_items, memories, state_focus=state_focus)
+        bundle = self.runtime.assemble(session, work_items, recall_items, state_focus=state_focus)
         return replace(
             bundle,
-            bundle_id=f"bundle:{session.episode_id}:{len(work_items)}:{len(memories)}",
+            bundle_id=f"bundle:{session.episode_id}:{len(work_items)}:{len(recall_items)}",
             instruction_refs=self.prompt_contract.instruction_refs,
         )
 

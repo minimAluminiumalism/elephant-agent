@@ -15,7 +15,7 @@ from packages.kernel import (
     KernelStageRecord,
     KernelService,
     KernelSourceRequest,
-    ObservationPipeline,
+    ReconciliationPipeline,
     StateReconciler,
 )
 from packages.context.compress import split_for_compress, _deterministic_summary
@@ -86,7 +86,7 @@ def start_episode(
         profile=profile_state,
         session=session,
         work_items=(),
-        memories=(),
+        recall_items=(),
         plan=None,
         execution=None,
         delivery=None,
@@ -172,7 +172,7 @@ def create_elephant_session(
         profile=profile_state,
         session=session,
         work_items=(),
-        memories=(),
+        recall_items=(),
         plan=None,
         execution=None,
         delivery=None,
@@ -222,7 +222,7 @@ def resume_episode(
         profile=profile.state,
         session=session,
         work_items=(),
-        memories=(),
+        recall_items=(),
         plan=None,
         execution=None,
         delivery=None,
@@ -277,9 +277,9 @@ def generate_opening_reply(
             "allow_embeddings": "false",
         },
         record_input_event=False,
-        record_outcome_memory=False,
+        record_outcome_event=False,
         capture_experience=False,
-        apply_growth=True,
+        apply_growth=False,
     )
 
 
@@ -296,7 +296,7 @@ def run_turn(
     source: str = "cli",
     event_payload: Mapping[str, str] | None = None,
     record_input_event: bool = True,
-    record_outcome_memory: bool = True,
+    record_outcome_event: bool = True,
     capture_experience: bool = True,
     apply_growth: bool = True,
 ) -> KernelOutcome:
@@ -344,18 +344,18 @@ def run_turn(
             delivery_payload=dict(delivery_payload or {}),
         )
     )
-    performed_turn_reconciliation = record_input_event or record_outcome_memory
+    performed_turn_reconciliation = record_input_event or record_outcome_event
     refreshed_session = runtime._load_session(session.episode_id)
     persisted_profile = runtime._load_profile(refreshed_session.personal_model_id)
     decision_summary = _decision_summary_from_outcome(outcome)
     observed_event = replace(event, payload=_payload_with_turn_reasoning(event.payload, outcome, decision_summary=decision_summary))
     if performed_turn_reconciliation:
-        turn_observation = ObservationPipeline().observe_turn(
+        turn_observation = ReconciliationPipeline().observe_turn(
             inbound_event=observed_event,
             execution=outcome.execution,
             decision_summary=decision_summary,
             include_input_event=record_input_event,
-            include_outcome_event=record_outcome_memory,
+            include_outcome_event=record_outcome_event,
             source=source,
             profile_id=refreshed_session.personal_model_id,
             elephant_id=refreshed_session.elephant_id,
@@ -363,23 +363,23 @@ def run_turn(
         )
         StateReconciler().reconcile_turn(
             repository=runtime.repository,
-            memory_runtime=runtime.memory_runtime,
+            recall_runtime=runtime.recall_runtime,
             observation=turn_observation,
         )
     experience = runtime._append_outcome_experience(outcome) if capture_experience else None
     if apply_growth:
         runtime._append_outcome_growth(outcome, experience=experience)
     snapshot_work_items: tuple[object, ...] = ()
-    snapshot_memories = (
-        runtime.inspect_memories(refreshed_session.episode_id)
+    snapshot_recall_items = (
+        runtime.inspect_recall_evidence(refreshed_session.episode_id)
         if performed_turn_reconciliation
-        else outcome.memories
+        else outcome.recall_items
     )
     runtime._write_snapshot(
         profile=persisted_profile.state,
         session=refreshed_session,
         work_items=snapshot_work_items,
-        memories=snapshot_memories,
+        recall_items=snapshot_recall_items,
         plan=None,
         execution=outcome.execution,
         delivery=outcome.delivery,
@@ -570,9 +570,10 @@ def _compact_snapshot_after_high_usage(runtime: CliRuntime, outcome: KernelOutco
         _emit_compress_skip_stage(runtime, outcome, "history_empty", usage_tokens)
         return outcome
 
-    # _split_for_compress defaults to protected_tail_turns=2, requiring >2 user turns.
-    # But a single-turn overflow scenario has only 1 user turn, must downgrade to protected_tail_turns=1
-    # to move tool messages within the current turn into to_summarize.
+    # split_for_compress protects the recent tail while moving older or oversized
+    # completed context into a reference summary. A single-turn overflow can
+    # still compress tool messages, or a huge user message when there is no
+    # richer tail to preserve.
     to_summarize, tail = split_for_compress(
         frozen_epoch.history_messages,
         protected_tail_turns=2,
@@ -820,7 +821,7 @@ def _projection_thread_focus(work_items: tuple[Any, ...]) -> str:
 def wake(runtime: CliRuntime, session_id: str, *, inspect_only: bool = False, result_cls):
     session = runtime._load_session(session_id)
     profile = runtime._load_profile(session.personal_model_id)
-    recovery = runtime._planning_memory_recovery(session)
+    recovery = runtime._planning_recall_evidence_recovery(session)
     state = runtime.current_elephant_state()
     state_focus = ""
     if state is not None:
@@ -832,14 +833,14 @@ def wake(runtime: CliRuntime, session_id: str, *, inspect_only: bool = False, re
         wake_summary=wake_summary,
         recovery=recovery,
     )
-    wake_observation = ObservationPipeline().observe_wake(
+    wake_observation = ReconciliationPipeline().observe_wake(
         session_id=session.episode_id,
         durable_events=(rationale_event,),
         decision_summary=wake_summary,
     )
     reconciliation = StateReconciler().reconcile_wake(
         repository=runtime.repository,
-        memory_runtime=runtime.memory_runtime,
+        recall_runtime=runtime.recall_runtime,
         observation=wake_observation,
         inspect_only=inspect_only,
     )
@@ -848,7 +849,7 @@ def wake(runtime: CliRuntime, session_id: str, *, inspect_only: bool = False, re
             profile=profile.state,
             session=session,
             work_items=(),
-            memories=recovery.memories,
+            recall_items=recovery.recall_items,
             plan=plan,
             execution=None,
             delivery=None,
@@ -891,7 +892,7 @@ def _wake_rationale_event(
         payload={
             "content": content,
             "summary": "wake recovery scope selected for elephant continuity",
-            "memory_kind": "semantic",
+            "signal_kind": "semantic",
             "tags": "continuity,recovery,wake,scope-aware,resume-packet",
             "scope_episode_ids": ",".join(recovery.scope_episode_ids),
             "scope_reason": recovery.scope_reason,
@@ -943,18 +944,18 @@ def build_kernel_dependencies(
     session: Episode,
     profile: PersonalModelRuntimeState,
     *,
-    memory_capability_cls,
+    recall_capability_cls,
     context_capability_cls,
     telemetry_cls,
     delivery_capability_cls,
 ) -> KernelDependencies:
-    memory = memory_capability_cls(memory_runtime=runtime.memory_runtime, repository=runtime.repository)
+    recall = recall_capability_cls(recall_runtime=runtime.recall_runtime, repository=runtime.repository)
     model_tools = _RequesterScopedToolCapability(
         tool_runtime=runtime.tool_runtime,
         requester="model",
         descriptor=runtime.tool_runtime.descriptor,
     )
-    embedding_service = runtime.memory_runtime.retriever.evidence_retriever.embedding_service
+    embedding_service = runtime.recall_runtime.evidence_retriever.embedding_service
     semantic_summary_indexer = None
     if runtime.semantic_index_bundle is not None and embedding_service is not None:
         from packages.evidence import SemanticSummaryIndexer
@@ -980,7 +981,7 @@ def build_kernel_dependencies(
             summary_model_provider=runtime.model_provider,
             embedding_service=embedding_service,
         ),
-        memory=memory,
+        recall=recall,
         model_provider=runtime.model_provider,
         telemetry=telemetry_cls(runtime.snapshot_path, observer=runtime.kernel_event_observer),
         tools=model_tools,

@@ -62,7 +62,7 @@ class PromptContractTest(unittest.TestCase):
             (
                 "system-layer-contract",
                 "elephant-identity",
-                "memory-and-tool-policy",
+                "understanding-tool-policy",
             ),
         )
         self.assertEqual(
@@ -83,7 +83,7 @@ class PromptContractTest(unittest.TestCase):
         self.assertNotIn("### Carrying context forward", rendered)
         self.assertNotIn("### Tracking work in a session", rendered)
         self.assertIn("`tool.todo.manage`", rendered)
-        self.assertIn("### Memory tools", rendered)
+        self.assertIn("### Understanding tools", rendered)
         self.assertIn("Use tools quietly", rendered)
         self.assertIn("`tool.personal_model.update`", rendered)
         self.assertIn("`tool.personal_model.search`", rendered)
@@ -129,7 +129,7 @@ class PromptContractTest(unittest.TestCase):
             (
                 "system-layer-contract",
                 "elephant-identity",
-                "memory-and-tool-policy",
+                "understanding-tool-policy",
             ),
         )
         rendered = "\n".join(contract.instruction_refs)

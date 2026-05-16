@@ -594,7 +594,7 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
         self.assertIn("### Episode Continuity", plan.payload["messages"][0]["content"])
         self.assertIn("Stay truthful and bounded", plan.payload["messages"][0]["content"])
         self.assertIn("### Loop Execution Board", plan.payload["messages"][0]["content"])
-        self.assertIn("### Memory And Tool Policy", plan.payload["messages"][0]["content"])
+        self.assertIn("### Understanding tools", plan.payload["messages"][0]["content"])
         self.assertEqual(plan.payload["messages"][1]["role"], "user")
         self.assertEqual(plan.payload["messages"][1]["content"], request.prompt)
         self.assertNotIn("metadata", plan.payload)

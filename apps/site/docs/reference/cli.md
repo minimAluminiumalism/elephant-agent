@@ -56,7 +56,7 @@ Inside `wake`, these slash commands stay available without leaving the
 conversation:
 
 - `/status`
-- `/memory`
+- `/recall`
 - `/tools`
 - `/skills`
 - `/gateway`
@@ -71,7 +71,7 @@ matching skill packages also register dynamic slash commands such as
 `/apple-notes ...`. Outside `wake`, `elephant skills` mirrors the same skill
 inventory and install surface without opening the shell first.
 
-Inside `wake`, `/memory` inspects understanding and recall, while the local
+Inside `wake`, `/recall` inspects understanding and recall, while the local
 Dashboard is the place to inspect Personal Model claims, provenance, questions,
 and corrections in one view.
 `/providers` and `/models` keep provider

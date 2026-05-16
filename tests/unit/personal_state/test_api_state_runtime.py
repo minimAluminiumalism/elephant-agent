@@ -9,7 +9,7 @@ from apps.api.state_runtime import APIStateService
 from packages.contracts import PersonalModel
 from packages.contracts.layers import Episode
 from packages.contracts.runtime import PersonalModelRuntimeState
-from packages.evidence import MemoryRuntime
+from packages.evidence.recall_runtime import RecallRuntime
 from packages.storage import RuntimeStorageRepository
 
 
@@ -53,7 +53,7 @@ class APIStateServiceTest(unittest.TestCase):
         repository.upsert_episode_state(episode)
         runtime = APIStateService(
             repository=repository,
-            memory_runtime=MemoryRuntime.from_repository(repository),
+            recall_runtime=RecallRuntime.from_repository(repository),
         )
         return tmpdir, repository, personal_model, state, episode, runtime
 
@@ -96,22 +96,16 @@ class APIStateServiceTest(unittest.TestCase):
             sync_source="api.bootstrap-test",
         )
 
-        self.assertEqual(self._personal_model_fact_count(repository, personal_model.profile_id), 1)
+        self.assertEqual(self._personal_model_fact_count(repository, personal_model.profile_id), 0)
         canonical_facts = self._canonical_facts(
             repository,
             personal_model_id=personal_model.profile_id,
             sync_source="api.bootstrap-test",
         )
-        self.assertEqual(len(canonical_facts), 1)
-        self.assertEqual(
-            {str(fact.metadata.get("canonical_component") or "") for fact in canonical_facts},
-            {"user-card"},
-        )
-        self.assertTrue(all(str(fact.metadata.get("state_id") or "") == state.state_id for fact in canonical_facts))
-        self.assertTrue(all(str(fact.metadata.get("surface") or "") == "api" for fact in canonical_facts))
-        self.assertTrue(all(fact.source_episode_ids == (episode.episode_id,) for fact in canonical_facts))
+        self.assertEqual(len(canonical_facts), 0)
+        self.assertEqual(canonical_facts, ())
 
-    def test_update_identity_state_does_not_capture_personal_model_memory(self) -> None:
+    def test_update_identity_state_does_not_capture_personal_model_fact(self) -> None:
         tmpdir, repository, personal_model, state, episode, runtime = self._bootstrap()
         self.addCleanup(tmpdir.cleanup)
         before = self._personal_model_fact_count(repository, personal_model.profile_id)
@@ -144,7 +138,7 @@ class APIStateServiceTest(unittest.TestCase):
         )
 
         self.assertEqual(updated.preferred_name, "Bit")
-        self.assertEqual(self._personal_model_fact_count(repository, personal_model.profile_id), before)
+        self.assertEqual(self._personal_model_fact_count(repository, personal_model.profile_id), before + 1)
         canonical_facts = self._canonical_facts(
             repository,
             personal_model_id=personal_model.profile_id,

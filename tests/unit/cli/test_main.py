@@ -109,8 +109,8 @@ class CliInitIntroTest(unittest.TestCase):
         rendered = console.export_text(styles=False)
         self.assertIn("Elephant Agent · English", rendered)
         self.assertIn("Elephants never forget. 🐘", rendered)
-        self.assertIn("Memory is the beginning.", rendered)
-        self.assertIn("Warm memory · PM-first · Gentle curiosity", rendered)
+        self.assertIn("Evidence is the beginning.", rendered)
+        self.assertIn("Warm evidence · PM-first · Gentle curiosity", rendered)
         self.assertIn("Create yours", rendered)
         self.assertIn("Press Enter to create yours.", rendered)
         self.assertNotIn("\n🐘\n", rendered)
@@ -134,7 +134,7 @@ class CliInitIntroTest(unittest.TestCase):
         self.assertIn("Pulsa Enter para crear el tuyo.", rendered_variants)
         self.assertEqual(rendered_variants.count("Elephants never forget. 🐘"), 5)
         self.assertNotIn("\n🐘\n", rendered_variants)
-        self.assertEqual(rendered_variants.count("Warm memory · PM-first · Gentle curiosity"), 5)
+        self.assertEqual(rendered_variants.count("Warm evidence · PM-first · Gentle curiosity"), 5)
         self.assertNotIn("进入 Elephant Agent 的世界", rendered_variants)
         self.assertNotIn("step into Elephant Agent's world", rendered_variants)
 
@@ -1029,35 +1029,35 @@ class WizardChoiceMenuTest(unittest.TestCase):
         self.assertEqual(exit_code, 1)
         print_no_elephants.assert_called_once_with()
 
-    def test_run_memory_routes_list_surface(self) -> None:
+    def test_run_facts_routes_list_surface(self) -> None:
         runtime = mock.Mock()
         runtime.list_herd.return_value = (mock.Mock(),)
-        args = SimpleNamespace(memory_command=None, elephant_id=None)
+        args = SimpleNamespace(facts_command=None, elephant_id=None)
 
-        with mock.patch.object(cli_main, "_print_memory_list") as print_memory_list:
-            exit_code = cli_main._run_memory(runtime, args)
+        with mock.patch.object(cli_main, "_print_fact_list") as print_fact_list:
+            exit_code = cli_main._run_facts(runtime, args)
 
         self.assertEqual(exit_code, 0)
-        print_memory_list.assert_called_once_with(runtime, elephant_id=None)
+        print_fact_list.assert_called_once_with(runtime, elephant_id=None)
 
-    def test_run_memory_routes_delete_surface(self) -> None:
+    def test_run_facts_routes_delete_surface(self) -> None:
         runtime = mock.Mock()
         runtime.list_herd.return_value = (mock.Mock(),)
         args = SimpleNamespace(
-            memory_command="delete",
+            facts_command="delete",
             elephant_id="atlas",
-            memory_id="memory.curate:personal_model:test",
+            fact_id="evidence.curate:personal_model:test",
             reason="cleanup stale preference",
         )
 
-        with mock.patch.object(cli_main, "_delete_memory_entry") as delete_memory_entry:
-            exit_code = cli_main._run_memory(runtime, args)
+        with mock.patch.object(cli_main, "_delete_personal_model_fact") as delete_personal_model_fact:
+            exit_code = cli_main._run_facts(runtime, args)
 
         self.assertEqual(exit_code, 0)
-        delete_memory_entry.assert_called_once_with(
+        delete_personal_model_fact.assert_called_once_with(
             runtime,
             elephant_id="atlas",
-            memory_id="memory.curate:personal_model:test",
+            fact_id="evidence.curate:personal_model:test",
             reason="cleanup stale preference",
         )
 

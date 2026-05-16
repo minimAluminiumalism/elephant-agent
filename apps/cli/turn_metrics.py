@@ -160,7 +160,7 @@ def _append_outcome(self, outcome: KernelOutcome) -> None:
                 f"execution: {outcome.execution.outcome}",
                 f"current_context: {outcome.state.summary or '<unset>'}",
                 f"steps_recorded: {len(outcome.steps)}",
-                f"memory_hits: {len(outcome.memories)}",
+                f"recall_hits: {len(outcome.recall_items)}",
             ]
         )
     meta = _append_meta_segment(outcome_state_focus_meta(outcome), cache_hit_meta_segment(outcome.execution))

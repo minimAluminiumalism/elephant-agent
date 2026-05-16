@@ -14,7 +14,7 @@ This surface is the primary proving ground for the Elephant Agent thesis.
 
 ## Do Not Own Here
 
-- State, Episode, Loop, Step, Record, or Grounding ownership policy
+- State, Episode, Loop, Step, and Fact ownership policy
 - memory formation policy
 - provider auth logic
 - removed product-facing reset-era system-layer terms or planning semantics

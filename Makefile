@@ -110,7 +110,7 @@ test-release-contracts:
 test-release-scenarios:
 	@"$(PYTHON)" -m unittest \
 		tests.scenarios.context.test_context_scenarios \
-		tests.unit.memory.test_memory_scenarios \
+		tests.unit.recall.test_recall_scenarios \
 		tests.scenarios.continuity.test_continuity_scenarios
 
 test-integration-scenarios:
@@ -121,8 +121,7 @@ test-integration-scenarios:
 		tests.integration.tools_skills.test_tools_and_skills_runtime \
 		tests.integration.security_observability \
 		tests.scenarios.context.test_context_scenarios \
-		tests.unit.memory.test_memory_runtime \
-		tests.unit.memory.test_memory_scenarios \
+		tests.unit.recall.test_recall_scenarios \
 		tests.scenarios.continuity.test_continuity_scenarios \
 		tests.scenarios.companion.test_companion_scenarios
 

@@ -10,6 +10,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from packages.storage import RuntimeStorageRepository
+from packages.storage.repository_bootstrap_methods import LEGACY_STORAGE_TABLES
 from packages.storage.repository_support import SCHEMA_PATH, SCHEMA_VERSION
 
 
@@ -49,6 +50,10 @@ class StorageSystemLayerSchemaTest(unittest.TestCase):
                     str(row[1])
                     for row in connection.execute("PRAGMA table_info(personal_model_facts)").fetchall()
                 }
+                semantic_columns = {
+                    str(row[1])
+                    for row in connection.execute("PRAGMA table_info(semantic_index_entries)").fetchall()
+                }
 
         self.assertTrue(
             {
@@ -65,8 +70,6 @@ class StorageSystemLayerSchemaTest(unittest.TestCase):
                 "diary_entries",
                 "personal_model_growth",
                 "canonical_elephant_identities",
-                "canonical_user_cards",
-                "canonical_relationship_memories",
             }.issubset(table_names)
         )
         self.assertIn("current_context_note", state_columns)
@@ -75,21 +78,8 @@ class StorageSystemLayerSchemaTest(unittest.TestCase):
         self.assertIn("interruption_state", episode_columns)
         self.assertIn("result_json", job_columns)
         self.assertIn("last_accessed_at", fact_columns)
-        self.assertFalse(
-            {
-                "schema_migrations",
-                "records",
-                "groundings",
-                "grounding_sources",
-                "memory_entries",
-                "memory_entry_groundings",
-                "reflection_proposals",
-                "reflection_proposal_groundings",
-                "personal_model_observations",
-                "embedding_provider_configs",
-                "provider_auth_states",
-            }.intersection(table_names)
-        )
+        self.assertIn("source_id", semantic_columns)
+        self.assertFalse(LEGACY_STORAGE_TABLES.intersection(table_names))
 
     def test_bootstrap_is_idempotent_for_clean_schema(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -143,6 +133,42 @@ class StorageSystemLayerSchemaTest(unittest.TestCase):
                 repository.bootstrap()
 
             self.assertEqual(repository.schema_version(), 0)
+
+    def test_bootstrap_resets_same_version_schema_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            database_path = Path(tmpdir) / "state" / "elephant.sqlite3"
+            database_path.parent.mkdir(parents=True, exist_ok=True)
+            with sqlite3.connect(database_path) as connection:
+                connection.executescript(
+                    """
+                    CREATE TABLE storage_metadata (
+                        metadata_key TEXT PRIMARY KEY,
+                        metadata_value TEXT NOT NULL
+                    );
+                    INSERT INTO storage_metadata(metadata_key, metadata_value)
+                    VALUES ('schema_version', '1');
+                    CREATE TABLE semantic_index_entries (
+                        semantic_index_entry_id TEXT PRIMARY KEY,
+                        source_record_id TEXT NOT NULL
+                    );
+                    INSERT INTO semantic_index_entries(semantic_index_entry_id, source_record_id)
+                    VALUES ('old-entry', 'old-source');
+                    """
+                )
+
+            repository = RuntimeStorageRepository(database_path)
+            repository.bootstrap()
+
+            with sqlite3.connect(database_path) as connection:
+                semantic_columns = {
+                    str(row[1])
+                    for row in connection.execute("PRAGMA table_info(semantic_index_entries)").fetchall()
+                }
+                rows = connection.execute("SELECT semantic_index_entry_id FROM semantic_index_entries").fetchall()
+
+        self.assertIn("source_id", semantic_columns)
+        self.assertNotIn("source_record_id", semantic_columns)
+        self.assertEqual(rows, [])
 
 
 def _foreign_keys(connection: sqlite3.Connection, table_name: str) -> dict[str, str]:

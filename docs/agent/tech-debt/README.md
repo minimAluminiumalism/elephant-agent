@@ -5,7 +5,7 @@ diverge after a change lands.
 
 ## Current Entries
 
-- [Curiosity-Driven Learning Loop Gaps](curiosity-driven-learning-loop-gaps.md)
+- [Understanding Legacy Design Cleanup](understanding-legacy-design-cleanup.md)
 
 Each future debt entry should state:
 

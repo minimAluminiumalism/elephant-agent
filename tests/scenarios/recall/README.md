@@ -1,13 +1,13 @@
 # Memory Fixtures
 
-This directory seeds the memory-evaluation vocabulary for Elephant Agent.
+This directory seeds the recall-evaluation vocabulary for Elephant Agent.
 
 Track goals:
 
-- recover memory after a long gap
-- prefer corrected memory over stale memory
-- explain why a recovered memory is still relevant
-- keep memory governance inspectable
+- recover recall evidence after a long gap
+- prefer corrected Personal Model fact over stale evidence
+- explain why a recovered evidence is still relevant
+- keep recall and Personal Model governance inspectable
 - survive restart without flattening lineage or correction state
 
 File conventions:
@@ -19,6 +19,6 @@ File conventions:
 
 Canonical downstream consumers:
 
-- `packages/memory/**`
+- `packages/evidence/**` and `packages/semantic_index/**`
 - `packages/kernel/**`
 - `tests/e2e/continuity/**`

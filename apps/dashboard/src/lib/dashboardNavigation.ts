@@ -211,7 +211,6 @@ const routeAliases = new Map<string, string>([
   ["/you", "/diary"],
   ["/states", "/herd"],
   ["/usage-logs", "/usage"],
-  ["/memory-graph", "/"],
   ["/palace", "/"],
 ]);
 

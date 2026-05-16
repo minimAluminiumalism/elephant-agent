@@ -16,12 +16,12 @@ from packages.contracts import ExperienceRecord
 from packages.growth import ProgressionProjectionBuilder
 from packages.kernel.runtime import KernelOutcome
 from packages.state.governance import companion_display_name
-from packages.operator import (
-    MemoryOperatorDetail,
-    MemorySearchHit,
-    build_memory_operator_surface,
+from packages.operator.runtime import (
+    RecallEvidenceOperatorDetail,
+    RecallEvidenceSearchHit,
+    build_recall_evidence_operator_surface,
     build_profile_operator_surface,
-    render_memory_lines,
+    render_recall_evidence_lines,
     render_profile_lines,
 )
 from packages.tools.handler_support import resolve_allowed_path
@@ -501,7 +501,7 @@ def _status_bar_elephant_label(self) -> str:
 
 # Background refresher — the render thread reads the cached snapshot
 # fields above. A daemon thread proactively steadys them so we rarely
-# pay a DB read on the UI path. Event-wake hooks (e.g., after a memory checkpoint)
+# pay a DB read on the UI path. Event-wake hooks (e.g., after a growth checkpoint)
 # can bypass the 0.5s rhythm when state changes matter immediately.
 _STATUS_REFRESHER_INTERVAL = 0.5
 
@@ -533,7 +533,7 @@ def _start_status_refresher(self) -> None:
         while not stop_event.is_set():
             _status_refresher_prime(self)
             # Wake short-circuits the sleep when the main thread signals
-            # (e.g., after a memory checkpoint invalidates the growth cache).
+            # (e.g., after a growth checkpoint invalidates the growth cache).
             wake_event.wait(timeout=_STATUS_REFRESHER_INTERVAL)
             wake_event.clear()
 

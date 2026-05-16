@@ -173,7 +173,7 @@ class AnthropicProviderAdapterTests(unittest.TestCase):
                 "token_budget": "512",
                 "instruction_refs": "docs/agent/task-cards/prv-3-anthropic-provider-adapter.md",
                 "work_item_ids": "work-1",
-                "memory_ids": "memory-1",
+                "evidence_refs": "evidence-1",
                 "frozen_prefix_prompt": "## EpisodeFrozenContext\n- Keep the response structured.",
                 "session_snapshot_prompt": "## StateSnapshot\n- active current work: explain the provider boundary",
                 "rendered_prompt": "legacy rendered prompt should not be used when structured sections exist",
@@ -425,7 +425,7 @@ class AnthropicProviderAdapterTests(unittest.TestCase):
             episode_id=session.episode_id,
             instruction_refs=("docs/agent/task-cards/prv-3-anthropic-provider-adapter.md",),
             work_item_ids=("work-1",),
-            memory_ids=("memory-1",),
+            evidence_refs=("evidence-1",),
             token_budget=512,
             rendered_prompt="## system\nKeep the response structured.",
         )

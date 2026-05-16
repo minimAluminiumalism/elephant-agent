@@ -8,6 +8,23 @@ from typing import Iterator
 
 from .repository_support import SCHEMA_PATH, SCHEMA_VERSION, StorageBootstrapState
 
+LEGACY_STORAGE_TABLES = frozenset(
+    {
+        "schema_migrations",
+        "records",
+        "groundings",
+        "grounding_sources",
+        "memory_entries",
+        "memory_entry_groundings",
+        "reflection_proposals",
+        "reflection_proposal_groundings",
+        "personal_model_observations",
+        "embedding_provider_configs",
+        "canonical_user_cards",
+        "canonical_relationship_memories",
+    }
+)
+
 
 def bootstrap(self) -> StorageBootstrapState:
     self.database_path.parent.mkdir(parents=True, exist_ok=True)
@@ -19,14 +36,19 @@ def bootstrap(self) -> StorageBootstrapState:
                 f"schema version {SCHEMA_VERSION}"
             )
         if version == 0:
+            _drop_legacy_storage_tables(connection)
             _require_empty_database(connection)
-            schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
-            connection.executescript(schema_sql)
-            _write_schema_version(connection, SCHEMA_VERSION)
+            _install_clean_schema(connection)
             _validate_clean_schema(connection)
             connection.commit()
         elif version == SCHEMA_VERSION:
-            _validate_clean_schema(connection)
+            _drop_legacy_storage_tables(connection)
+            try:
+                _validate_clean_schema(connection)
+            except RuntimeError:
+                _reset_storage_schema(connection)
+                _validate_clean_schema(connection)
+            connection.commit()
         else:
             raise RuntimeError(
                 f"database schema version {version} is older than clean schema "
@@ -54,24 +76,26 @@ def _write_schema_version(connection: sqlite3.Connection, version: int) -> None:
     )
 
 
+def _install_clean_schema(connection: sqlite3.Connection) -> None:
+    schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
+    connection.executescript(schema_sql)
+    _write_schema_version(connection, SCHEMA_VERSION)
+
+
+def _reset_storage_schema(connection: sqlite3.Connection) -> None:
+    connection.execute("PRAGMA foreign_keys = OFF")
+    for table_name in sorted(_table_names(connection)):
+        connection.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+    connection.execute("PRAGMA foreign_keys = ON")
+    _install_clean_schema(connection)
+
+
 def _validate_clean_schema(connection: sqlite3.Connection) -> None:
     table_names = _table_names(connection)
-    legacy_tables = {
-        "schema_migrations",
-        "records",
-        "groundings",
-        "grounding_sources",
-        "memory_entries",
-        "memory_entry_groundings",
-        "reflection_proposals",
-        "reflection_proposal_groundings",
-        "personal_model_observations",
-        "embedding_provider_configs",
-    }
-    leaked_tables = legacy_tables.intersection(table_names)
+    leaked_tables = LEGACY_STORAGE_TABLES.intersection(table_names)
     if leaked_tables:
-        joined = ", ".join(sorted(leaked_tables))
-        raise RuntimeError(f"legacy storage tables are not part of the clean schema: {joined}")
+        _drop_legacy_storage_tables(connection)
+        table_names = _table_names(connection)
 
     required_tables = {
         "storage_metadata",
@@ -88,8 +112,6 @@ def _validate_clean_schema(connection: sqlite3.Connection) -> None:
         "diary_entries",
         "personal_model_growth",
         "canonical_elephant_identities",
-        "canonical_user_cards",
-        "canonical_relationship_memories",
     }
     missing_tables = required_tables.difference(table_names)
     if missing_tables:
@@ -126,6 +148,11 @@ def _validate_clean_schema(connection: sqlite3.Connection) -> None:
         "personal_model_facts",
         {"last_accessed_at", "access_count"},
     )
+    _require_columns(
+        connection,
+        "semantic_index_entries",
+        {"source_id"},
+    )
 
 
 def _require_columns(
@@ -152,6 +179,13 @@ def _table_names(connection: sqlite3.Connection) -> set[str]:
     except sqlite3.OperationalError:
         return set()
     return {str(row["name"]) for row in rows}
+
+
+def _drop_legacy_storage_tables(connection: sqlite3.Connection) -> tuple[str, ...]:
+    existing = LEGACY_STORAGE_TABLES.intersection(_table_names(connection))
+    for table_name in sorted(existing):
+        connection.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+    return tuple(sorted(existing))
 
 
 def _table_columns(connection: sqlite3.Connection, table_name: str) -> tuple[str, ...]:

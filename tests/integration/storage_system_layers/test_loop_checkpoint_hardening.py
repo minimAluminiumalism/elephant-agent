@@ -198,7 +198,7 @@ class LoopCheckpointHardeningTest(unittest.TestCase):
                 pending_tool_calls=(pending,),
                 partial_assistant="Halfway through the answer...",
                 context_bundle_id="bundle-7",
-                active_memory_ids=("mem-1", "mem-2"),
+                active_evidence_refs=("mem-1", "mem-2"),
                 retry_state=retry,
                 heartbeat_at=now,
             )
@@ -211,7 +211,7 @@ class LoopCheckpointHardeningTest(unittest.TestCase):
             self.assertEqual(restored.wait_condition.tool_handle_id, "handle-1")
             self.assertEqual(restored.partial_assistant, "Halfway through the answer...")
             self.assertEqual(restored.context_bundle_id, "bundle-7")
-            self.assertEqual(restored.active_memory_ids, ("mem-1", "mem-2"))
+            self.assertEqual(restored.active_evidence_refs, ("mem-1", "mem-2"))
             self.assertIsNotNone(restored.retry_state)
             self.assertEqual(restored.retry_state.attempt, 1)
             self.assertEqual(restored.retry_state.last_error_kind, "http_429")

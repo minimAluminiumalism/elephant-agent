@@ -1,7 +1,7 @@
-"""Canonical user-card update helpers.
+"""Canonical user-profile update helpers.
 
 These helpers keep runtime mutations owner-first. Runtime updates mutate
-`UserCardRecord` first and only render text afterward.
+`RenderedUserProfileView` first and only render text afterward.
 """
 
 from __future__ import annotations
@@ -9,12 +9,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import replace
 
-from packages.contracts import UserCardRecord
+from packages.state.rendered_views import RenderedUserProfileView
 
 from .governance import parse_user_profile_content, user_biography_field_ids
 
 
-def user_card_field_values(record: UserCardRecord | None) -> dict[str, str]:
+def user_profile_field_values(record: RenderedUserProfileView | None) -> dict[str, str]:
     if record is None:
         return {}
     values: dict[str, str] = {}
@@ -33,20 +33,20 @@ def user_card_field_values(record: UserCardRecord | None) -> dict[str, str]:
     return values
 
 
-def user_card_durable_notes(record: UserCardRecord | None) -> tuple[str, ...]:
+def user_profile_durable_notes(record: RenderedUserProfileView | None) -> tuple[str, ...]:
     if record is None:
         return ()
     return tuple(_clean(note) for note in record.durable_notes if _clean(note) is not None)
 
 
-def apply_user_card_update(
-    record: UserCardRecord,
+def apply_user_profile_update(
+    record: RenderedUserProfileView,
     *,
     text: str | None = None,
     field_values: Mapping[str, str] | None = None,
     append: bool = False,
     clear: bool = False,
-) -> UserCardRecord:
+) -> RenderedUserProfileView:
     if clear:
         next_values: dict[str, str] = {}
         next_notes: tuple[str, ...] = ()
@@ -61,8 +61,8 @@ def apply_user_card_update(
             next_values = dict(parsed_text.field_values) if parsed_text is not None else {}
             next_notes = parsed_text.durable_notes if parsed_text is not None else ()
         else:
-            next_values = user_card_field_values(record)
-            next_notes = user_card_durable_notes(record)
+            next_values = user_profile_field_values(record)
+            next_notes = user_profile_durable_notes(record)
             if text is not None:
                 next_values.update(parsed_text.field_values)
                 next_notes = _merge_notes(next_notes, parsed_text.durable_notes)
@@ -108,4 +108,4 @@ def _clean(value: str | None) -> str | None:
     return cleaned or None
 
 
-__all__ = ["apply_user_card_update", "user_card_durable_notes", "user_card_field_values"]
+__all__ = ["apply_user_profile_update", "user_profile_durable_notes", "user_profile_field_values"]

@@ -22,7 +22,7 @@ from packages.growth import (
 
 
 class GrowthRuntimeTest(unittest.TestCase):
-    def test_projection_stays_unbounded_and_uses_memory_identity(self) -> None:
+    def test_projection_stays_unbounded_and_uses_evidence_identity(self) -> None:
         builder = ProgressionProjectionBuilder()
         projection = builder.build(
             profile_id="profile-companion",
@@ -36,8 +36,8 @@ class GrowthRuntimeTest(unittest.TestCase):
 
         self.assertGreater(projection.level, 40)
         self.assertEqual(projection.ring_index, 5)
-        self.assertEqual(projection.cycle_label, "Memory V")
-        self.assertEqual(projection.identity_line, "Memory V · learning the path")
+        self.assertEqual(projection.cycle_label, "Evidence V")
+        self.assertEqual(projection.identity_line, "Evidence V · learning the path")
 
     def test_projection_uses_understanding_labels_instead_of_titles(self) -> None:
         builder = ProgressionProjectionBuilder()
@@ -88,7 +88,7 @@ class GrowthRuntimeTest(unittest.TestCase):
             active_work_item=active_work_item,
         )
 
-        self.assertEqual(without_reusable_learning.cycle_label, "Memory III")
+        self.assertEqual(without_reusable_learning.cycle_label, "Evidence III")
         self.assertEqual(without_reusable_learning.stage_title, "carrying the path")
         self.assertEqual(with_reusable_learning.stage_title, "grounded in evidence")
         self.assertNotEqual(with_reusable_learning.stage_title, without_reusable_learning.stage_title)
@@ -173,13 +173,13 @@ class GrowthRuntimeTest(unittest.TestCase):
                 active_work_item_present=True,
                 plan_step_count=3,
                 work_item_dependency_count=1,
-                memory_count=2,
+                recall_count=2,
                 context_work_item_count=1,
                 tool_call_count=2,
                 model_turn_count=2,
                 blocked_work_item_count=1,
                 work_item_evidence_refs=("artifact:blocker",),
-                replay_evidence_refs=("memory:resume-proof",),
+                replay_evidence_refs=("evidence:resume-proof",),
                 skill_ids=("skill.checks",),
                 artifact_ids=("artifact:patch-note",),
                 promoted_procedure_ids=("procedure:resume-checklist",),
@@ -244,9 +244,9 @@ class GrowthRuntimeTest(unittest.TestCase):
                 experience_status="captured",
                 active_work_item_present=True,
                 plan_step_count=2,
-                memory_count=1,
+                recall_count=1,
                 context_work_item_count=1,
-                replay_evidence_refs=("memory:resume-proof",),
+                replay_evidence_refs=("evidence:resume-proof",),
                 promoted_procedure_ids=("procedure:resume-checklist",),
                 work_item_evidence_refs=("artifact:brief",),
                 personal_model_fact_count=5,
@@ -264,7 +264,7 @@ class GrowthRuntimeTest(unittest.TestCase):
         )
         reasons = {reason.reason_id: reason for reason in update.reward_reasons}
 
-        self.assertIn("memory:resume-proof", reasons["continuity"].evidence_refs)
+        self.assertIn("evidence:resume-proof", reasons["continuity"].evidence_refs)
         self.assertIn("resume-signal=resume", reasons["continuity"].facts)
         self.assertIn("new-facts=1", reasons["understanding-freshness"].facts)
         self.assertIn("updated-facts=1", reasons["understanding-freshness"].facts)
@@ -341,13 +341,13 @@ class GrowthRuntimeTest(unittest.TestCase):
                 active_work_item_present=True,
                 plan_step_count=3,
                 work_item_dependency_count=1,
-                memory_count=2,
+                recall_count=2,
                 context_work_item_count=1,
                 tool_call_count=2,
                 model_turn_count=2,
                 blocked_work_item_count=1,
                 work_item_evidence_refs=("artifact:blocker",),
-                replay_evidence_refs=("memory:resume-proof",),
+                replay_evidence_refs=("evidence:resume-proof",),
                 skill_ids=("skill.checks",),
                 artifact_ids=("artifact:patch-note",),
                 promoted_procedure_ids=("procedure:resume-checklist",),

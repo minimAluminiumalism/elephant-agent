@@ -49,7 +49,7 @@ class ShellSkillSlashTest(unittest.TestCase):
             stages=(),
             plan=None,
             work_items=(),
-            memories=(),
+            recall_items=(),
         )
 
     def test_command_palette_hides_dynamic_skill_slash_commands(self) -> None:

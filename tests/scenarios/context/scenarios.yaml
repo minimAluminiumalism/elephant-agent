@@ -21,7 +21,7 @@
       "purpose": "Recover active current work and continuity state after a gap or interruption.",
       "primary_assertions": [
         "interruption state is reflected in the plan",
-        "active current work and recent memory are restored",
+        "active current work and recent recall evidence are restored",
         "the rendered prompt explains why the next step is selected now"
       ]
     },
@@ -29,11 +29,11 @@
       "id": "context.current-work-linked-compaction",
       "file": "current-work-linked-compaction.md",
       "owner_profile": "context engineer",
-      "purpose": "Prefer current-work-linked and corrected memory during steady compaction instead of a blind recency slice.",
+      "purpose": "Prefer current-work-linked and corrected fact during steady compaction instead of a blind recency slice.",
       "primary_assertions": [
-        "current-work-linked steady memory is retained ahead of fresher filler memory",
-        "corrected memory remains visible in steady continuity recovery",
-        "the source trace explains which filler memories were compacted away"
+        "current-work-linked steady evidence is retained ahead of fresher filler evidence",
+        "corrected fact remains visible in steady continuity recovery",
+        "the source trace explains which filler evidence were compacted away"
       ]
     },
     {

@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from .memory_recall_support import RecallHit
+from .recall_support import RecallHit
 from .recall_planning import RecallQueryPlan
 
 __all__ = [

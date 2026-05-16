@@ -17,16 +17,6 @@ from .files import (
     read_elephant_identity_file,
     write_elephant_identity_file,
 )
-from .canonical import (
-    CanonicalProfileIds,
-    CanonicalPersonalModelRuntimeStateBundle,
-    build_canonical_profile_state,
-    build_elephant_identity_record,
-    build_personal_model_record_bundle,
-    build_relationship_memory_record,
-    build_user_card_record,
-    canonical_profile_ids,
-)
 from .governance import (
     CompanionGovernanceState,
     CompanionIdentityState,
@@ -67,8 +57,7 @@ from .policy import (
     personality_presets,
     resolve_personality_preset,
 )
-from .projection import build_loaded_profile_from_state, overlay_canonical_profile_state, render_user_card_profile_text
-from .user_updates import apply_user_card_update, user_card_field_values
+from .projection import build_loaded_profile_from_state
 from .prompt_contract import (
     PromptContract,
     PromptMode,
@@ -76,15 +65,13 @@ from .prompt_contract import (
     build_system_layer_contract_section,
     build_personality_section,
     build_prompt_contract,
-    build_memory_and_tool_policy_section,
+    build_understanding_tool_policy_section,
 )
 
 __all__ = [
     "ELEPHANT_IDENTITY_FILENAME",
     "COMPANION_PROFILE_MODE",
     "CUSTOM_PERSONALITY_PRESET_ID",
-    "CanonicalProfileIds",
-    "CanonicalPersonalModelRuntimeStateBundle",
     "CompanionGovernanceState",
     "CompanionIdentityState",
     "CompanionOnboardingState",
@@ -96,27 +83,18 @@ __all__ = [
     "UserProfileField",
     "LoadedProfile",
     "OnboardingCheckpoint",
-    "PersistedCanonicalState",
     "PersonalityPresetDefinition",
     "PromptContract",
     "PromptMode",
     "ProfileLoader",
-    "build_canonical_profile_state",
-    "build_elephant_identity_record",
     "build_elephant_identity_section",
     "build_companion_governance_state",
     "build_companion_identity_state",
     "build_companion_onboarding_state",
     "build_system_layer_contract_section",
-    "build_loaded_profile_from_state",
     "build_personality_section",
-    "build_personal_model_record_bundle",
     "build_prompt_contract",
-    "build_relationship_memory_record",
-    "build_memory_and_tool_policy_section",
-    "build_user_card_record",
-    "canonical_profile_ids",
-    "apply_user_card_update",
+    "build_understanding_tool_policy_section",
     "elephant_identity_text",
     "companion_manifest_payload",
     "default_personality_preset_id",
@@ -128,14 +106,11 @@ __all__ = [
     "user_profile_text",
     "infer_personality_preset_id",
     "is_companion_mode",
-    "user_card_field_values",
-    "load_persisted_canonical_state",
     "load_runtime_profile",
     "merge_user_profile_text",
     "missing_optional_user_fields",
     "missing_required_user_fields",
     "normalize_profile_mode",
-    "overlay_canonical_profile_state",
     "elephant_identity_file_path",
     "parse_elephant_identity_display_name",
     "parse_user_profile_text",
@@ -144,27 +119,9 @@ __all__ = [
     "read_elephant_identity_file",
     "render_default_elephant_identity",
     "render_user_profile_text",
-    "render_user_card_profile_text",
     "resolve_personality_preset",
-    "resolve_runtime_state",
     "resolved_companion_settings",
-    "sync_canonical_profile_state",
     "write_elephant_identity_file",
     "write_extensions_manifest",
     "write_profile_manifest",
 ]
-
-
-def __getattr__(name: str):
-    if name in {
-        "PersistedCanonicalState",
-        "load_persisted_canonical_state",
-        "resolve_runtime_state",
-        "sync_canonical_profile_state",
-    }:
-        from . import persistence as _persistence
-
-        value = getattr(_persistence, name)
-        globals()[name] = value
-        return value
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

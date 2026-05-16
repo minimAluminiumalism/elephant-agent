@@ -4,7 +4,7 @@ from packages.contracts.runtime import (
     EvidenceRetrievalRequest,
     EvidenceRetrievalResult,
     StateFocusDecision,
-    MemoryRecord,
+    RecallEvidence,
     RecallReason,
     ResumePacket,
 )
@@ -45,7 +45,7 @@ def state_focus_scope_hints(request: EvidenceRetrievalRequest) -> tuple[str, ...
 def state_focus_score_adjustments(
     request: EvidenceRetrievalRequest,
     *,
-    record: MemoryRecord,
+    record: RecallEvidence,
     work_item_overlap: tuple[str, ...],
 ) -> tuple[float, float, tuple[RecallReason, ...]]:
     focus = state_focus(request)
@@ -65,7 +65,7 @@ def state_focus_score_adjustments(
                     graph_score,
                 )
             )
-        elif record.work_item_refs:
+        elif record.work_item_ids:
             graph_score -= 0.75
             reasons.append(
                 RecallReason(
@@ -123,7 +123,7 @@ def build_resume_packet(
         reasons.extend(reason.detail for reason in top.reasons[:3])
         if top.replay_summary:
             reasons.append(top.replay_summary)
-        focused_work_item_ids = tuple(work_item_id for work_item_id in focus_ids if work_item_id in top.memory.work_item_refs)
+        focused_work_item_ids = tuple(work_item_id for work_item_id in focus_ids if work_item_id in top.evidence.work_item_ids)
         if focused_work_item_ids:
             focus_ids = focused_work_item_ids
         replay_clause = f" Replay: {top.replay_summary}." if top.replay_summary else ""
@@ -136,7 +136,7 @@ def build_resume_packet(
         reasons.append("current-work evidence fallback kept the wake packet inspectable")
         summary = (
             f"{opener} {request.episode_id} around {', '.join(focus_ids[:2]) or 'the active thread'}; "
-            f"lead with {evidence_ids[0]} because no durable memory survived rerank and the active runtime state still carries explicit evidence refs."
+            f"lead with {evidence_ids[0]} because no durable evidence survived rerank and the active runtime state still carries explicit evidence refs."
         )
     else:
         summary = (

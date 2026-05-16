@@ -1,4 +1,4 @@
-"""Recall policy metadata for newly written memories.
+"""Recall policy metadata for newly written Personal Model claims.
 
 This module does not try to understand arbitrary natural language. The primary
 source is an explicit, simple `recall_policy` chosen by the foreground agent or
@@ -20,7 +20,7 @@ __all__ = [
 _ALLOWED_POLICIES = frozenset({"stable", "current", "temporary", "review", "episode"})
 _ALLOWED_LIFECYCLES = frozenset({"permanent", "preference", "current_state", "temporal", "review", "episode"})
 _POLICY_TO_PRESET: Mapping[str, tuple[str, str, str, str]] = {
-    # recall_policy -> (memory_lifecycle, time_sensitivity, verification, review_after_days)
+    # recall_policy -> (retention_lifecycle, time_sensitivity, verification, review_after_days)
     "stable": ("preference", "low", "on_challenge", ""),
     "current": ("current_state", "high", "on_challenge", "7"),
     "temporary": ("temporal", "high", "expires", "3"),
@@ -70,7 +70,7 @@ def _explicit_policy(metadata: Mapping[str, object]) -> str:
 
 def _explicit_lifecycle(metadata: Mapping[str, object]) -> str:
     lifecycle = _clean(
-        metadata.get("memory_lifecycle")
+        metadata.get("retention_lifecycle")
         or metadata.get("lifecycle")
         or metadata.get("staleness_policy")
     )
@@ -131,7 +131,7 @@ def infer_recall_lifecycle_metadata(
         inferred = False
     elif explicit_lifecycle:
         policy = _LIFECYCLE_TO_POLICY[explicit_lifecycle]
-        policy_source = "lifecycle_compat"
+        policy_source = "explicit_lifecycle"
         reason = "explicit_lifecycle"
         inferred = False
     else:
@@ -150,7 +150,7 @@ def infer_recall_lifecycle_metadata(
     base.setdefault("recall_policy", policy)
     base.setdefault("recall_policy_source", policy_source)
     base.setdefault("recall_policy_confidence", "high" if not inferred else "medium")
-    base.setdefault("memory_lifecycle", lifecycle)
+    base.setdefault("retention_lifecycle", lifecycle)
     base.setdefault("recall_time_sensitivity", time_sensitivity)
     base.setdefault("recall_verification", verification)
     base.setdefault("lifecycle_inferred", "true" if inferred else "false")

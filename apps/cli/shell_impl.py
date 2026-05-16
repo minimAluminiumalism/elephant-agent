@@ -15,12 +15,12 @@ import time
 
 from packages.contracts import ExperienceRecord
 from packages.kernel.runtime import KernelOutcome
-from packages.operator import (
-    MemoryOperatorDetail,
-    MemorySearchHit,
-    build_memory_operator_surface,
+from packages.operator.runtime import (
+    RecallEvidenceOperatorDetail,
+    RecallEvidenceSearchHit,
+    build_recall_evidence_operator_surface,
     build_profile_operator_surface,
-    render_memory_lines,
+    render_recall_evidence_lines,
     render_profile_lines,
 )
 from packages.tools.handler_support import resolve_allowed_path
@@ -204,7 +204,7 @@ class ProductizedShell:
     command_specs = (
         ShellCommandSpec("/help", "Open the command palette and interaction hints"),
         ShellCommandSpec("/status", "Refresh elephant, provider, and Personal Model posture"),
-        ShellCommandSpec("/memory", "Inspect durable understanding for this elephant"),
+        ShellCommandSpec("/recall", "Inspect Step/Episode recall evidence for this elephant"),
         ShellCommandSpec("/tools", "Inspect, install, toggle, and run built-in or manifest-backed tools"),
         ShellCommandSpec("/skills", "Discover, inspect, install, and toggle built-in or external skill packages"),
         ShellCommandSpec("/learn", "Queue or run background learning for this episode"),
@@ -719,7 +719,7 @@ def _render_level_up_frame(self, update, *, tick: int):
     body.append(f"{marker} MEMORY CHECKPOINT\n", style=f"bold {BRAND_ACCENT_STRONG}")
     body.append(f"{update.after.identity_line}\n", style=f"bold {BRAND_LIGHT}")
     body.append(f"checkpoint {update.before.level} -> {update.after.level}\n", style=BRAND_LIGHT)
-    body.append(f"memory signal +{update.delta_score} · ", style=BRAND_MUTED)
+    body.append(f"growth signal +{update.delta_score} · ", style=BRAND_MUTED)
     body.append_text(self._styled_growth_progress_bar(update.after))
     body.append(f" · {update.after.progress_percent}%", style=BRAND_MUTED)
     return Panel(
@@ -847,7 +847,7 @@ ProductizedShell._requested_webpage_url = _shell_commands._requested_webpage_url
 ProductizedShell._strip_wrapping_quotes = _shell_commands._strip_wrapping_quotes
 ProductizedShell._append_status = _shell_commands._append_status
 ProductizedShell._append_personal_model = _shell_commands._append_personal_model
-ProductizedShell._append_memory = _shell_commands._append_memory
+ProductizedShell._append_recall = _shell_commands._append_recall
 ProductizedShell._append_gateway = _shell_commands._append_gateway
 ProductizedShell._append_frozen = _shell_prompt_methods._append_frozen
 ProductizedShell._append_models = _shell_models._append_models

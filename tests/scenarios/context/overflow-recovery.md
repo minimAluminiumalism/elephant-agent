@@ -9,7 +9,7 @@ instead of blind truncation.
 
 - the session has more history than the current budget can fit
 - at least one active current-work item is still relevant
-- some memory records are current-work-linked and some are filler
+- some recall evidence items are current-work-linked and some are filler
 
 ## Steps
 
@@ -23,5 +23,5 @@ instead of blind truncation.
 - token allocation is explicit for each layer
 - overflow is recorded and visible
 - the prompt remains structured and readable
-- current-work-linked memories are prioritized over filler memories
+- current-work-linked evidence are prioritized over filler evidence
 - the source trace explains which memories were compacted away and which entered the bundle
