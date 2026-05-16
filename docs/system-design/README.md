@@ -16,8 +16,8 @@ truth.
   - the canonical prompt boundary for active claims, current-turn recall support, and
     Episode opening resume snapshots
   - the canonical claim-aware search contract for `tool.personal_model.search`,
-    including exact / semantic / verify modes, query variants, no-match status,
-    and diagnostics
+    including `auto` / `inventory` modes, query variants, no-match status, and
+    diagnostics
   - the canonical removal boundary for memory-note, component taxonomy,
     State task fields, and SkillAffinity-style adaptive skill ranking
 

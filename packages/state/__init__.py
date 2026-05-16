@@ -4,11 +4,7 @@ from .loader import (
     EXTENSIONS_MANIFEST_FILENAME,
     LoadedProfile,
     ProfileLoader,
-    companion_manifest_payload,
     load_runtime_profile,
-    profile_manifest_payload,
-    write_extensions_manifest,
-    write_profile_manifest,
 )
 from .files import (
     ELEPHANT_IDENTITY_FILENAME,
@@ -31,7 +27,6 @@ from .governance import (
     build_companion_onboarding_state,
     companion_display_name,
     elephant_identity_text,
-    parse_elephant_identity_display_name,
     parse_user_profile_content,
     user_profile_fields,
     user_profile_durable_notes,
@@ -59,15 +54,10 @@ from .policy import (
     personality_presets,
     resolve_personality_preset,
 )
-from .projection import build_loaded_profile_from_state
 from .prompt_contract import (
     PromptContract,
     PromptMode,
-    build_elephant_identity_section,
-    build_system_layer_contract_section,
-    build_personality_section,
     build_prompt_contract,
-    build_understanding_tool_policy_section,
 )
 
 __all__ = [
@@ -89,17 +79,12 @@ __all__ = [
     "PromptContract",
     "PromptMode",
     "ProfileLoader",
-    "build_elephant_identity_section",
     "build_companion_governance_state",
     "build_companion_identity_state",
     "build_companion_onboarding_state",
-    "build_system_layer_contract_section",
-    "build_personality_section",
     "build_prompt_contract",
-    "build_understanding_tool_policy_section",
     "elephant_identity_text",
     "elephant_id_from_session",
-    "companion_manifest_payload",
     "default_personality_preset_id",
     "ensure_elephant_identity_file",
     "user_profile_fields",
@@ -115,10 +100,8 @@ __all__ = [
     "missing_required_user_fields",
     "normalize_profile_mode",
     "elephant_identity_file_path",
-    "parse_elephant_identity_display_name",
     "parse_user_profile_text",
     "personality_presets",
-    "profile_manifest_payload",
     "profile_with_authored_elephant_identity",
     "read_elephant_identity_file",
     "render_default_elephant_identity",
@@ -126,6 +109,4 @@ __all__ = [
     "resolve_personality_preset",
     "resolved_companion_settings",
     "write_elephant_identity_file",
-    "write_extensions_manifest",
-    "write_profile_manifest",
 ]

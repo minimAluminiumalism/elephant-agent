@@ -26,7 +26,8 @@ from packages.contracts.runtime import ExecutionResult, PersonalModelRuntimeStat
 from packages.models.provider_catalog import provider_definition
 from packages.models.provider_runtime import ProviderCatalogRecord, ProviderSetupGuide
 from packages.security import SecurityPolicy, default_surface_policy_bundles
-from packages.state import CompanionSettings, LoadedProfile, companion_manifest_payload, normalize_profile_mode
+from packages.state import CompanionSettings, LoadedProfile, normalize_profile_mode
+from packages.state.loader import companion_manifest_payload
 from .runtime_voice import VoiceInputRequest, build_provider_voice_service
 
 from .runtime_cognition import _CliContextCapability

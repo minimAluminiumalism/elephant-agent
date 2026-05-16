@@ -400,7 +400,7 @@ class UnifiedRecallEndToEndTest(unittest.TestCase):
                 sequence=1,
                 created_at=_NOW,
                 summary="tool result says family power structure",
-                metadata={"tool_name": "tool.conversation.recall", "tool_result": "family power tool report"},
+                metadata={"tool_name": "tool.conversation.search", "tool_result": "family power tool report"},
             )
             user_step = Step(
                 step_id="step:user",

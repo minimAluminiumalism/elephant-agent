@@ -8,12 +8,12 @@ import packages.state as state_exports
 from packages.contracts.runtime import PersonalModelRuntimeState
 from packages.state import (
     CompanionSettings,
-    build_loaded_profile_from_state,
     build_prompt_contract,
     profile_with_authored_elephant_identity,
     render_user_profile_text,
     write_elephant_identity_file,
 )
+from packages.state.projection import build_loaded_profile_from_state
 
 
 class PromptContractTest(unittest.TestCase):
@@ -184,6 +184,37 @@ class PromptContractTest(unittest.TestCase):
         self.assertIn("File-authored Leah is playful, precise, and alive.", rendered)
         self.assertNotIn("State cache says stay quiet and stale.", rendered)
         self.assertNotIn("file metadata", rendered)
+
+    def test_named_legacy_default_elephant_file_auto_refreshes(self) -> None:
+        loaded = self._build_loaded_profile(
+            display_name="You",
+            elephant_identity_text="State cache says stay quiet and stale.",
+        )
+        legacy_text = "\n".join(
+            (
+                "# Elephant Identity: Jasper",
+                "Display name: Jasper",
+                "Mode: companion",
+                "",
+                "You are Jasper, this person's companion.",
+                "How you show up: Steady, present, and continuity-first without losing boundaries.",
+                "How you sound: steady, present, grounded.",
+                "How you take initiative: gentle.",
+                "Stay continuous without performing intimacy: use remembered context naturally, keep uncertainty visible, and let the person correct you.",
+            )
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            elephant_root = Path(tmpdir) / "jasper"
+            write_elephant_identity_file(elephant_root, legacy_text)
+            authored = profile_with_authored_elephant_identity(loaded, elephant_root)
+            refreshed = (elephant_root / "ELEPHANT.md").read_text(encoding="utf-8")
+
+        contract = build_prompt_contract(authored, prompt_mode="full")
+        rendered = "\n".join(contract.stable_prefix_refs)
+        self.assertIn("You are Jasper, the companion this person keeps coming back to.", rendered)
+        self.assertIn("lightly playful", rendered)
+        self.assertIn("dry little wink", refreshed)
+        self.assertNotIn("continuity-first without losing boundaries", rendered)
 
     def test_generated_elephant_charter_is_not_duplicated_as_custom_note(self) -> None:
         generated_elephant_identity_text = "\n".join(

@@ -99,9 +99,9 @@ observation, proposal, user-card, or relationship-memory shapes.
 - [x] Fix old API/dashboard Episodes that carried `state_id=state:<elephant>`
   but an empty `elephant_id`; context assembly now resolves the elephant id from
   either field before reading `ELEPHANT.md`.
-- [x] Auto-refresh the exact old generated identity seed when encountered so
-  legacy bland defaults pick up the livelier initial elephant voice without
-  overwriting custom-authored files.
+- [x] Auto-refresh old generated identity seeds, including named
+  `ELEPHANT.md` headers, so legacy bland defaults pick up the livelier initial
+  elephant voice without overwriting custom-authored files.
 - [x] Verify episode identity, compress/reflect, and frozen-prefix behavior:
   identity prompt text comes from the authored `ELEPHANT.md` snapshot at Episode
   open, high-usage compress writes a reference summary back into the frozen
@@ -111,6 +111,12 @@ observation, proposal, user-card, or relationship-memory shapes.
   `/clear`, and gateway idle-close paths so the unified Episode close path owns
   the `episode_close` reflect job instead of being hidden by an earlier
   `clear` / `exit` job deduped on the same Episode.
+- [x] Clean stale system-design and harness wording that still described
+  `tool.personal_model.search` as `exact` / `semantic` / `verify` or
+  `tool.conversation.search` as memory recall.
+- [x] Move companion scenario fixtures off `profile.json` identity ownership
+  and removed `State.active_task`; scenarios now exercise explicit State /
+  PM management paths and Step-backed turn trace.
 - [x] Review the final public contract surface against README / Blog / Paper /
   system-design commitments and confirm no legacy design remains exposed.
 
@@ -152,12 +158,21 @@ Final review result:
   preserves the recent tail for the next loop.
 - Root package exports expose current public contracts only; internal builders,
   projections, persistence helpers, and removed memory facades are not exported
-  from package roots.
+  from package roots. `packages.state` no longer hangs projection builders,
+  manifest payload writers, display-name parsers, or prompt-section builders off
+  its root module.
 - Dashboard/operator surfaces no longer expose `memoryLayers` or memory graph
   route names. The root visual page is the Personal Model map over the
   `personal-models` dashboard section.
 - Release scenario fixtures are recall fixtures, not a hidden `packages/memory`
   package contract.
+- System-design and harness-facing docs describe
+  `tool.personal_model.search mode=auto|inventory` and
+  `tool.conversation.search` over Step/Episode/SemanticIndex recall; they no
+  longer imply a `tool.conversation.recall` or memory-recall side contract.
+- Companion scenarios no longer seed identity, companion settings, or task
+  state through `profile.json`; management assertions go through State / PM
+  surfaces, and transient user turns stay out of durable user profile state.
 - The only remaining exact legacy table names in production Python are the
   bootstrap drop-list entries that remove those tables from local databases.
 

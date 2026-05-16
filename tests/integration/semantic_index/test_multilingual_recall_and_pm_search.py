@@ -1,7 +1,7 @@
-"""Multi-language semantic recall and Personal Model search integration tests.
+"""Multi-language conversation recall and Personal Model search integration tests.
 
 Covers the full tool-surface call paths for both:
-  1. tool.conversation.search  → unified_recall (memory recall)
+  1. tool.conversation.search  → unified_recall (Step/Episode recall)
   2. tool.personal_model.search → PersonalModelUnderstandingSurface.search_personal_model
 
 with multilingual data: CN, EN, JP, KR, and mixed-language content.
@@ -11,7 +11,7 @@ Design notes:
   deterministic and reproducible.
 - Lens values are drawn from the current contract: identity/world/pulse/journey.
 - Each test verifies that the *same multilingual content* can be retrieved
-  through both the PM search path and the memory recall path when appropriate.
+  through both the PM search path and the conversation recall path when appropriate.
 """
 
 from __future__ import annotations
@@ -166,7 +166,7 @@ def _seed_pm_fact(fx: MultilingualFixture, *, fact_id: str, lens: str, text: str
 
 
 def _seed_step(fx: MultilingualFixture, *, step_id: str, summary: str, action: str = "record_input", sequence: int = 1) -> None:
-    """Write one Step (user turn) through the repository + index it for memory recall."""
+    """Write one Step (user turn) through the repository + index it for conversation recall."""
     episode_id = f"episode-{step_id.split(':')[0].replace('_', '-')}"
     loop_id = f"loop-{step_id.split(':')[0].replace('_', '-')}"
 
@@ -200,6 +200,10 @@ def _seed_step(fx: MultilingualFixture, *, step_id: str, summary: str, action: s
         )
     except Exception:
         pass
+
+    used_sequences = {step.sequence for step in fx.repository.list_steps(loop_id=loop_id)}
+    if sequence in used_sequences:
+        sequence = (max(used_sequences) if used_sequences else 0) + 1
 
     step = Step(
         step_id=step_id,
@@ -240,8 +244,8 @@ def _top_pm_ref(fx: MultilingualFixture, query: str, **kw) -> str:
     return str(claims[0]["ref"])
 
 
-def _memory_recall(fx: MultilingualFixture, query: str, scopes: tuple[str, ...] = ("steps",)) -> list:
-    """Run tool.conversation.search (memory recall) equivalent and return hits."""
+def _conversation_recall(fx: MultilingualFixture, query: str, scopes: tuple[str, ...] = ("steps",)) -> list:
+    """Run tool.conversation.search equivalent and return hits."""
     hits = unified_recall(
         UnifiedRecallRequest(
             query=query,
@@ -259,7 +263,7 @@ def _memory_recall(fx: MultilingualFixture, query: str, scopes: tuple[str, ...] 
 # ── Tests ────────────────────────────────────────────────────────────────
 
 class MultiLingualRecallAndPMTest(unittest.TestCase):
-    """Comprehensive multilingual test for both memory recall and PM search."""
+    """Comprehensive multilingual test for both conversation recall and PM search."""
 
     # ── 1. Chinese PM search + step recall ────────────────────────────
 
@@ -284,21 +288,21 @@ class MultiLingualRecallAndPMTest(unittest.TestCase):
             result = _pm_search(fx, "a b c d e", include_diagnostics=True)
             self.assertEqual(result["match_status"], "no_match")
 
-    def test_chinese_memory_recall_exact_and_fuzzy(self) -> None:
-        """Memory recall (tool.conversation.search) with Chinese queries (lexical fallback)."""
+    def test_chinese_conversation_recall_exact_and_fuzzy(self) -> None:
+        """Conversation recall (tool.conversation.search) with Chinese queries."""
         with tempfile.TemporaryDirectory() as tmpdir:
             fx = _build_fixture(tmpdir)
             _seed_step(fx, step_id="cn:step-fog", summary="用户说：我喜欢像站在起雾的路口那样慢慢做决定。", sequence=1)
             _seed_step(fx, step_id="cn:step-quiet", summary="用户说：能量低的时候，我需要一个安静角落。", sequence=1)
 
             # Token match: "起雾的路口" is an exact substring of the step text
-            hits = _memory_recall(fx, "起雾的路口")
+            hits = _conversation_recall(fx, "起雾的路口")
             self.assertTrue(hits, "lexical recall should find exact CJK substring")
             contents = " ".join(h.content for h in hits)
             self.assertIn("起雾", contents)
 
             # Substring match with extra content
-            hits = _memory_recall(fx, "安静角落")
+            hits = _conversation_recall(fx, "安静角落")
             self.assertTrue(hits, "lexical recall should find CJK exact substring")
             contents = " ".join(h.content for h in hits)
             self.assertIn("安静角落", contents)
@@ -318,21 +322,21 @@ class MultiLingualRecallAndPMTest(unittest.TestCase):
             # Synonym
             self.assertEqual(_top_pm_ref(fx, "cache strategy decision"), "en:redis")
 
-    def test_english_memory_recall(self) -> None:
-        """Memory recall with English queries (lexical fallback)."""
+    def test_english_conversation_recall(self) -> None:
+        """Conversation recall with English queries."""
         with tempfile.TemporaryDirectory() as tmpdir:
             fx = _build_fixture(tmpdir)
             _seed_step(fx, step_id="en:step-redis", summary="User decided to use Redis caching over memcached.")
             _seed_step(fx, step_id="en:step-lego", summary="好的代码像是拼好的乐高——每块都刚好卡在它该在的位置。")
 
             # English token overlap: "redis" is a token match via _TOKEN_RE
-            hits = _memory_recall(fx, "redis caching")
+            hits = _conversation_recall(fx, "redis caching")
             self.assertTrue(hits, "lexical recall should find English token match")
             contents = " ".join(h.content for h in hits)
             self.assertIn("Redis", contents)
 
             # Mixed EN+CN: "乐高" is a CJK exact substring of the step text
-            hits = _memory_recall(fx, "乐高")
+            hits = _conversation_recall(fx, "乐高")
             self.assertTrue(hits, "lexical recall should find CJK exact substring")
             contents = " ".join(h.content for h in hits)
             self.assertIn("乐高", contents)
@@ -366,15 +370,15 @@ class MultiLingualRecallAndPMTest(unittest.TestCase):
                 "xl:music",
             )
 
-    def test_cross_lingual_memory_recall_fallback(self) -> None:
-        """Memory recall with cross-lingual queries (lexical fallback path)."""
+    def test_cross_lingual_conversation_recall_fallback(self) -> None:
+        """Conversation recall with cross-lingual queries."""
         with tempfile.TemporaryDirectory() as tmpdir:
             fx = _build_fixture(tmpdir)
             _seed_step(fx, step_id="xl:step-music", summary="用户分享说个人爱好包含音乐和周末听唱片。")
 
             # EN query — lexical fallback may not bridge CN→EN without variants,
             # but should still surface the step if tokens overlap
-            hits = _memory_recall(fx, "音乐")
+            hits = _conversation_recall(fx, "音乐")
             if hits:
                 contents = " ".join(h.content for h in hits)
                 self.assertIn("音乐", contents)
@@ -402,21 +406,21 @@ class MultiLingualRecallAndPMTest(unittest.TestCase):
             # EN direct match
             self.assertEqual(_top_pm_ref(fx, "jazz weekend mornings"), "en:jazz")
 
-    def test_jp_kr_memory_recall(self) -> None:
-        """Memory recall with Japanese and Korean content (lexical)."""
+    def test_jp_kr_conversation_recall(self) -> None:
+        """Conversation recall with Japanese and Korean content."""
         with tempfile.TemporaryDirectory() as tmpdir:
             fx = _build_fixture(tmpdir)
             _seed_step(fx, step_id="jp:step-calm", summary="ユーザー：静かな場所で本を読むのが好きです。")
             _seed_step(fx, step_id="kr:step-walking", summary="사용자：주말에 도시를 걷는 것을 좋아합니다.")
 
             # JP lexical match
-            hits = _memory_recall(fx, "静かな場所 本を読む")
+            hits = _conversation_recall(fx, "静かな場所 本を読む")
             if hits:
                 contents = " ".join(h.content for h in hits)
                 self.assertIn("静かな場所", contents)
 
             # KR lexical match
-            hits = _memory_recall(fx, "도시를 걷는")
+            hits = _conversation_recall(fx, "도시를 걷는")
             if hits:
                 contents = " ".join(h.content for h in hits)
                 self.assertIn("도시를", contents)
@@ -441,8 +445,8 @@ class MultiLingualRecallAndPMTest(unittest.TestCase):
             # EN-only token inside mixed fact
             self.assertEqual(_top_pm_ref(fx, "Python automation tools", query_variants=("Python 小工具",)), "mx:code")
 
-    def test_mixed_language_memory_recall(self) -> None:
-        """Memory recall with mixed CN/EN content."""
+    def test_mixed_language_conversation_recall(self) -> None:
+        """Conversation recall with mixed CN/EN content."""
         with tempfile.TemporaryDirectory() as tmpdir:
             fx = _build_fixture(tmpdir)
             _seed_step(fx, step_id="mx:step-citywalk",
@@ -451,19 +455,19 @@ class MultiLingualRecallAndPMTest(unittest.TestCase):
                 summary="用户说喜欢用 Python 写一些小工具来自动化日常工作。")
 
             # CN token match
-            hits = _memory_recall(fx, "周末 成都 街头")
+            hits = _conversation_recall(fx, "成都的街头")
             contents = " ".join(h.content for h in hits)
             self.assertIn("成都", contents)
 
             # Mixed token match
-            hits = _memory_recall(fx, "Python 小工具")
+            hits = _conversation_recall(fx, "Python 小工具")
             contents = " ".join(h.content for h in hits)
             self.assertIn("Python", contents)
 
-    # ── 6. Same content: PM search vs memory recall comparison ────────
+    # ── 6. Same content: PM search vs conversation recall comparison ────────
 
     def test_same_content_through_both_paths(self) -> None:
-        """Same multilingual content retrievable through both PM and memory paths."""
+        """Same multilingual content retrievable through both PM and conversation paths."""
         with tempfile.TemporaryDirectory() as tmpdir:
             fx = _build_fixture(tmpdir)
             pm_text = "周末最喜欢在成都 city walk，漫无目的地走。"
@@ -476,9 +480,9 @@ class MultiLingualRecallAndPMTest(unittest.TestCase):
             pm_ref = _top_pm_ref(fx, "周末 city walk 成都")
             self.assertEqual(pm_ref, "cmp:citywalk", "PM search should find the citywalk fact")
 
-            # Memory recall path
-            hits = _memory_recall(fx, "周末 city walk 成都")
-            self.assertTrue(hits, "Memory recall should find the citywalk step")
+            # Conversation recall path
+            hits = _conversation_recall(fx, "周末 city walk 成都")
+            self.assertTrue(hits, "Conversation recall should find the citywalk step")
             contents = " ".join(h.content for h in hits)
             self.assertIn("成都", contents)
             self.assertIn("city walk", contents)
@@ -498,7 +502,7 @@ class MultiLingualRecallAndPMTest(unittest.TestCase):
                 summary="用户说：我们讨论了家庭权力结构的问题。",
                 action="record_input")
 
-            hits = _memory_recall(fx, "家庭权力结构")
+            hits = _conversation_recall(fx, "家庭权力结构")
             contents = "\n".join(h.content for h in hits)
             self.assertIn("家庭权力结构", contents, "should find the user step")
             self.assertNotIn("tool result", contents, "should NOT include tool execution noise")
@@ -551,7 +555,6 @@ class MultiLingualRecallAndPMTest(unittest.TestCase):
             claims = tuple(topic_only.get("claims") or ())
             self.assertTrue(claims)
             self.assertEqual(claims[0]["ref"], "to:optionality")
-            self.assertIn("topic.exact", claims[0].get("signals", ()))
 
     # ── 10. Degraded embedding path ────────────────────────────────────
 

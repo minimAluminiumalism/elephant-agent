@@ -5,12 +5,12 @@ import unittest
 from packages.contracts.runtime import PersonalModelRuntimeState
 from packages.state import (
     CompanionSettings,
-    build_loaded_profile_from_state,
     render_user_profile_text,
 )
 from packages.state.canonical import build_canonical_profile_state, canonical_profile_ids
 from packages.state.persistence import _relationship_capture_content
 from packages.state.rendered_views import RenderedRelationshipView
+from packages.state.projection import build_loaded_profile_from_state
 
 
 class CanonicalPersonalModelRuntimeStateTest(unittest.TestCase):

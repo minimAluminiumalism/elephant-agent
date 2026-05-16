@@ -350,7 +350,7 @@ class PersonalModelLifecycleTest(unittest.TestCase):
                         sequence=1,
                         created_at=now,
                         summary="tool result mentions family but is not conversation",
-                        metadata={"tool_name": "tool.conversation.recall", "tool_result": "家庭 recall test report"},
+                        metadata={"tool_name": "tool.conversation.search", "tool_result": "家庭 recall test report"},
                     ),
                     Step(
                         step_id="step-internal",

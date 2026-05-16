@@ -6,7 +6,7 @@ This surface is the primary proving ground for the Elephant Agent thesis.
 
 - chat and wake UX
 - elephant management UX
-- memory and runtime inspection UX
+- recall, understanding, and runtime inspection UX
 - skills, tools, providers, and models management
 - local operator workflows
 - the `v1.0.0` interactive stack choice: `prompt_toolkit + rich`
@@ -15,7 +15,7 @@ This surface is the primary proving ground for the Elephant Agent thesis.
 ## Do Not Own Here
 
 - State, Episode, Loop, Step, and Fact ownership policy
-- memory formation policy
+- Personal Model formation policy
 - provider auth logic
 - removed product-facing reset-era system-layer terms or planning semantics
 

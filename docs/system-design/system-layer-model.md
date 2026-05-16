@@ -242,7 +242,8 @@ Important parameters:
 - `query_variants` — translated or paraphrased alternatives supplied by the model for cross-language or metaphorical lookup.
 - `lens` — optional identity / world / pulse / journey filter.
 - `topic` — optional stable topic key.
-- `mode` — `auto`, `exact`, `semantic`, or `verify`.
+- `mode` — `auto` for query-driven claim lookup, or `inventory` for the
+  lens/topic map.
 - `include_evidence` — return evidence summaries for matched claims.
 - `include_diagnostics` — return per-claim signals and no-match reasons for debugging.
 

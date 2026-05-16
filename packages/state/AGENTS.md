@@ -15,7 +15,7 @@ This package owns canonical Personal Model and State surfaces.
 
 - tool `cwd` or `allowed_roots` instructions
 - intent-era planning policy
-- semantic index retrieval or memory ranking logic
+- semantic index retrieval or recall ranking logic
 - app-only rendering or transport behavior
 
 State behavior should project one durable Personal Model and elephant State truth

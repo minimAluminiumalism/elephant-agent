@@ -21,11 +21,11 @@ from packages.evidence import (
 from packages.state import (
     LoadedProfile,
     load_runtime_profile,
-    parse_elephant_identity_display_name,
-    profile_manifest_payload,
     read_elephant_identity_file,
 )
 from packages.state.canonical import build_canonical_profile_state
+from packages.state.governance import parse_elephant_identity_display_name
+from packages.state.loader import profile_manifest_payload
 from packages.state.persistence import (
     load_persisted_canonical_state,
     resolve_runtime_state,

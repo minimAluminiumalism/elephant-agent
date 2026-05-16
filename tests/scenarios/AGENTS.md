@@ -6,5 +6,5 @@ Good targets:
 
 - resume after a time gap
 - recover elephant State continuity from ambiguous input
-- memory correction and deletion
+- Personal Model correction and deletion
 - elephant continuity across surface anchors

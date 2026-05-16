@@ -24,9 +24,9 @@ from packages.state import (
     CompanionSettings,
     LoadedProfile,
     companion_display_name,
-    parse_elephant_identity_display_name,
     render_default_elephant_identity,
 )
+from packages.state.governance import parse_elephant_identity_display_name
 from .runtime_voice import VoiceInputResolution, VoiceTurnResult
 
 _PLACEHOLDER_MODELS_BY_PROVIDER = {

@@ -10,7 +10,8 @@ from typing import Any
 
 from packages.contracts.layers import Episode
 from packages.runtime_layout import default_authored_skills_dir
-from packages.state import ProfileLoader, load_runtime_profile, write_extensions_manifest
+from packages.state import ProfileLoader, load_runtime_profile
+from packages.state.loader import write_extensions_manifest
 from packages.storage import RuntimeStorageRepository
 
 from .authoring import write_skill_package

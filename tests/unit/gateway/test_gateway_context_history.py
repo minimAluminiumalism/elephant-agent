@@ -14,8 +14,9 @@ from packages.context import (
 from packages.context.epoch_store import FileEpochStore, InMemoryEpochStore
 from packages.contracts.layers import Episode
 from packages.contracts.runtime import ContextBundle, EventEnvelope, ExecutionResult, PersonalModelRuntimeState, PromptMessage, PromptEnvelope
-from packages.state import CompanionSettings, build_loaded_profile_from_state, render_user_profile_text
+from packages.state import CompanionSettings, render_user_profile_text
 from packages.state import write_elephant_identity_file
+from packages.state.projection import build_loaded_profile_from_state
 
 
 class GatewayContextHistoryTest(unittest.TestCase):

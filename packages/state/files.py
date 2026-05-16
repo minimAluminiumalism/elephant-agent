@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+import re
 from urllib.parse import unquote
 
 ELEPHANT_IDENTITY_FILENAME = "ELEPHANT.md"
@@ -109,6 +110,13 @@ _LEGACY_DEFAULT_LINES = (
     "Stay continuous without performing intimacy: use remembered context naturally, keep uncertainty visible, and let the person correct you.",
 )
 
+_LEGACY_GENERATED_HEADER_PATTERNS = (
+    re.compile(r"^#\s*elephant\s+identity\s*:.*$", re.IGNORECASE),
+    re.compile(r"^display\s+name\s*:.*$", re.IGNORECASE),
+    re.compile(r"^mode\s*:.*$", re.IGNORECASE),
+    re.compile(r"^you\s+are\s+[^,\n.]+,\s*this\s+person['’]s\s+companion\.?$", re.IGNORECASE),
+)
+
 
 def _is_legacy_default_identity_text(text: str) -> bool:
     lines = tuple(
@@ -116,7 +124,12 @@ def _is_legacy_default_identity_text(text: str) -> bool:
         for line in str(text or "").splitlines()
         if line.strip() and not line.strip().startswith("<!--")
     )
-    return lines == _LEGACY_DEFAULT_LINES
+    body = tuple(
+        line
+        for line in lines
+        if not any(pattern.match(line) for pattern in _LEGACY_GENERATED_HEADER_PATTERNS)
+    )
+    return body == _LEGACY_DEFAULT_LINES
 
 
 def _refreshed_default_identity_text(profile, *, display_name: str) -> str:

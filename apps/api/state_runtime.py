@@ -12,7 +12,6 @@ from packages.contracts.runtime import PersonalModelRuntimeState
 from packages.evidence.recall_runtime import RecallRuntime
 from packages.state import (
     CompanionSettings,
-    build_loaded_profile_from_state,
     is_companion_mode,
     resolve_personality_preset,
     user_profile_updates,
@@ -23,7 +22,7 @@ from packages.state.persistence import (
     resolve_runtime_state,
     sync_canonical_profile_state,
 )
-from packages.state.projection import render_user_profile_projection_text
+from packages.state.projection import build_loaded_profile_from_state, render_user_profile_projection_text
 from packages.state.user_updates import apply_user_profile_update
 from packages.storage import RuntimeStorageRepository
 from packages.storage.repository_support import canonical_personal_model_id

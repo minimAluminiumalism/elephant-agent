@@ -38,7 +38,8 @@ from packages.contracts.runtime import (
     RecallReasons,
     StateFocusDecision,
 )
-from packages.state import render_user_profile_text, write_profile_manifest
+from packages.state import render_user_profile_text
+from packages.state.loader import write_profile_manifest
 from packages.state.persistence import load_persisted_canonical_state
 from packages.skills import (
     FetchedSkillBundle,

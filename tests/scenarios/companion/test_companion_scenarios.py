@@ -22,41 +22,29 @@ class CompanionScenarioFixturesTest(unittest.TestCase):
 
     def test_governance_state_exposes_text_first_persona_state(self) -> None:
         from packages.continuity import build_relationship_policy
-        from packages.state import ProfileLoader, build_companion_governance_state, build_loaded_profile_from_state
+        from packages.contracts.runtime import PersonalModelRuntimeState
+        from packages.state import CompanionSettings, build_companion_governance_state
+        from packages.state.projection import build_loaded_profile_from_state
 
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
-            profile_dir = root / "profile"
-            profile_dir.mkdir()
-            (profile_dir / "profile.json").write_text(
-                json.dumps(
-                    {
-                        "profile_id": "profile-companion",
-                        "display_name": "Elephant Agent",
-                        "mode": "companion",
-                        "companion": {
-                            "text_first": True,
-                            "personality": ["steady", "present", "grounded"],
-                            "initiative": "gentle",
-                            "preserve_relationship_timeline": True,
-                            "preserve_preferences": True,
-                            "preserve_corrections": True,
-                            "preserve_emotional_context": True,
-                            "notes": ["text-first baseline"],
-                        },
-                        "preferences": ["tone:steady", "verbosity:concise"],
-                        "enabled_capabilities": ["preview.cli"],
-                    }
-                ),
-                encoding="utf-8",
-            )
-            loaded_source = ProfileLoader(profile_dir).load()
             loaded = build_loaded_profile_from_state(
-                loaded_source.state,
-                manifest=loaded_source.manifest,
-                companion=loaded_source.companion,
-                profile_dir=loaded_source.profile_dir,
-                manifest_path=loaded_source.manifest_path,
+                PersonalModelRuntimeState(
+                    profile_id="profile-companion",
+                    display_name="Elephant Agent",
+                    mode="companion",
+                    preferences=("tone:steady", "verbosity:concise"),
+                    enabled_capabilities=("preview.cli",),
+                ),
+                manifest={},
+                companion=CompanionSettings(
+                    text_first=True,
+                    personality=("steady", "present", "grounded"),
+                    initiative="gentle",
+                    notes=("text-first baseline",),
+                ),
+                profile_dir=str(root / "profile"),
+                manifest_path=None,
                 elephant_identity_text="Steady, grounded, and direct.",
             )
             governance = build_companion_governance_state(loaded)
@@ -82,12 +70,14 @@ class CompanionScenarioFixturesTest(unittest.TestCase):
         self.assertIn("companion text-first continuity", relationship_policy.summary())
 
     def test_companion_governance_path_distinguishes_defaults_from_onboarded_identity(self) -> None:
+        from packages.contracts.runtime import PersonalModelRuntimeState
         from packages.state import (
+            CompanionSettings,
             ProfileLoader,
             build_companion_governance_state,
-            build_loaded_profile_from_state,
             render_user_profile_text,
         )
+        from packages.state.projection import build_loaded_profile_from_state
 
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -105,31 +95,21 @@ class CompanionScenarioFixturesTest(unittest.TestCase):
             )
             baseline = build_companion_governance_state(ProfileLoader(baseline_dir).load())
 
-            onboarded_dir = root / "onboarded"
-            onboarded_dir.mkdir()
-            (onboarded_dir / "profile.json").write_text(
-                json.dumps(
-                    {
-                        "profile_id": "profile-companion",
-                        "display_name": "Samantha",
-                        "mode": "companion",
-                        "companion": {
-                            "personality_preset": "companion",
-                            "initiative": "proactive",
-                            "notes": ["check in after long pauses"],
-                        },
-                    }
-                ),
-                encoding="utf-8",
-            )
-            onboarded_source = ProfileLoader(onboarded_dir).load()
             onboarded = build_companion_governance_state(
                 build_loaded_profile_from_state(
-                    onboarded_source.state,
-                    manifest=onboarded_source.manifest,
-                    companion=onboarded_source.companion,
-                    profile_dir=onboarded_source.profile_dir,
-                    manifest_path=onboarded_source.manifest_path,
+                    PersonalModelRuntimeState(
+                        profile_id="profile-companion",
+                        display_name="Samantha",
+                        mode="companion",
+                    ),
+                    manifest={},
+                    companion=CompanionSettings(
+                        personality_preset="companion",
+                        initiative="proactive",
+                        notes=("check in after long pauses",),
+                    ),
+                    profile_dir=str(root / "onboarded"),
+                    manifest_path=None,
                     elephant_identity_text="Stay steady, direct, and durable.",
                     user_profile_text=render_user_profile_text(
                         preferred_name="Bit",
@@ -192,83 +172,39 @@ class CompanionScenarioFixturesTest(unittest.TestCase):
 
     def test_profile_writers_can_update_identity_and_elephant_state(self) -> None:
         from apps.cli.runtime import CliRuntime
-        from packages.state import (
-            build_companion_governance_state,
-            render_user_profile_text,
-            write_profile_manifest,
-        )
+        from packages.state import render_user_profile_text
 
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
-            profile_dir = root / "profile"
-            profile_dir.mkdir()
-            (profile_dir / "profile.json").write_text(
-                json.dumps(
-                    {
-                        "profile_id": "profile-companion",
-                        "display_name": "Elephant Agent",
-                        "mode": "companion",
-                        "companion": {
-                            "text_first": True,
-                            "personality": ["steady", "present"],
-                            "initiative": "gentle",
-                        },
-                    }
-                ),
-                encoding="utf-8",
-            )
-            write_profile_manifest(
-                profile_dir,
-                {
-                    "profile_id": "profile-companion",
-                    "display_name": "Samantha",
-                    "mode": "companion",
-                    "companion": {
-                        "text_first": True,
-                        "personality": ["steady", "grounded"],
-                        "initiative": "proactive",
-                        "notes": ["check in after long pauses"],
-                    },
-                },
-            )
             runtime = CliRuntime.create(state_dir=root / "state")
-            runtime.update_identity_state(
-                profile_id="profile-companion",
+            session = runtime.start()
+            identity = runtime.update_identity_state(
+                session_id=session.session_id,
+                display_name="Samantha",
+                personality_preset="operator",
+                initiative="proactive",
                 elephant_identity_text="Stay steady, direct, and durable.",
             )
             runtime.update_user_state(
-                profile_id="profile-companion",
+                session_id=session.session_id,
                 text=render_user_profile_text(
                     preferred_name="Bit",
                     current_work="Building durable agent systems.",
                 ),
             )
-            governance = build_companion_governance_state(runtime.inspect_profile("profile-companion"))
+            user = runtime.inspect_user(session_id=session.session_id)
 
-        self.assertEqual(governance.identity.display_name, "Samantha")
-        self.assertEqual(governance.identity.initiative, "proactive")
-        self.assertEqual(governance.identity.personality_traits, ("steady", "grounded"))
-        self.assertTrue(governance.onboarding.ready)
+        self.assertEqual(identity.display_name, "Samantha")
+        self.assertEqual(identity.initiative, "proactive")
+        self.assertEqual(identity.personality_preset, "operator")
+        self.assertEqual(user.preferred_name, "Bit")
 
     def test_companion_turn_reconciliation_does_not_mutate_profile_without_management_tools(self) -> None:
         from apps.cli.runtime import CliRuntime
 
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
-            profile_dir = root / "profile"
             state_dir = root / "state"
-            profile_dir.mkdir()
-            (profile_dir / "profile.json").write_text(
-                json.dumps(
-                    {
-                        "profile_id": "profile-companion",
-                        "display_name": "Elephant Agent",
-                        "mode": "companion",
-                        "companion": {"initiative": "gentle"},
-                    }
-                ),
-                encoding="utf-8",
-            )
             runtime = CliRuntime.create(state_dir=state_dir)
             session = runtime.start()
 
@@ -287,7 +223,8 @@ class CompanionScenarioFixturesTest(unittest.TestCase):
         self.assertEqual(user.communication_preferences, ())
         self.assertEqual(user.biography_fragments, ())
         self.assertEqual(relationship.continuity_notes, ())
-        self.assertEqual(outcome.state.active_task, "Call me Bit. I'm building durable agent systems. Please keep replies concise and grounded for future turns.")
+        self.assertFalse(hasattr(outcome.state, "active_task"))
+        self.assertEqual(outcome.state.current_context_note, "")
 
 
 if __name__ == "__main__":

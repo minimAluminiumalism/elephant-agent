@@ -35,8 +35,8 @@ _PERSONALITY_PRESETS: dict[str, PersonalityPresetDefinition] = {
     DEFAULT_COMPANION_PERSONALITY_PRESET_ID: PersonalityPresetDefinition(
         preset_id=DEFAULT_COMPANION_PERSONALITY_PRESET_ID,
         label="Companion",
-        summary="Steady, present, and continuity-first without losing boundaries.",
-        traits=("steady", "present", "grounded"),
+        summary="Steady, curious, lightly playful, and present without making a performance of it.",
+        traits=("steady", "curious", "warm"),
         relational_stance="close companion with clear boundaries",
     ),
     "operator": PersonalityPresetDefinition(

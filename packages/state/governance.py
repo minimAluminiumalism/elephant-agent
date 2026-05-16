@@ -415,9 +415,10 @@ _RESERVED_COMPANION_NAMES = frozenset(
 )
 
 
-# Write-path only: parse ELEPHANT.md content when an operator edits the file, so
-# the CLI can mirror the name into ``State.elephant_name``. NOT used when
-# rendering prompts — the runtime always reads the name from the DB.
+# Parse a display name out of authored ``ELEPHANT.md`` text when the runtime
+# needs to repair placeholder State names or a write path mirrors the name into
+# ``State.elephant_name``. This is not a second durable owner: State keeps the
+# structured name, while the authored file owns the voice body.
 _ELEPHANT_IDENTITY_DISPLAY_NAME_PATTERNS = (
     # First-person intro: "Hi — I'm Zoey." / "Hi, I'm Zoey"
     re.compile(r"(?im)^\s*hi(?:\s*[—\-,]\s*|\s+)i[''‘’]?m\s+([^,\n.—\-]+)"),
@@ -431,12 +432,7 @@ _ELEPHANT_IDENTITY_DISPLAY_NAME_PATTERNS = (
 
 
 def parse_elephant_identity_display_name(text: str | None) -> str | None:
-    """Parse a display name out of ELEPHANT.md content (write-path helper).
-
-    Only call this when an operator edits ELEPHANT.md and we need to derive a
-    canonical name to mirror into ``State.elephant_name``. Prompt rendering
-    reads the name from the DB, never from this parser.
-    """
+    """Parse a display name out of ELEPHANT.md content."""
     normalized = str(text or "").strip()
     if not normalized:
         return None
@@ -453,13 +449,11 @@ def parse_elephant_identity_display_name(text: str | None) -> str | None:
 def companion_display_name(profile: LoadedProfile, *, fallback: str | None = None) -> str:
     """Return the companion's display name.
 
-    The single source of truth is the ``State.elephant_name`` column, which the
-    runtime loads into ``profile.state.display_name``. Reserved placeholder
-    values (``"You"``, ``""``, ``"Elephant Agent"``) fall back to the brand name so
-    the prompt never renders nonsense like ``"You are You, the companion"``.
-    ELEPHANT.md is an authoring format — it is never parsed for the display
-    name. When the user edits ELEPHANT.md they also write through to
-    ``State.elephant_name`` (see apps/cli/runtime_profile.save_elephant_identity).
+    ``State.elephant_name`` is the structured owner and is loaded into
+    ``profile.state.display_name``. Runtime file overlays may supply ``fallback``
+    from authored ``ELEPHANT.md`` only when the State row still contains a
+    placeholder, so old rows can recover a real name without making the file a
+    parallel durable name store.
     """
     canonical = str(profile.state.display_name or "").strip()
     if canonical and canonical.casefold() not in _RESERVED_COMPANION_NAMES:
@@ -473,10 +467,11 @@ def companion_display_name(profile: LoadedProfile, *, fallback: str | None = Non
 def elephant_identity_text(profile: LoadedProfile) -> str:
     """Return the elephant's first-person self-introduction body.
 
-    Preference order: the text stored on the State row (written from ELEPHANT.md
-    when the elephant was created / edited), then a template rendering using the
-    companion's current personality preset and initiative, then the built-in
-    default.
+    Callers should pass a ``LoadedProfile`` already overlaid with authored
+    ``ELEPHANT.md`` text when an elephant workspace is available. Within that
+    profile, preference order is the loaded identity text, then a template
+    rendering using the companion's current personality preset and initiative,
+    then the built-in default.
     """
     companion = resolved_companion_settings(profile)
     return (

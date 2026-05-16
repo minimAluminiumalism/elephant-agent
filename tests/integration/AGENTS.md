@@ -4,7 +4,7 @@ Use this directory for cross-package behavior.
 
 Good targets:
 
-- State continuity plus memory
+- State continuity plus recall and understanding
 - context plus models
 - gateway_core plus kernel
 - auth plus models

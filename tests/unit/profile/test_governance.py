@@ -7,7 +7,6 @@ import unittest
 from packages.contracts.runtime import PersonalModelRuntimeState
 from packages.state import (
     CompanionSettings,
-    build_loaded_profile_from_state,
     build_companion_identity_state,
     build_companion_onboarding_state,
     parse_user_profile_content,
@@ -18,6 +17,7 @@ from packages.state import (
     parse_user_profile_text,
     render_user_profile_text,
 )
+from packages.state.projection import build_loaded_profile_from_state
 
 
 class UserProfileGovernanceTest(unittest.TestCase):
