@@ -29,6 +29,12 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install project dependencies
+        run: uv sync --frozen
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -45,17 +51,17 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             git fetch origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
-            make build-and-test AGENT_BASE_REF="origin/${{ github.base_ref }}"
+            uv run make build-and-test AGENT_BASE_REF="origin/${{ github.base_ref }}"
           else
             BASE_REF="${{ github.event.before }}"
             if [ -z "$BASE_REF" ] || [ "$BASE_REF" = "0000000000000000000000000000000000000000" ]; then
               BASE_REF="HEAD^"
             fi
-            make build-and-test AGENT_BASE_REF="$BASE_REF"
+            uv run make build-and-test AGENT_BASE_REF="$BASE_REF"
           fi
 
       - name: Lint commit range
         if: github.event_name == 'pull_request'
         run: |
           git fetch origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
-          python3 tools/agent/scripts/commit_msg_lint.py range --base-ref "origin/${{ github.base_ref }}"
+          uv run python3 tools/agent/scripts/commit_msg_lint.py range --base-ref "origin/${{ github.base_ref }}"

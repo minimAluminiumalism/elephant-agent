@@ -91,6 +91,9 @@ class PublicInstallScriptSmokeTest(unittest.TestCase):
         self.assertIn('"${venv_python}" -m pip install --upgrade "${package_name}"', content)
         self.assertIn('"${venv_python}" -m playwright install chromium', content)
         self.assertIn("ELEPHANT_SKIP_BROWSER_INSTALL", content)
+        self.assertIn("has_uv", content)
+        self.assertIn("uv pip install --python", content)
+        self.assertIn("--prerelease=allow", content)
 
     def test_publish_workflow_builds_dev_versions_from_main(self) -> None:
         content = (ROOT / ".github" / "workflows" / "pypi-publish.yml").read_text(encoding="utf-8")
@@ -103,7 +106,8 @@ class PublicInstallScriptSmokeTest(unittest.TestCase):
         self.assertIn("make package-build", content)
         self.assertIn("make package-verify", content)
         self.assertIn("apps/site/node_modules", makefile_content)
-        self.assertIn("twine check dist/*", makefile_content)
+        self.assertIn("uvx twine check dist/*", makefile_content)
+        self.assertIn("uv build", makefile_content)
         self.assertIn("Missing PYPI_API_TOKEN for the publish job", content)
         self.assertIn("curl -fsSL https://elephant.agentic-in.ai/install.sh | bash", content)
         self.assertIn("pip install elephant-agent==", content)

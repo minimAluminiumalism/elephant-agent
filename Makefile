@@ -144,12 +144,10 @@ test-live-provider-smoke:
 	@ELEPHANT_LIVE_INSTALLED_SMOKE_REQUIRE_DASHBOARD=1 "$(MAKE)" test-live-installed-smoke
 
 package-build:
-	@"$(PYTHON)" -m pip install --upgrade pip
-	@"$(PYTHON)" -m pip install build twine
 	@$(MAKE) dashboard-install
 	@$(MAKE) dashboard-build
 	@rm -rf dist
-	@"$(PYTHON)" -m build
+	@uv build
 	@ls -la dist/
 
 package-verify:
@@ -169,7 +167,7 @@ package-verify:
 		echo "::error::dashboard frontend assets are missing from the wheel"; \
 		exit 1; \
 	fi
-	@twine check dist/*
+	@uvx twine check dist/*
 	@$(MAKE) test-install-surfaces
 
 build-and-test:

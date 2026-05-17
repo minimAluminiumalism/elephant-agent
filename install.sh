@@ -87,6 +87,10 @@ require_command() {
   fi
 }
 
+has_uv() {
+  command -v uv >/dev/null 2>&1
+}
+
 require_python_version() {
   if ! "$python_bin" - <<'PY'
 import sys
@@ -158,22 +162,40 @@ describe_package_selection() {
 
 ensure_runtime() {
   mkdir -p "${install_root}"
-  if [ ! -x "${venv_python}" ]; then
-    "${python_bin}" -m venv "${venv_dir}"
-  fi
 
-  "${venv_python}" -m pip install --upgrade pip setuptools wheel >/dev/null
-  if [ -n "${pip_spec}" ]; then
-    "${venv_python}" -m pip install --upgrade "${pip_spec}"
+  if has_uv; then
+    if [ ! -x "${venv_python}" ]; then
+      uv venv "${venv_dir}" --python "${python_bin}"
+    fi
+    if [ -n "${pip_spec}" ]; then
+      uv pip install --python "${venv_python}" --upgrade "${pip_spec}"
+    else
+      case "${channel}" in
+        dev)
+          uv pip install --python "${venv_python}" --upgrade --prerelease=allow "${package_name}"
+          ;;
+        stable)
+          uv pip install --python "${venv_python}" --upgrade "${package_name}"
+          ;;
+      esac
+    fi
   else
-    case "${channel}" in
-      dev)
-        "${venv_python}" -m pip install --upgrade --pre "${package_name}"
-        ;;
-      stable)
-        "${venv_python}" -m pip install --upgrade "${package_name}"
-        ;;
-    esac
+    if [ ! -x "${venv_python}" ]; then
+      "${python_bin}" -m venv "${venv_dir}"
+    fi
+    "${venv_python}" -m pip install --upgrade pip setuptools wheel >/dev/null
+    if [ -n "${pip_spec}" ]; then
+      "${venv_python}" -m pip install --upgrade "${pip_spec}"
+    else
+      case "${channel}" in
+        dev)
+          "${venv_python}" -m pip install --upgrade --pre "${package_name}"
+          ;;
+        stable)
+          "${venv_python}" -m pip install --upgrade "${package_name}"
+          ;;
+      esac
+    fi
   fi
 
   ensure_browser_runtime
