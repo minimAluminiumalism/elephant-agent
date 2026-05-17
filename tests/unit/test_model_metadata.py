@@ -219,5 +219,59 @@ class ModelMetadataResolutionTests(unittest.TestCase):
         self.assertEqual(cached, 65_536)
 
 
+class ProviderContextLimitTests(unittest.TestCase):
+    _MODELS_DEV_REGISTRY = {
+        "openai": {
+            "models": {
+                "gpt-5.5": {"limit": {"context": 1_050_000, "output": 128_000}},
+                "gpt-5.5-pro": {"limit": {"context": 1_050_000, "output": 128_000}},
+                "gpt-5.4": {"limit": {"context": 1_050_000, "output": 32_768}},
+            }
+        }
+    }
+
+    def _resolve(self, provider_id: str, model_id: str) -> model_metadata.ResolvedModelMetadata | None:
+        with mock.patch.object(
+            model_metadata, "fetch_models_dev_registry", return_value=self._MODELS_DEV_REGISTRY,
+        ):
+            return model_metadata.resolve_provider_model_metadata(
+                provider_id=provider_id,
+                model_id=model_id,
+                base_url="https://chatgpt.com/backend-api/codex" if provider_id == "openai-codex" else "https://api.openai.com/v1",
+            )
+
+    def test_codex_gpt55_clamped_to_400k(self) -> None:
+        meta = self._resolve("openai-codex", "gpt-5.5")
+        assert meta is not None
+        self.assertEqual(meta.context_window_tokens, 400_000)
+        self.assertEqual(meta.max_output_tokens, 128_000)
+
+    def test_openai_api_and_other_models_not_clamped(self) -> None:
+        api_meta = self._resolve("openai", "gpt-5.5")
+        assert api_meta is not None
+        self.assertEqual(api_meta.context_window_tokens, 1_050_000)
+
+        codex_54 = self._resolve("openai-codex", "gpt-5.4")
+        assert codex_54 is not None
+        self.assertEqual(codex_54.context_window_tokens, 1_050_000)
+
+    def test_cached_context_also_clamped(self) -> None:
+        with TemporaryDirectory() as tempdir:
+            cache_path = Path(tempdir) / "context-length-cache.json"
+            with mock.patch.dict(os.environ, {"ELEPHANT_CONTEXT_LENGTH_CACHE_PATH": str(cache_path)}, clear=False):
+                model_metadata.save_context_length(
+                    "gpt-5.5",
+                    "https://chatgpt.com/backend-api/codex",
+                    1_050_000,
+                )
+                metadata = model_metadata.resolve_provider_model_metadata(
+                    provider_id="openai-codex",
+                    model_id="gpt-5.5",
+                    base_url="https://chatgpt.com/backend-api/codex",
+                )
+        assert metadata is not None
+        self.assertEqual(metadata.context_window_tokens, 400_000)
+
+
 if __name__ == "__main__":
     unittest.main()

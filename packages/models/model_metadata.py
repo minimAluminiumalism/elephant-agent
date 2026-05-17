@@ -97,6 +97,20 @@ _URL_TO_PROVIDER: dict[str, str] = {
     "xiaomimimo.com": "xiaomi",
 }
 
+# Provider-specific context window limits.
+# Some providers (e.g. Codex) enforce lower limits than the upstream API.
+# We use the documented product limit (400K), not the lower effective limit
+# (~272K) observed by users.
+# Codex 400K: https://openai.com/index/introducing-gpt-5-5/
+# Effective ~272K: https://github.com/openai/codex/issues/19409
+_PROVIDER_CONTEXT_LIMITS: tuple[tuple[str, str, int], ...] = tuple(sorted(
+    (
+        ("openai-codex", "gpt-5.5", 400_000),
+    ),
+    key=lambda t: len(t[1]),
+    reverse=True,
+))
+
 _models_dev_cache: dict[str, Any] = {}
 _models_dev_cache_time = 0.0
 _openrouter_cache: dict[str, "ResolvedModelMetadata"] = {}
@@ -126,12 +140,15 @@ def resolve_provider_model_metadata(
         return None
 
     normalized_base_url = _normalize_base_url(base_url)
+    effective_provider = _effective_provider_id(provider_id=provider_id, base_url=normalized_base_url)
+
     cached_context = get_cached_context_length(normalized_model, normalized_base_url)
     if cached_context is not None:
-        return ResolvedModelMetadata(
+        cached = ResolvedModelMetadata(
             context_window_tokens=cached_context,
             source="context-length-cache",
         )
+        return _apply_provider_context_limit(effective_provider, normalized_model, cached)
 
     if normalized_base_url and is_local_endpoint(normalized_base_url):
         local = query_local_endpoint_metadata(
@@ -143,14 +160,13 @@ def resolve_provider_model_metadata(
             save_context_length(normalized_model, normalized_base_url, local.context_window_tokens)
             return local
 
-    effective_provider = _effective_provider_id(provider_id=provider_id, base_url=normalized_base_url)
     models_dev = lookup_models_dev_metadata(effective_provider, normalized_model)
     if models_dev is not None and models_dev.context_window_tokens is not None:
-        return models_dev
+        return _apply_provider_context_limit(effective_provider, normalized_model, models_dev)
 
     openrouter = lookup_openrouter_metadata(normalized_model)
     if openrouter is not None and openrouter.context_window_tokens is not None:
-        return openrouter
+        return _apply_provider_context_limit(effective_provider, normalized_model, openrouter)
 
     return None
 
@@ -418,6 +434,33 @@ def _effective_provider_id(*, provider_id: str, base_url: str | None) -> str:
     if normalized_provider in {"", "openai-compatible"}:
         return infer_provider_from_url(base_url) or normalized_provider
     return normalized_provider
+
+
+def _apply_provider_context_limit(
+    provider_id: str,
+    model_id: str,
+    metadata: ResolvedModelMetadata,
+) -> ResolvedModelMetadata:
+    normalized_provider = provider_id.strip().lower()
+    normalized_model = model_id.casefold()
+    for prov, fragment, limit in _PROVIDER_CONTEXT_LIMITS:
+        if normalized_provider != prov:
+            continue
+        idx = normalized_model.find(fragment)
+        if idx < 0:
+            continue
+        tail = idx + len(fragment)
+        if tail < len(normalized_model) and normalized_model[tail] not in ("-", "/"):
+            continue
+        ctx = metadata.context_window_tokens
+        if ctx is not None and ctx > limit:
+            return ResolvedModelMetadata(
+                context_window_tokens=limit,
+                max_output_tokens=metadata.max_output_tokens,
+                source=metadata.source,
+            )
+        break
+    return metadata
 
 
 def _request_json_object(
