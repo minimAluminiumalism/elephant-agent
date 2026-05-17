@@ -1,5 +1,16 @@
 # Contributing
 
+## Dev Setup
+
+Requires [uv](https://docs.astral.sh/uv/) and Node.js 20+.
+
+```bash
+uv sync
+source .venv/bin/activate
+make agent-bootstrap
+make agent-test
+```
+
 ## Start Order
 
 1. read [AGENTS.md](AGENTS.md)

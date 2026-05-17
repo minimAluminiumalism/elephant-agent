@@ -70,6 +70,10 @@ require_command() {
   fi
 }
 
+has_uv() {
+  command -v uv >/dev/null 2>&1
+}
+
 require_python_version() {
   if ! "$python_bin" - <<'PY'
 import sys
@@ -160,11 +164,19 @@ run_launcher() {
 
 ensure_runtime() {
   mkdir -p "${install_root}"
-  if [ ! -x "${venv_python}" ]; then
-    "${python_bin}" -m venv "${venv_dir}"
+
+  if has_uv; then
+    if [ ! -x "${venv_python}" ]; then
+      uv venv "${venv_dir}" --python "${python_bin}"
+    fi
+    uv pip install --python "${venv_python}" --upgrade -e "${repo_root}"
+  else
+    if [ ! -x "${venv_python}" ]; then
+      "${python_bin}" -m venv "${venv_dir}"
+    fi
+    "${venv_python}" -m pip install --upgrade pip setuptools wheel >/dev/null
+    "${venv_python}" -m pip install --upgrade -e "${repo_root}"
   fi
-  "${venv_python}" -m pip install --upgrade pip setuptools wheel >/dev/null
-  "${venv_python}" -m pip install --upgrade -e "${repo_root}"
 }
 
 install_or_upgrade() {

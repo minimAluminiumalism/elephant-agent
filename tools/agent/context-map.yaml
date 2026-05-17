@@ -129,7 +129,9 @@
     "release_ops": [
       ".github/workflows/**",
       "install.sh",
-      ".github/*.md"
+      ".github/*.md",
+      ".python-version",
+      "uv.lock"
     ],
     "contracts": [
       "packages/contracts/**"

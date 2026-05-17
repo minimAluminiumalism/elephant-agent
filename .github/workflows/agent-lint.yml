@@ -49,6 +49,12 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install project dependencies
+        run: uv sync --frozen
+
       - name: Resolve base ref
         run: |
           set -euo pipefail
@@ -64,7 +70,7 @@ jobs:
           echo "AGENT_BASE_REF=$BASE_REF" >> "$GITHUB_ENV"
 
       - name: Report agent surfaces
-        run: make agent-report AGENT_BASE_REF="$AGENT_BASE_REF"
+        run: uv run make agent-report AGENT_BASE_REF="$AGENT_BASE_REF"
 
       - name: Run agent lint
-        run: make agent-lint AGENT_BASE_REF="$AGENT_BASE_REF"
+        run: uv run make agent-lint AGENT_BASE_REF="$AGENT_BASE_REF"

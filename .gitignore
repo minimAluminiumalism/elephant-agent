@@ -16,6 +16,7 @@ apps/dashboard/dist/
 apps/dashboard/node_modules/
 *.elephant-info/
 elephant_agent.egg-info/
+dist/
 build/
 .git/
 .agents/

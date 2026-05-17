@@ -80,7 +80,9 @@
       "paths": [
         ".github/workflows/**",
         "install.sh",
-        ".github/*.md"
+        ".github/*.md",
+        ".python-version",
+        "uv.lock"
       ],
       "read_first": [
         "docs/agent/release-model.md",
