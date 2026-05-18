@@ -57,6 +57,18 @@ class TestDaemonIsRunning:
         pid_path.write_text(f"{os.getpid()}\n", encoding="utf-8")
         assert daemon_is_running(tmp_path) is True
 
+    def test_healthz_state_identity_must_match(self, tmp_path: Path) -> None:
+        from apps.daemon_command import _healthz_matches_state
+
+        assert _healthz_matches_state(
+            {"status": "running", "state_dir": str(tmp_path)},
+            tmp_path,
+        ) is True
+        assert _healthz_matches_state(
+            {"status": "running", "state_dir": str(tmp_path / "other")},
+            tmp_path,
+        ) is False
+
 
 class TestStartDaemonDetached:
     """Tests for start_daemon_detached."""
@@ -76,7 +88,13 @@ class TestStartDaemonDetached:
         from apps.daemon_command import start_daemon_detached
 
         # Patch subprocess.Popen to simulate a successful daemon start
-        with patch("apps.daemon_command.subprocess.Popen") as mock_popen:
+        with (
+            patch("apps.daemon_command.subprocess.Popen") as mock_popen,
+            patch(
+                "apps.daemon_command._daemon_healthz_payload",
+                return_value={"status": "running", "pid": 12345, "state_dir": str(tmp_path)},
+            ),
+        ):
             mock_process = mock_popen.return_value
             mock_process.pid = 12345
             mock_process.poll.return_value = None  # Still running
@@ -111,7 +129,13 @@ class TestStartDaemonDetached:
                     stacklevel=2,
                 )
 
-        with patch("apps.daemon_command.subprocess.Popen", side_effect=lambda *_args, **_kwargs: WarningProcess()):
+        with (
+            patch("apps.daemon_command.subprocess.Popen", side_effect=lambda *_args, **_kwargs: WarningProcess()),
+            patch(
+                "apps.daemon_command._daemon_healthz_payload",
+                return_value={"status": "running", "pid": 12346, "state_dir": str(tmp_path)},
+            ),
+        ):
             with warnings.catch_warnings(record=True) as caught:
                 warnings.simplefilter("always", ResourceWarning)
                 result = start_daemon_detached(tmp_path, tmp_path)
@@ -123,6 +147,35 @@ class TestStartDaemonDetached:
             if warning.category is ResourceWarning
             and "subprocess 12346 is still running" in str(warning.message)
         ]
+
+    def test_start_does_not_overwrite_child_ready_record_after_timeout(self, tmp_path: Path) -> None:
+        from apps.daemon_command import start_daemon_detached
+
+        class FakeProcess:
+            pid = 12347
+
+            def poll(self) -> None:
+                return None
+
+        def mark_child_ready(_state_dir: Path) -> None:
+            record_path = tmp_path / "daemon.runtime.json"
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+            record["status"] = "running"
+            record["healthz_ready_at"] = "2026-05-18T00:00:00+00:00"
+            record_path.write_text(json.dumps(record), encoding="utf-8")
+            return None
+
+        with (
+            patch("apps.daemon_command.subprocess.Popen", return_value=FakeProcess()),
+            patch("apps.daemon_command._DAEMON_STARTUP_WAIT_SECONDS", 0.0),
+            patch("apps.daemon_command._daemon_healthz_payload", side_effect=mark_child_ready),
+        ):
+            result = start_daemon_detached(tmp_path, tmp_path)
+
+        assert result == 0
+        record = json.loads((tmp_path / "daemon.runtime.json").read_text(encoding="utf-8"))
+        assert record["status"] == "running"
+        assert "last_error" not in record
 
 
 class TestStopDaemon:
@@ -151,6 +204,47 @@ class TestStopDaemon:
             result = stop_daemon(tmp_path)
             assert result == 0
 
+    def test_stop_uses_healthz_pid_when_pid_file_is_missing(self, tmp_path: Path) -> None:
+        from apps.daemon_command import stop_daemon
+
+        record_path = tmp_path / "daemon.runtime.json"
+        record_path.write_text(json.dumps({"status": "running", "host": "127.0.0.1", "port": 9876}), encoding="utf-8")
+        running = {"value": True}
+
+        def fake_is_running(pid: int | None) -> bool:
+            return pid == 4321 and running["value"]
+
+        def fake_kill(pid: int, sig: int) -> None:
+            assert pid == 4321
+            assert sig == signal.SIGTERM
+            running["value"] = False
+
+        with (
+            patch("apps.daemon_command._pid_from_healthz", return_value=4321),
+            patch("apps.daemon_command._pid_is_running", side_effect=fake_is_running),
+            patch("apps.daemon_command.os.kill", side_effect=fake_kill) as kill,
+        ):
+            result = stop_daemon(tmp_path)
+
+        assert result == 0
+        kill.assert_called_once()
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        assert record["status"] == "stopped"
+        assert record["pid"] is None
+
+    def test_restart_does_not_start_when_stop_fails(self, tmp_path: Path) -> None:
+        from apps.daemon_command import restart_daemon
+
+        with (
+            patch("apps.daemon_command._stop_daemon", return_value=1) as stop,
+            patch("apps.daemon_command._start_detached") as start,
+        ):
+            result = restart_daemon(tmp_path, tmp_path)
+
+        assert result == 1
+        stop.assert_called_once()
+        start.assert_not_called()
+
 
 # ── daemon task guard tests ──────────────────────────────────────
 
@@ -173,7 +267,8 @@ class TestDaemonTaskGuard:
             await _daemon_task_guard(task, "test", statuses)
 
         asyncio.run(_run())
-        assert statuses["test"].status == "running"  # No change on success
+        assert statuses["test"].status == "stopped"
+        assert statuses["test"].last_error == "task exited"
 
     def test_exception_updates_status(self) -> None:
         from apps.daemon import DaemonServiceStatus, _daemon_task_guard
@@ -254,6 +349,28 @@ class TestServiceDaemonStartup:
         assert captured["state_dir"] == str(tmp_path)
         assert captured["start_learning_worker"] is False
 
+    def test_mark_runtime_ready_updates_record(self, tmp_path: Path) -> None:
+        from apps.daemon import ServiceDaemon
+
+        record_path = tmp_path / "daemon.runtime.json"
+        record_path.write_text(
+            json.dumps({"status": "starting", "pid": 12345, "last_error": "healthz not ready"}),
+            encoding="utf-8",
+        )
+        daemon = ServiceDaemon(state_dir=tmp_path, cli_state_dir=tmp_path, host="127.0.0.1", port=9876)
+
+        daemon._mark_runtime_ready()
+
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        assert record["status"] == "running"
+        assert record["pid"] == os.getpid()
+        assert record["state_dir"] == str(tmp_path)
+        assert record["cli_state_dir"] == str(tmp_path)
+        assert record["host"] == "127.0.0.1"
+        assert record["port"] == 9876
+        assert "healthz_ready_at" in record
+        assert "last_error" not in record
+
 
 # ── daemon_tasks import structure test ───────────────────────────
 
@@ -288,6 +405,42 @@ class TestDaemonTasksImports:
 
 class TestLearningWorkerLoop:
     """Tests for daemon learning worker event-loop behavior."""
+
+    def test_learning_worker_does_not_idle_exit_by_default(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        from apps import daemon_tasks
+
+        class FakeRepository:
+            def bootstrap(self) -> None:
+                pass
+
+            def claim_learning_job(self, *, worker_id: str) -> object | None:
+                return None
+
+        def fake_repository_factory(_database_path: Path) -> FakeRepository:
+            return FakeRepository()
+
+        def fake_write_record(*_args: object, **_kwargs: object) -> dict[str, object]:
+            return {}
+
+        monkeypatch.setattr(daemon_tasks, "RuntimeStorageRepository", fake_repository_factory)
+        monkeypatch.setattr("apps.learning_worker_runtime._write_learning_worker_record", fake_write_record)
+
+        running = True
+
+        async def run_loop() -> None:
+            nonlocal running
+            worker = asyncio.create_task(
+                daemon_tasks.learning_worker_loop(
+                    state_dir=tmp_path,
+                    is_running=lambda: running,
+                )
+            )
+            await asyncio.sleep(1.2)
+            assert not worker.done()
+            running = False
+            await asyncio.wait_for(worker, timeout=1.0)
+
+        asyncio.run(run_loop())
 
     def test_claimed_learning_job_runs_off_event_loop(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         from apps import daemon_tasks

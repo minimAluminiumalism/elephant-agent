@@ -170,7 +170,7 @@ async def learning_worker_loop(
     *,
     state_dir: Path,
     is_running: Callable[[], bool],
-    idle_seconds: float = 20.0,
+    idle_seconds: float | None = None,
 ) -> None:
     """Async learning worker: same logic as ``run_learning_worker`` but using ``asyncio.sleep``."""
     from apps.learning_worker_runtime import (
@@ -199,7 +199,7 @@ async def learning_worker_loop(
         while is_running():
             job = repository.claim_learning_job(worker_id=worker_id)
             if job is None:
-                if time.monotonic() - last_activity >= max(1.0, idle_seconds):
+                if idle_seconds is not None and time.monotonic() - last_activity >= max(1.0, idle_seconds):
                     logger.info("learning worker idle timeout (%gs, %d job(s) completed), exiting", idle_seconds, jobs_completed)
                     break
                 _write_learning_worker_record(

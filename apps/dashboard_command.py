@@ -74,7 +74,14 @@ def _probe_daemon_dashboard(plan: DashboardLaunchPlan) -> DaemonDashboardProbe:
     Returns *None* if the daemon is not running or the dashboard
     is not available.
     """
-    from apps.daemon_command import _daemon_pid_path, _daemon_record_path, _load_record, _pid_is_running, _read_pid
+    from apps.daemon_command import (
+        _daemon_pid_path,
+        _daemon_record_path,
+        _healthz_matches_state,
+        _load_record,
+        _pid_is_running,
+        _read_pid,
+    )
 
     record_path = _daemon_record_path(plan.state_dir)
     if not record_path.exists():
@@ -100,6 +107,14 @@ def _probe_daemon_dashboard(plan: DashboardLaunchPlan) -> DaemonDashboardProbe:
                     base_url=base_url,
                     daemon_running=pid_running,
                     reason="healthz_not_ok",
+                )
+            payload = json.loads(resp.read().decode("utf-8"))
+            if not isinstance(payload, dict) or not _healthz_matches_state(payload, plan.state_dir, record):
+                return DaemonDashboardProbe(
+                    dashboard_url=None,
+                    base_url=base_url,
+                    daemon_running=pid_running,
+                    reason="healthz_state_mismatch",
                 )
     except Exception:
         return DaemonDashboardProbe(

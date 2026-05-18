@@ -33,6 +33,8 @@ _DAEMON_RECORD_NAME = "daemon.runtime.json"
 _DAEMON_PID_NAME = "daemon.pid"
 _DAEMON_LOG_NAME = "daemon.log"
 _DAEMON_LOCK_NAME = "daemon.lock"
+_DAEMON_STARTUP_WAIT_SECONDS = 5.0
+_DAEMON_STARTUP_POLL_SECONDS = 0.1
 
 
 def _daemon_pid_path(state_dir: Path) -> Path:
@@ -70,6 +72,64 @@ def _pid_is_running(pid: int | None) -> bool:
     return True
 
 
+def _coerce_int(value: object) -> int | None:
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _same_path(left: object, right: object) -> bool:
+    try:
+        return Path(str(left)).expanduser().resolve() == Path(str(right)).expanduser().resolve()
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return str(left) == str(right)
+
+
+def _healthz_matches_state(payload: dict, state_dir: Path, record: dict | None = None) -> bool:
+    """Return whether a /healthz payload belongs to *state_dir*.
+
+    The daemon can be reached via a stale runtime record after a PID file was
+    deleted, so port reachability alone is not enough. Prefer explicit
+    state_dir identity; fall back to PID equality for older health payloads.
+    """
+    if payload.get("status") != "running":
+        return False
+    payload_state_dir = payload.get("state_dir")
+    if payload_state_dir:
+        return _same_path(payload_state_dir, state_dir)
+    payload_pid = _coerce_int(payload.get("pid"))
+    record_pid = _coerce_int((record or {}).get("pid")) or _read_pid(_daemon_pid_path(state_dir))
+    return payload_pid is not None and record_pid is not None and payload_pid == record_pid
+
+
+def _daemon_healthz_payload(state_dir: Path) -> dict | None:
+    """Return the daemon /healthz payload when it matches *state_dir*."""
+    record_path = _daemon_record_path(state_dir)
+    if not record_path.exists():
+        return None
+    record = _load_record(record_path) or {}
+    port = record.get("port")
+    if port is None:
+        return None
+    host = record.get("host", "0.0.0.0")
+    addr = host if host != "0.0.0.0" else "127.0.0.1"
+    try:
+        import urllib.request
+        url = f"http://{addr}:{port}/healthz"
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            if resp.status != 200:
+                return None
+            body = json.loads(resp.read().decode("utf-8"))
+            if isinstance(body, dict) and _healthz_matches_state(body, state_dir, record):
+                return body
+    except Exception:
+        pass
+    return None
+
+
 def _utc_now_iso() -> str:
     from datetime import UTC, datetime
     return datetime.now(UTC).isoformat()
@@ -95,6 +155,12 @@ def _remove_file_if_exists(path: Path) -> None:
         path.unlink()
     except FileNotFoundError:
         pass
+
+
+def _mark_daemon_stopped(record_path: Path) -> None:
+    record = _load_record(record_path) or {}
+    record.update({"status": "stopped", "stopped_at": _utc_now_iso(), "pid": None})
+    _write_record(record_path, record)
 
 
 def _acquire_daemon_lock(state_dir: Path, *, blocking: bool = True) -> IO[str] | None:
@@ -215,7 +281,9 @@ def build_typer_app(*, default_state_dir: Path | None = None) -> typer.Typer:
         timeout: float = typer.Option(10.0, "--timeout", help="Seconds to wait before forcing shutdown."),
         force: bool = typer.Option(False, "--force", help="Send SIGKILL if the process does not exit."),
     ) -> None:
-        _stop_daemon(state_dir, timeout=timeout, force=force)
+        stop_exit = _stop_daemon(state_dir, timeout=timeout, force=force)
+        if stop_exit != 0:
+            raise typer.Exit(stop_exit)
         raise typer.Exit(_start_detached(state_dir, cli_state_dir, host=host, port=port, log_level=log_level))
 
     @app.command("logs")
@@ -314,9 +382,7 @@ def _run_foreground(state_dir: Path, cli_state_dir: Path, *, host: str, port: in
         )
     finally:
         _remove_file_if_exists(pid_path)
-        record = _load_record(record_path) or {}
-        record.update({"status": "stopped", "stopped_at": _utc_now_iso(), "pid": None})
-        _write_record(record_path, record)
+        _mark_daemon_stopped(record_path)
 
 
 def _start_detached(state_dir: Path, cli_state_dir: Path, *, host: str, port: int, log_level: str = "INFO") -> int:
@@ -386,8 +452,21 @@ def _start_detached(state_dir: Path, cli_state_dir: Path, *, host: str, port: in
         # process will re-acquire this lock inside its own _run_foreground().
         _release_daemon_lock(lock_fd)
 
-    time.sleep(0.4)
-    return_code = process.poll()
+    health_ready = False
+    return_code = None
+    deadline = time.monotonic() + _DAEMON_STARTUP_WAIT_SECONDS
+    while time.monotonic() < deadline:
+        return_code = process.poll()
+        if return_code is not None:
+            break
+        if _daemon_healthz_payload(state_dir) is not None:
+            health_ready = True
+            break
+        time.sleep(_DAEMON_STARTUP_POLL_SECONDS)
+    if return_code is None:
+        return_code = process.poll()
+    if return_code is None and not health_ready and _daemon_healthz_payload(state_dir) is not None:
+        health_ready = True
     if return_code is not None:
         _remove_file_if_exists(pid_path)
         record = _load_record(record_path) or {}
@@ -402,9 +481,18 @@ def _start_detached(state_dir: Path, cli_state_dir: Path, *, host: str, port: in
         print(f"Elephant daemon failed to start (exit {return_code}). Check {log_path}.")
         return 1
 
-    # Update record to running
+    # Update record only after the HTTP health endpoint confirms this state.
     record = _load_record(record_path) or {}
-    record["status"] = "running"
+    record_ready = health_ready or bool(record.get("healthz_ready_at"))
+    if record_ready:
+        record["status"] = "running"
+        record.pop("last_error", None)
+    else:
+        record["status"] = "starting"
+        record["last_error"] = (
+            f"healthz not ready after {_DAEMON_STARTUP_WAIT_SECONDS:g}s; "
+            "daemon process is still running"
+        )
     _write_record(record_path, record)
 
     print(f"Elephant daemon is now running in the background.")
@@ -412,6 +500,8 @@ def _start_detached(state_dir: Path, cli_state_dir: Path, *, host: str, port: in
     print(f"  PID file: {pid_path}")
     print(f"  Log file: {log_path}")
     print(f"  HTTP: http://{host}:{port}")
+    if not record_ready:
+        print("  Health: not ready yet; inspect `elephant daemon status` if it does not become ready.")
     # The daemon is intentionally detached and now owned by pidfile/record state.
     # Drop the local Popen wrapper without letting Python report it as a leaked
     # still-running subprocess under unittest's ResourceWarning configuration.
@@ -432,11 +522,12 @@ def _stop_daemon(state_dir: Path, *, timeout: float = 10.0, force: bool = False)
 
     pid = _read_pid(pid_path)
     if not _pid_is_running(pid):
+        pid = _pid_from_healthz(state_dir)
+    if not _pid_is_running(pid):
         _remove_file_if_exists(pid_path)
         record = _load_record(record_path) or {}
         if record.get("status") != "stopped":
-            record.update({"status": "stopped", "stopped_at": _utc_now_iso(), "pid": None})
-            _write_record(record_path, record)
+            _mark_daemon_stopped(record_path)
         print("Elephant daemon is not running.")
         return 0
 
@@ -445,6 +536,7 @@ def _stop_daemon(state_dir: Path, *, timeout: float = 10.0, force: bool = False)
         os.kill(pid, signal.SIGTERM)
     except ProcessLookupError:
         _remove_file_if_exists(pid_path)
+        _mark_daemon_stopped(record_path)
         print("Process already exited.")
         return 0
     except PermissionError as exc:
@@ -467,9 +559,7 @@ def _stop_daemon(state_dir: Path, *, timeout: float = 10.0, force: bool = False)
             pass
 
     _remove_file_if_exists(pid_path)
-    record = _load_record(record_path) or {}
-    record.update({"status": "stopped", "stopped_at": _utc_now_iso(), "pid": None})
-    _write_record(record_path, record)
+    _mark_daemon_stopped(record_path)
     print("Elephant daemon stopped.")
     return 0
 
@@ -624,50 +714,13 @@ def _probe_daemon_http(state_dir: Path) -> bool:
     positives in test environments where a random tmp_path happens to reach
     a real daemon on the default port.
     """
-    record_path = _daemon_record_path(state_dir)
-    if not record_path.exists():
-        return False
-    record = _load_record(record_path) or {}
-    port = record.get("port")
-    if port is None:
-        return False
-    host = record.get("host", "0.0.0.0")
-    addr = host if host != "0.0.0.0" else "127.0.0.1"
-    try:
-        import urllib.request
-        url = f"http://{addr}:{port}/healthz"
-        req = urllib.request.Request(url, method="GET")
-        with urllib.request.urlopen(req, timeout=2) as resp:
-            if resp.status == 200:
-                body = json.loads(resp.read().decode("utf-8"))
-                return body.get("status") == "running"
-    except Exception:
-        pass
-    return False
+    return _daemon_healthz_payload(state_dir) is not None
 
 
 def _pid_from_healthz(state_dir: Path) -> int | None:
     """Retrieve the daemon PID from the /healthz endpoint."""
-    record_path = _daemon_record_path(state_dir)
-    if not record_path.exists():
-        return None
-    record = _load_record(record_path) or {}
-    port = record.get("port")
-    if port is None:
-        return None
-    host = record.get("host", "0.0.0.0")
-    addr = host if host != "0.0.0.0" else "127.0.0.1"
-    try:
-        import urllib.request
-        url = f"http://{addr}:{port}/healthz"
-        req = urllib.request.Request(url, method="GET")
-        with urllib.request.urlopen(req, timeout=2) as resp:
-            if resp.status == 200:
-                body = json.loads(resp.read().decode("utf-8"))
-                return body.get("pid")
-    except Exception:
-        pass
-    return None
+    payload = _daemon_healthz_payload(state_dir)
+    return _coerce_int(payload.get("pid")) if payload is not None else None
 
 
 def start_daemon_detached(
@@ -711,7 +764,9 @@ def restart_daemon(
     force: bool = False,
 ) -> int:
     """Restart the unified Elephant daemon (stop + start)."""
-    _stop_daemon(state_dir, timeout=timeout, force=force)
+    stop_exit = _stop_daemon(state_dir, timeout=timeout, force=force)
+    if stop_exit != 0:
+        return stop_exit
     return _start_detached(state_dir, cli_state_dir, host=host, port=port, log_level=log_level)
 
 

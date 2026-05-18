@@ -1289,6 +1289,14 @@ class GatewayAdapterE2ETests(unittest.TestCase):
         output = io.StringIO()
         with (
             mock.patch("apps.gateway.__main__.subprocess.Popen", return_value=FakeProcess()) as popen,
+            mock.patch(
+                "apps.daemon_command._daemon_healthz_payload",
+                side_effect=[
+                    None,
+                    None,
+                    {"status": "running", "pid": 54321, "state_dir": str(self.state_dir)},
+                ],
+            ),
             mock.patch("apps.gateway.__main__.time.sleep", return_value=None),
             redirect_stdout(output),
         ):
@@ -1327,6 +1335,13 @@ class GatewayAdapterE2ETests(unittest.TestCase):
         output = io.StringIO()
         with (
             mock.patch("apps.gateway.__main__.subprocess.Popen", return_value=FakeProcess()) as popen,
+            mock.patch(
+                "apps.daemon_command._daemon_healthz_payload",
+                side_effect=[
+                    None,
+                    {"status": "running", "pid": 43210, "state_dir": str(self.state_dir)},
+                ],
+            ),
             mock.patch("apps.gateway.__main__.time.sleep", return_value=None),
             redirect_stdout(output),
         ):
@@ -1375,6 +1390,13 @@ class GatewayAdapterE2ETests(unittest.TestCase):
         with (
             mock.patch.dict("os.environ", {}, clear=True),
             mock.patch("apps.gateway.__main__.subprocess.Popen", return_value=FakeProcess()) as popen,
+            mock.patch(
+                "apps.daemon_command._daemon_healthz_payload",
+                side_effect=[
+                    None,
+                    {"status": "running", "pid": 43211, "state_dir": str(self.state_dir)},
+                ],
+            ),
             mock.patch("apps.gateway.__main__.time.sleep", return_value=None),
             redirect_stdout(output),
         ):
@@ -1888,6 +1910,13 @@ class GatewayAdapterE2ETests(unittest.TestCase):
         output = io.StringIO()
         with (
             mock.patch("apps.gateway.__main__.subprocess.Popen", return_value=FakeProcess()) as popen,
+            mock.patch(
+                "apps.daemon_command._daemon_healthz_payload",
+                side_effect=[
+                    None,
+                    {"status": "running", "pid": 54322, "state_dir": str(self.state_dir)},
+                ],
+            ),
             mock.patch("apps.gateway.__main__.time.sleep", return_value=None),
             redirect_stdout(output),
         ):

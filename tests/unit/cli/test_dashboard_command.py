@@ -40,7 +40,7 @@ class DashboardCommandTest(unittest.TestCase):
                 dashboard_command.urllib.request,
                 "urlopen",
                 side_effect=[
-                    _FakeResponse({"status": "running"}),
+                    _FakeResponse({"status": "running", "state_dir": str(state_dir)}),
                     _FakeResponse({"dashboard": {}}),
                 ],
             ) as urlopen:
@@ -96,7 +96,7 @@ class DashboardCommandTest(unittest.TestCase):
                 dashboard_command.urllib.request,
                 "urlopen",
                 side_effect=[
-                    _FakeResponse({"status": "running"}),
+                    _FakeResponse({"status": "running", "state_dir": str(state_dir)}),
                     _FakeResponse({"not_dashboard": {}}),
                 ],
             ):
@@ -105,6 +105,27 @@ class DashboardCommandTest(unittest.TestCase):
                 )
 
         self.assertIsNone(url)
+
+    def test_try_daemon_dashboard_url_rejects_state_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            state_dir = Path(tempdir) / "herd"
+            state_dir.mkdir()
+            _daemon_record_path(state_dir).write_text(
+                json.dumps({"host": "127.0.0.1", "port": 9877}),
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(
+                dashboard_command.urllib.request,
+                "urlopen",
+                return_value=_FakeResponse({"status": "running", "state_dir": str(state_dir / "other")}),
+            ):
+                probe = dashboard_command._probe_daemon_dashboard(
+                    dashboard_command.DashboardLaunchPlan(state_dir=state_dir),
+                )
+
+        self.assertIsNone(probe.dashboard_url)
+        self.assertEqual(probe.reason, "healthz_state_mismatch")
 
     def test_ensure_frontend_dist_uses_existing_dashboard_build(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:

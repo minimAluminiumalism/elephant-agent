@@ -91,6 +91,7 @@ class ServiceDaemon:
         self._tasks = guarded_tasks
 
         logger.info("all services started (%d tasks)", len(self._tasks))
+        self._mark_runtime_ready()
 
         # Start periodic health heartbeat
         heartbeat_task = asyncio.create_task(
@@ -141,6 +142,29 @@ class ServiceDaemon:
                 status.status = "stopped"
 
         logger.info("shutdown complete")
+
+    def _mark_runtime_ready(self) -> None:
+        """Mark the runtime record ready after the daemon services are live."""
+        try:
+            from apps.daemon_command import _daemon_record_path, _load_record, _write_record
+
+            record_path = _daemon_record_path(self.state_dir)
+            record = _load_record(record_path) or {}
+            record.update(
+                {
+                    "status": "running",
+                    "pid": _pid(),
+                    "state_dir": str(self.state_dir),
+                    "cli_state_dir": str(self.cli_state_dir),
+                    "host": self.host,
+                    "port": self.port,
+                    "healthz_ready_at": datetime.now(UTC).isoformat(),
+                }
+            )
+            record.pop("last_error", None)
+            _write_record(record_path, record)
+        except Exception as exc:
+            logger.debug("failed to mark runtime ready: %s", exc)
 
     async def _stop_service_safe(self, key: str, service: Any) -> None:
         """Stop a single daemon service with timeout protection."""
@@ -517,6 +541,10 @@ class ServiceDaemon:
         result: dict[str, Any] = {
             "status": "running" if not self._shutdown.is_set() else "stopping",
             "pid": _pid(),
+            "state_dir": str(self.state_dir),
+            "cli_state_dir": str(self.cli_state_dir),
+            "host": self.host,
+            "port": self.port,
             "uptime_seconds": (
                 (datetime.now(UTC) - datetime.fromisoformat(self._started_at)).total_seconds()
                 if self._started_at
@@ -578,6 +606,12 @@ async def _daemon_task_guard(
         if status is not None:
             status.status = "failed"
             status.last_error = str(exc)
+    else:
+        status = statuses.get(name)
+        if status is not None and status.status == "running":
+            status.status = "stopped"
+            status.last_error = "task exited"
+        logger.warning("task %s exited; marked service stopped", name)
 
 
 # ── CLI entry point ────────────────────────────────────────────
