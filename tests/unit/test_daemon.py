@@ -10,6 +10,7 @@ import sys
 import time
 import warnings
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -228,6 +229,32 @@ class TestDaemonTaskGuard:
         assert inner_cancelled, "Inner task should have been cancelled when guard was cancelled"
 
 
+class TestServiceDaemonStartup:
+    """Tests for daemon service startup wiring."""
+
+    def test_gateway_app_start_disables_standalone_learning_worker(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from apps.daemon import ServiceDaemon
+        import apps.gateway.runtime_impl as gateway_runtime
+
+        captured: dict[str, object] = {}
+
+        def fake_build_gateway_app(**kwargs: object) -> tuple[object, object, object]:
+            captured.update(kwargs)
+            return SimpleNamespace(profile_id="you"), object(), object()
+
+        monkeypatch.setattr(gateway_runtime, "build_gateway_app", fake_build_gateway_app)
+
+        daemon = ServiceDaemon(state_dir=tmp_path, cli_state_dir=tmp_path)
+        asyncio.run(daemon._start_gateway_app())
+
+        assert captured["state_dir"] == str(tmp_path)
+        assert captured["start_learning_worker"] is False
+
+
 # ── daemon_tasks import structure test ───────────────────────────
 
 
@@ -257,3 +284,66 @@ class TestDaemonTasksImports:
                 f"datetime import at line {imp.lineno} should be at the top, "
                 f"not after function definitions (last func at line {last_func_line})"
             )
+
+
+class TestLearningWorkerLoop:
+    """Tests for daemon learning worker event-loop behavior."""
+
+    def test_claimed_learning_job_runs_off_event_loop(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        from apps import daemon_tasks
+
+        class FakeRepository:
+            def __init__(self) -> None:
+                self.claimed = False
+
+            def bootstrap(self) -> None:
+                pass
+
+            def claim_learning_job(self, *, worker_id: str) -> object | None:
+                if self.claimed:
+                    return None
+                self.claimed = True
+                return SimpleNamespace(job_id="job-1", progress_stage="queued", attempt_count=1)
+
+            def fail_learning_job(self, *_args: object, **_kwargs: object) -> None:
+                pytest.fail("learning job should not fail")
+
+        repository = FakeRepository()
+        running = True
+
+        def fake_repository_factory(_database_path: Path) -> FakeRepository:
+            return repository
+
+        def fake_write_record(*_args: object, **_kwargs: object) -> dict[str, object]:
+            return {}
+
+        def fake_run_claimed_job(_state_dir: Path, _job_id: str, _worker_id: str) -> None:
+            nonlocal running
+            time.sleep(0.2)
+            running = False
+
+        monkeypatch.setattr(daemon_tasks, "RuntimeStorageRepository", fake_repository_factory)
+        monkeypatch.setattr("apps.learning_worker_runtime._write_learning_worker_record", fake_write_record)
+        monkeypatch.setattr(daemon_tasks, "_run_claimed_learning_job", fake_run_claimed_job)
+
+        tick_at = 0.0
+
+        async def ticker(started_at: float) -> None:
+            nonlocal tick_at
+            await asyncio.sleep(0.05)
+            tick_at = time.perf_counter() - started_at
+
+        async def run_loop() -> None:
+            started_at = time.perf_counter()
+            await asyncio.gather(
+                daemon_tasks.learning_worker_loop(
+                    state_dir=tmp_path,
+                    is_running=lambda: running,
+                    idle_seconds=1.0,
+                ),
+                ticker(started_at),
+            )
+
+        asyncio.run(run_loop())
+
+        assert tick_at < 0.15

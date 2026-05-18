@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -57,6 +58,30 @@ class DashboardCommandTest(unittest.TestCase):
             )
 
         self.assertIsNone(url)
+
+    def test_probe_daemon_dashboard_reports_running_process_when_http_is_unavailable(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            state_dir = Path(tempdir) / "herd"
+            state_dir.mkdir()
+            _daemon_record_path(state_dir).write_text(
+                json.dumps({"host": "0.0.0.0", "port": 9876}),
+                encoding="utf-8",
+            )
+            (state_dir / "daemon.pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
+
+            with mock.patch.object(
+                dashboard_command.urllib.request,
+                "urlopen",
+                side_effect=TimeoutError("timed out"),
+            ):
+                probe = dashboard_command._probe_daemon_dashboard(
+                    dashboard_command.DashboardLaunchPlan(state_dir=state_dir),
+                )
+
+        self.assertIsNone(probe.dashboard_url)
+        self.assertEqual(probe.base_url, "http://127.0.0.1:9876")
+        self.assertTrue(probe.daemon_running)
+        self.assertEqual(probe.reason, "healthz_unavailable")
 
     def test_try_daemon_dashboard_url_rejects_non_dashboard_payload(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
@@ -137,8 +162,13 @@ class DashboardCommandTest(unittest.TestCase):
             mock.patch.object(dashboard_command, "_ensure_frontend_dist", return_value=True),
             mock.patch.object(
                 dashboard_command,
-                "_try_daemon_dashboard_url",
-                return_value="http://127.0.0.1:8900/dashboard/",
+                "_probe_daemon_dashboard",
+                return_value=dashboard_command.DaemonDashboardProbe(
+                    dashboard_url="http://127.0.0.1:8900/dashboard/",
+                    base_url="http://127.0.0.1:8900",
+                    daemon_running=True,
+                    reason="ready",
+                ),
             ),
             mock.patch.object(dashboard_command.webbrowser, "open", return_value=True) as open_browser,
             mock.patch.object(dashboard_command, "_print_cli_card"),
@@ -153,7 +183,11 @@ class DashboardCommandTest(unittest.TestCase):
 
         with (
             mock.patch.object(dashboard_command, "_ensure_frontend_dist", return_value=True),
-            mock.patch.object(dashboard_command, "_try_daemon_dashboard_url", return_value=None),
+            mock.patch.object(
+                dashboard_command,
+                "_probe_daemon_dashboard",
+                return_value=dashboard_command.DaemonDashboardProbe(dashboard_url=None, reason="missing_runtime_record"),
+            ),
             mock.patch.object(dashboard_command, "_print_cli_card") as print_card,
         ):
             result = dashboard_command._run_dashboard(plan, open_browser=False)
@@ -162,13 +196,65 @@ class DashboardCommandTest(unittest.TestCase):
         self.assertEqual(print_card.call_args.args[0], "Elephant Agent dashboard")
         self.assertIn("served by the Elephant daemon", print_card.call_args.args[1])
 
+    def test_run_dashboard_starts_daemon_when_not_running(self) -> None:
+        plan = dashboard_command.DashboardLaunchPlan(state_dir=Path("/tmp/elephant-herd"))
+
+        with (
+            mock.patch.object(dashboard_command, "_ensure_frontend_dist", return_value=True),
+            mock.patch.object(
+                dashboard_command,
+                "_probe_daemon_dashboard",
+                side_effect=[
+                    dashboard_command.DaemonDashboardProbe(dashboard_url=None, reason="missing_runtime_record"),
+                    dashboard_command.DaemonDashboardProbe(
+                        dashboard_url="http://127.0.0.1:8900/dashboard/",
+                        base_url="http://127.0.0.1:8900",
+                        daemon_running=True,
+                        reason="ready",
+                    ),
+                ],
+            ),
+            mock.patch.object(dashboard_command, "_start_daemon_for_dashboard", return_value=0) as start_daemon,
+            mock.patch.object(dashboard_command, "_print_cli_card"),
+            mock.patch("builtins.print") as printed,
+        ):
+            result = dashboard_command._run_dashboard(plan, open_browser=False)
+
+        self.assertEqual(result, 0)
+        start_daemon.assert_called_once_with(plan)
+        printed.assert_called_once_with("Elephant Agent dashboard URL: http://127.0.0.1:8900/dashboard/")
+
+    def test_run_dashboard_reports_running_daemon_when_dashboard_is_unavailable(self) -> None:
+        plan = dashboard_command.DashboardLaunchPlan(state_dir=Path("/tmp/elephant-herd"))
+
+        with (
+            mock.patch.object(dashboard_command, "_ensure_frontend_dist", return_value=True),
+            mock.patch.object(
+                dashboard_command,
+                "_probe_daemon_dashboard",
+                return_value=dashboard_command.DaemonDashboardProbe(
+                    dashboard_url=None,
+                    base_url="http://127.0.0.1:8900",
+                    daemon_running=True,
+                    reason="healthz_unavailable",
+                ),
+            ),
+            mock.patch.object(dashboard_command, "_print_cli_card") as print_card,
+        ):
+            result = dashboard_command._run_dashboard(plan, open_browser=False)
+
+        self.assertEqual(result, 1)
+        self.assertIn("Daemon is running", print_card.call_args.args[1])
+        status_section = print_card.call_args.kwargs["sections"][0]
+        self.assertIn("daemon · running", status_section.lines)
+
     def test_run_dashboard_does_not_probe_daemon_without_frontend_assets(self) -> None:
         plan = dashboard_command.DashboardLaunchPlan(state_dir=Path("/tmp/elephant-herd"))
 
         with (
             mock.patch.object(dashboard_command, "DASHBOARD_DIST_INDEX", Path("/tmp/missing-dashboard-index.html")),
             mock.patch.object(dashboard_command, "_ensure_frontend_dist", return_value=False),
-            mock.patch.object(dashboard_command, "_try_daemon_dashboard_url") as probe,
+            mock.patch.object(dashboard_command, "_probe_daemon_dashboard") as probe,
             mock.patch.object(dashboard_command, "_print_cli_card") as print_card,
         ):
             result = dashboard_command._run_dashboard(plan, open_browser=False)

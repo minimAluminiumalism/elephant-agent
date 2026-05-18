@@ -9,6 +9,8 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
+from packages.storage import RuntimeStorageRepository
+
 logger = logging.getLogger("elephant.daemon")
 
 
@@ -109,7 +111,7 @@ def _run_proactive_ask_tick(cli_state_dir: Path, delivery_callback) -> None:
     from apps.gateway.proactive_ask_job import run_proactive_ask_tick
     from apps.gateway.runtime import build_gateway_app
 
-    app, outbound_queue, _ = build_gateway_app(state_dir=str(cli_state_dir))
+    app, outbound_queue, _ = build_gateway_app(state_dir=str(cli_state_dir), start_learning_worker=False)
     for adapter_id in CONFIGURED_IM_ADAPTERS:
         try:
             result = run_proactive_ask_tick(
@@ -171,15 +173,14 @@ async def learning_worker_loop(
     idle_seconds: float = 20.0,
 ) -> None:
     """Async learning worker: same logic as ``run_learning_worker`` but using ``asyncio.sleep``."""
-    from apps.cli.runtime import CliRuntime
     from apps.learning_worker_runtime import (
         _write_learning_worker_record,
-        run_learning_job,
     )
     from uuid import uuid4
     import os
 
-    runtime = CliRuntime.create(state_dir=state_dir)
+    repository = RuntimeStorageRepository(state_dir / "elephant.sqlite3")
+    repository.bootstrap()
     worker_id = f"daemon-learning-worker:{os.getpid()}:{uuid4().hex[:8]}"
     started_at = datetime.now(UTC).isoformat()
 
@@ -196,7 +197,7 @@ async def learning_worker_loop(
     jobs_completed = 0
     try:
         while is_running():
-            job = runtime.repository.claim_learning_job(worker_id=worker_id)
+            job = repository.claim_learning_job(worker_id=worker_id)
             if job is None:
                 if time.monotonic() - last_activity >= max(1.0, idle_seconds):
                     logger.info("learning worker idle timeout (%gs, %d job(s) completed), exiting", idle_seconds, jobs_completed)
@@ -218,13 +219,13 @@ async def learning_worker_loop(
                 started_at=started_at,
             )
             try:
-                run_learning_job(runtime, job, worker_id=worker_id)
+                await asyncio.to_thread(_run_claimed_learning_job, state_dir, job.job_id, worker_id)
                 jobs_completed += 1
                 logger.info("learning job completed: %s", job.job_id)
             except Exception as error:
                 message = str(error).strip() or error.__class__.__name__
                 logger.error("learning job failed: %s - %s", job.job_id, message)
-                runtime.repository.fail_learning_job(
+                repository.fail_learning_job(
                     job.job_id,
                     worker_id=worker_id,
                     error=message,
@@ -243,6 +244,18 @@ async def learning_worker_loop(
             stopped_at=datetime.now(UTC).isoformat(),
             last_exit_code=0,
         )
+
+
+def _run_claimed_learning_job(state_dir: Path, job_id: str, worker_id: str) -> None:
+    """Run one claimed learning job off the daemon event loop."""
+    from apps.cli.runtime import CliRuntime
+    from apps.learning_worker_runtime import run_learning_job
+
+    runtime = CliRuntime.create(state_dir=state_dir)
+    job = runtime.repository.load_learning_job(job_id)
+    if job is None:
+        return
+    run_learning_job(runtime, job, worker_id=worker_id)
 
 
 # ── Helpers ────────────────────────────────────────────────────
@@ -278,4 +291,3 @@ def _log_supervisor_tick(tick: object, tick_count: int) -> None:
             "supervisor tick #%d: scanned=%d, no decisions",
             tick_count, scanned_count,
         )
-

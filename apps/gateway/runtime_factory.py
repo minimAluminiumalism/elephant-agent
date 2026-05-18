@@ -198,6 +198,7 @@ def build_gateway_app(
     control_state_dir: str | Path | None = None,
     runtime_environ: Mapping[str, str] | None = None,
     plugin_registry: GatewayPluginRegistry | None = None,
+    start_learning_worker: bool = True,
 ) -> tuple[GatewayApp, ChatBotMessagingAdapter, WebhookMessagingAdapter]:
     registry = plugin_registry or _builtin_gateway_plugin_registry()
     ephemeral_home: Path | None = None
@@ -493,8 +494,9 @@ def build_gateway_app(
         loaded_profile=loaded_profile,
         provider_profile=active_provider_profile,
     )
-    # Spawn background learning worker so enqueued jobs get processed
-    if resolved_state_dir is not None:
+    # Spawn the legacy standalone learning worker for standalone gateway
+    # processes. The unified daemon owns its own in-process learning worker.
+    if start_learning_worker and resolved_state_dir is not None:
         try:
             from apps.learning_worker_runtime import ensure_learning_worker_running
             ensure_learning_worker_running(

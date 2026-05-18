@@ -182,6 +182,7 @@ class ServiceDaemon:
             from apps.gateway.runtime import build_gateway_app
             app, chat_adapter, webhook_adapter = build_gateway_app(
                 state_dir=str(self.state_dir),
+                start_learning_worker=False,
             )
             self._gateway_app = app
             logger.info("GatewayApp initialized (profile=%s)", app.profile_id)
