@@ -8,6 +8,7 @@ import signal
 import subprocess
 import sys
 import time
+import warnings
 from uuid import uuid4
 
 from apps.cli.runtime import CliRuntime
@@ -133,9 +134,17 @@ def ensure_learning_worker_running(
             stderr=log_stream,
             start_new_session=True,
         )
+    worker_pid = process.pid
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            category=ResourceWarning,
+            message=r"subprocess \d+ is still running",
+        )
+        del process
     _write_learning_worker_record(
         state_dir,
-        pid=process.pid,
+        pid=worker_pid,
         status="running",
         command=command,
         started_at=_utc_now().isoformat(),

@@ -8,6 +8,7 @@ import os
 import signal
 import sys
 import time
+import warnings
 from pathlib import Path
 from unittest.mock import patch
 
@@ -91,6 +92,36 @@ class TestStartDaemonDetached:
             record = json.loads(record_path.read_text())
             assert record["status"] == "running"
             assert record["pid"] == 12345
+
+    def test_start_suppresses_expected_detached_process_warning(self, tmp_path: Path) -> None:
+        """Detached daemon ownership moves to pidfile state, not the local Popen wrapper."""
+        from apps.daemon_command import start_daemon_detached
+
+        class WarningProcess:
+            pid = 12346
+
+            def poll(self) -> None:
+                return None
+
+            def __del__(self) -> None:
+                warnings.warn(
+                    "subprocess 12346 is still running",
+                    ResourceWarning,
+                    stacklevel=2,
+                )
+
+        with patch("apps.daemon_command.subprocess.Popen", side_effect=lambda *_args, **_kwargs: WarningProcess()):
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always", ResourceWarning)
+                result = start_daemon_detached(tmp_path, tmp_path)
+
+        assert result == 0
+        assert not [
+            warning
+            for warning in caught
+            if warning.category is ResourceWarning
+            and "subprocess 12346 is still running" in str(warning.message)
+        ]
 
 
 class TestStopDaemon:

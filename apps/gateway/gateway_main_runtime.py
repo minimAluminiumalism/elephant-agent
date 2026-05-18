@@ -18,6 +18,7 @@ import signal
 import subprocess
 import sys
 import time
+import warnings
 from wsgiref.simple_server import make_server
 
 from apps.cli.runtime import CliRuntime
@@ -701,6 +702,16 @@ def _run_start_detached(
     print(f"Log file: {runtime.log_path}")
     print(f"Runtime record: {runtime.record_path}")
     print(f"Follow logs: {service.managed_runtime_log_hint(target=target)}")
+    # Legacy per-adapter starts are intentionally detached and owned by their
+    # runtime record after this point. Avoid noisy ResourceWarning output when
+    # tests run with warnings enabled.
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            category=ResourceWarning,
+            message=r"subprocess \d+ is still running",
+        )
+        del process
     return 0
 
 def _read_log_excerpt(path: Path, *, tail: int) -> tuple[str, ...]:

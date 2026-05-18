@@ -11,6 +11,7 @@ from pathlib import Path
 import subprocess
 import sys
 from typing import Any
+import warnings
 
 from packages.embeddings import (
     ELEPHANT_EMBED_MODEL_ID,
@@ -244,13 +245,21 @@ def _spawn_embedding_bootstrap_worker(
             stderr=subprocess.STDOUT,
             start_new_session=True,
         )
+    background_pid = process.pid
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            category=ResourceWarning,
+            message=r"subprocess \d+ is still running",
+        )
+        del process
     return EmbeddingBootstrapState(
         status=state.status,
         summary=state.summary,
         state_focus_mode=state.state_focus_mode,
         updated_at=_utc_now_iso(),
         failure_message=state.failure_message,
-        background_pid=process.pid,
+        background_pid=background_pid,
         model_id=state.model_id,
         model_root=state.model_root,
         model_source_url=state.model_source_url,

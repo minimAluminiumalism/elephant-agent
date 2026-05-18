@@ -12,6 +12,7 @@ import signal
 import subprocess
 import sys
 import time
+import warnings
 from dataclasses import asdict
 from pathlib import Path
 from typing import IO, Sequence
@@ -411,6 +412,16 @@ def _start_detached(state_dir: Path, cli_state_dir: Path, *, host: str, port: in
     print(f"  PID file: {pid_path}")
     print(f"  Log file: {log_path}")
     print(f"  HTTP: http://{host}:{port}")
+    # The daemon is intentionally detached and now owned by pidfile/record state.
+    # Drop the local Popen wrapper without letting Python report it as a leaked
+    # still-running subprocess under unittest's ResourceWarning configuration.
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            category=ResourceWarning,
+            message=r"subprocess \d+ is still running",
+        )
+        del process
     return 0
 
 

@@ -8,17 +8,20 @@ import sys
 import tempfile
 import unittest
 
+from tests.e2e.support.installed_env import stop_recorded_background_processes
+
 ROOT = Path(__file__).resolve().parents[3]
 
 
 class EditableInstallSmokeTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.tempdir = tempfile.TemporaryDirectory()
+        self.tempdir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.root = Path(self.tempdir.name)
         self.venv_dir = self.root / "venv"
         self.home_dir = self.root / "elephant-home"
 
     def tearDown(self) -> None:
+        stop_recorded_background_processes(self.home_dir / "herd")
         self.tempdir.cleanup()
 
     def _python_bin(self) -> Path:
