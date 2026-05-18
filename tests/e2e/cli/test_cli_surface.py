@@ -852,7 +852,7 @@ class CliSurfaceE2ETest(unittest.TestCase):
         self.assertIn("Search before editing.", viewed.stdout)
 
     def test_launcher_dashboard_guides_to_daemon_surface(self) -> None:
-        dashboard = self._run_launcher("dashboard", "--no-open", "--skip-build", check=False)
+        dashboard = self._run_launcher("dashboard", "--no-open", "--skip-build", "--no-start", check=False)
         self.assertEqual(dashboard.returncode, 1)
         self.assertIn("Elephant Agent dashboard", dashboard.stdout)
         self.assertTrue(
